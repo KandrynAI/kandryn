@@ -71,61 +71,65 @@ export function Sidebar({ isAzureConnected, isJiraConnected }: SidebarProps) {
           display: flex; flex-direction: column;
           transition: width 180ms ease, min-width 180ms ease;
           flex-shrink: 0;
+          font-size: var(--fs-sm);
         }
-        .dc-sb-head { display: flex; align-items: center; gap: 9px; padding: 12px 14px; flex-shrink: 0; }
-        .dc-sb-word { color: var(--text-primary); font-size: var(--fs-md); font-weight: 600; letter-spacing: -.01em; }
-        .dc-sb-sec { padding: 0 10px; }
+        .dc-sb-head { display: flex; align-items: center; gap: 8px; padding: 11px 12px 9px; flex-shrink: 0; }
+        .dc-sb-word { color: var(--text-primary); font-size: var(--fs-base); font-weight: 600; letter-spacing: -.01em; }
+        .dc-sb-sec { padding: 0 8px; }
         .dc-repo-switch {
           display: flex; align-items: center; gap: 8px; width: 100%;
-          padding: 7px 9px; border-radius: var(--radius-md);
-          background: var(--bg-raised); border: 1px solid var(--hairline);
-          color: var(--text-primary); cursor: pointer; font-family: var(--app-font-sans);
+          padding: 6px 8px; border-radius: var(--radius-md);
+          background: transparent; border: 1px solid transparent;
+          color: var(--text-secondary); cursor: pointer; font-family: var(--app-font-sans);
+          transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+        }
+        .dc-repo-switch:hover { background: var(--bg-raised); border-color: var(--hairline); color: var(--text-primary); }
+        .dc-repo-switch .dc-nav-ico { color: var(--text-muted); }
+        .dc-repo-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
+        .dc-cta {
+          display: flex; align-items: center; justify-content: flex-start; gap: 8px;
+          width: 100%; margin-top: 6px; padding: 6px 8px; border-radius: var(--radius-md);
+          background: transparent; color: var(--text-secondary); border: 1px solid var(--hairline); cursor: pointer;
+          font-size: var(--fs-sm); font-weight: 500; font-family: var(--app-font-sans);
+          transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+        }
+        .dc-cta:hover { background: var(--bg-raised); border-color: var(--hairline-strong); color: var(--text-primary); }
+        .dc-cta svg { color: var(--text-muted); }
+        .dc-cta:hover svg { color: var(--text-primary); }
+        .dc-search {
+          display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 6px;
+          padding: 6px 8px; border-radius: var(--radius-md);
+          background: transparent; border: 1px solid transparent;
+          color: var(--text-muted); cursor: text; font-size: var(--fs-sm); font-family: var(--app-font-sans);
           transition: border-color 120ms ease, background 120ms ease;
         }
-        .dc-repo-switch:hover { border-color: var(--hairline-strong); }
-        .dc-repo-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-family: var(--app-font-mono); }
-        .dc-cta {
-          display: flex; align-items: center; justify-content: center; gap: 7px;
-          width: 100%; margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-md);
-          background: var(--accent-blue); color: var(--accent-fg); border: none; cursor: pointer;
-          font-size: var(--fs-sm); font-weight: 600; font-family: var(--app-font-sans);
-          transition: background 120ms ease;
-        }
-        .dc-cta:hover { background: var(--accent-blue-hover); }
-        .dc-search {
-          display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px;
-          padding: 7px 9px; border-radius: var(--radius-md);
-          background: var(--bg-app); border: 1px solid var(--hairline);
-          color: var(--text-muted); cursor: text; font-size: var(--fs-sm); font-family: var(--app-font-sans);
-          transition: border-color 120ms ease;
-        }
-        .dc-search:hover { border-color: var(--hairline-strong); }
+        .dc-search:hover { background: var(--bg-raised); border-color: var(--hairline); }
         .dc-kbd {
           margin-left: auto; font-size: 10px; font-family: var(--app-font-mono);
-          color: var(--text-muted); border: 1px solid var(--hairline); border-radius: 4px; padding: 1px 5px;
+          color: var(--text-muted); border: 1px solid var(--hairline); border-radius: 4px; padding: 0 4px; line-height: 15px;
         }
-        .dc-navlist { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 1px; }
+        .dc-navlist { flex: 1; overflow-y: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 1px; }
         .dc-nav {
-          display: flex; align-items: center; gap: 10px;
-          padding: 6px 9px; border-radius: var(--radius-md);
-          font-size: var(--fs-base); font-family: var(--app-font-sans);
+          display: flex; align-items: center; gap: 9px;
+          padding: 5px 8px; border-radius: var(--radius-md);
+          font-size: var(--fs-sm); font-family: var(--app-font-sans);
           color: var(--text-secondary); cursor: pointer; position: relative;
           transition: background 110ms ease, color 110ms ease;
         }
         .dc-nav:hover { background: var(--bg-raised); color: var(--text-primary); }
         .dc-nav.active { background: var(--bg-hover); color: var(--text-primary); font-weight: 500; }
-        .dc-nav.active .dc-nav-ico { color: var(--accent-blue); }
-        .dc-nav-ico { flex-shrink: 0; display: inline-flex; }
-        .dc-grouplabel { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; padding: 0 9px; margin-bottom: 4px; }
-        .dc-foot { border-top: 1px solid var(--hairline); padding: 8px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; }
-        .dc-statusrow { display: flex; align-items: center; gap: 14px; padding: 4px 9px 6px; }
-        .dc-status { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-secondary); }
+        .dc-nav-ico { flex-shrink: 0; display: inline-flex; color: var(--text-muted); transition: color 110ms ease; }
+        .dc-nav:hover .dc-nav-ico, .dc-nav.active .dc-nav-ico { color: var(--text-primary); }
+        .dc-grouplabel { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; padding: 0 8px; margin-bottom: 5px; }
+        .dc-foot { border-top: 1px solid var(--hairline); padding: 7px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; }
+        .dc-statusrow { display: flex; align-items: center; gap: 14px; padding: 4px 8px 6px; }
+        .dc-status { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted); }
         .dc-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
         .dc-footrow { display: flex; align-items: center; gap: 4px; }
-        .dc-user { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius-md); flex: 1; min-width: 0; }
-        .dc-avatar { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; object-fit: cover; border: 1px solid var(--hairline); }
-        .dc-avatar-fb { background: var(--accent-soft); color: var(--accent-blue); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-        .dc-username { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dc-user { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: var(--radius-md); flex: 1; min-width: 0; }
+        .dc-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; object-fit: cover; border: 1px solid var(--hairline); }
+        .dc-avatar-fb { background: var(--bg-raised); color: var(--text-secondary); font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+        .dc-username { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .dc-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--radius-sm); color: var(--text-muted); background: none; border: none; cursor: pointer; flex-shrink: 0; transition: background 120ms ease, color 120ms ease; }
         .dc-iconbtn:hover { background: var(--bg-hover); color: var(--text-primary); }
         .dc-iconbtn-danger:hover { color: var(--accent-red); }
@@ -146,7 +150,7 @@ export function Sidebar({ isAzureConnected, isJiraConnected }: SidebarProps) {
 
       <nav className="dc-sb" data-testid="sidebar">
         <div className="dc-sb-head">
-          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Blue Mantis" style={{ height: 20, width: "auto", objectFit: "contain", flexShrink: 0 }} />
+          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Blue Mantis" style={{ height: 18, width: "auto", objectFit: "contain", flexShrink: 0 }} />
           <span className="dc-sb-word">Blue Mantis</span>
         </div>
 
