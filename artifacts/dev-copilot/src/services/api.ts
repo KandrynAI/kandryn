@@ -39,9 +39,12 @@ export interface CodeSuggestion {
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Parsed JSON error body (e.g. `{ error, existingProjectId }`), when present. */
+  body: unknown;
+  constructor(message: string, status: number, body?: unknown) {
     super(message);
     this.status = status;
+    this.body = body;
     this.name = 'ApiError';
   }
 }
@@ -50,11 +53,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
+    let body: unknown;
     try {
-      const body = await res.json() as { error?: string };
-      if (body.error) msg = body.error;
+      body = await res.json();
+      if (body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string') {
+        msg = (body as { error: string }).error;
+      }
     } catch { /* ignore */ }
-    throw new ApiError(msg, res.status);
+    throw new ApiError(msg, res.status, body);
   }
   return res.json() as Promise<T>;
 }

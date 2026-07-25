@@ -157,6 +157,30 @@ router.post("/projects", async (req, res): Promise<void> => {
   }
   const { name, plmProvider, plmProjectKey, repositoryId } = parsed.data;
 
+  // Duplicate-binding guard (unique on user_id, plm_provider, plm_project_key).
+  // Catch it here with a friendly 409 instead of letting the unique index throw
+  // a raw constraint error that the global handler would surface as a 500.
+  const [existing] = await db
+    .select({ id: projectsTable.id })
+    .from(projectsTable)
+    .where(
+      and(
+        eq(projectsTable.userId, req.userId),
+        eq(projectsTable.plmProvider, plmProvider),
+        eq(projectsTable.plmProjectKey, plmProjectKey),
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    res.status(409).json({
+      error: `A project is already connected to this ${
+        plmProvider === "jira" ? "Jira" : "Azure DevOps"
+      } project (${plmProjectKey}). Open the existing project or delete it first.`,
+      existingProjectId: existing.id,
+    });
+    return;
+  }
+
   // Git binding: the repo must exist and belong to this user (validated live at connect time).
   const [repo] = await db
     .select()
@@ -196,7 +220,11 @@ router.post("/projects", async (req, res): Promise<void> => {
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
     res.status(201).json(proj);
   } catch (err) {
-    if ((err as { code?: string })?.code === "23505") {
+    // Lost a race with a concurrent create. Drizzle wraps the pg error, so the
+    // SQLSTATE lives on err.cause.code (not err.code).
+    const code =
+      (err as { code?: string })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "23505") {
       res.status(409).json({ error: "You already have a project bound to that PLM project." });
       return;
     }

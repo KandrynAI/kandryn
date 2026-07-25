@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { ArrowLeft, ArrowRight, Check, GitBranch, Boxes, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -134,10 +135,21 @@ export default function NewProject() {
                 toast({ title: "Project created", description: `${project.name} is ready.` });
                 navigate(`/p/${project.id}/board`);
               } catch (err) {
+                // A 409 means this PLM project is already bound to a project.
+                // Show the friendly message and, if we know it, a shortcut there.
+                const existingId =
+                  err instanceof ApiError && err.status === 409
+                    ? (err.body as { existingProjectId?: number } | undefined)?.existingProjectId
+                    : undefined;
                 toast({
-                  title: "Could not create project",
+                  title: err instanceof ApiError && err.status === 409 ? "Already connected" : "Could not create project",
                   description: err instanceof ApiError ? err.message : "Something went wrong.",
                   variant: "destructive",
+                  action: existingId ? (
+                    <ToastAction altText="Open the existing project" onClick={() => navigate(`/p/${existingId}/board`)}>
+                      Open project
+                    </ToastAction>
+                  ) : undefined,
                 });
                 setSubmitting(false);
               }
