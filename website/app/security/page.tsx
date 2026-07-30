@@ -1,49 +1,55 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { SECURITY_ROWS } from '@/lib/site';
-import { JsonLd, breadcrumbLd } from '@/lib/jsonld';
+import PageHeader from '@/components/layout/PageHeader';
+import { SECURITY_PRINCIPLES, PROCESSORS } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'Security',
-  description:
-    'Autonomy is only useful if you can bound it. Blue Mantis is designed so you can say yes to speed without loosening a single control.',
-  alternates: { canonical: '/security' },
+  description: 'Least privilege, stated plainly. What Blue Mantis holds, what it touches, and what it refuses to do.',
 };
 
-export default function Security() {
+export default function SecurityPage() {
   return (
     <>
-      <JsonLd data={breadcrumbLd({ name: 'Security', path: '/security' })} />
+      <PageHeader
+        title={<>Least privilege,<br />stated plainly.</>}
+        lead="Blue Mantis is a delivery tool with write access to your repository. Here is exactly what it holds, what it touches, and what it refuses to do."
+      />
 
-      <section className="hero">
-        <div className="container">
-          <h1>Built for teams that answer to auditors.</h1>
-          <p className="lead">
-            Autonomy is only useful if you can bound it. Blue Mantis is designed so you can say yes to
-            speed without loosening a single control.
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <div className="container">
-          <div className="stages">
-            {SECURITY_ROWS.map((r) => (
-              <div className="stage" key={r.title}>
-                <h2>{r.title}</h2>
-                <p>{r.body}</p>
-              </div>
-            ))}
+      {/* Principles */}
+      <div
+        className="grid-2 stack-1"
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', borderLeft: '2px solid var(--color-divider)' }}
+      >
+        {SECURITY_PRINCIPLES.map((p) => (
+          <div key={p.title} style={{ borderRight: '2px solid var(--color-divider)', borderBottom: '2px solid var(--color-divider)', padding: '32px 40px', minHeight: 180 }}>
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em' }}>{p.title}</div>
+            <p style={{ fontSize: 15, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 10, textWrap: 'pretty' }}>{p.body}</p>
           </div>
-        </div>
-      </section>
+        ))}
+      </div>
 
-      <section aria-label="Next steps">
-        <div className="container">
-          <div className="btn-row">
-            <Link href="/contact" className="btn btn-primary">Request early access</Link>
-            <Link href="/faq" className="btn btn-outline">Questions? →</Link>
-          </div>
+      {/* Processors */}
+      <section className="pad-x" style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' }}>
+        <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 20 }}>Where your data sits</h2>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Processor</th>
+                <th>Purpose</th>
+                <th>What it sees</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PROCESSORS.map((p) => (
+                <tr key={p.name}>
+                  <td style={{ fontWeight: 700, color: 'var(--color-text)', whiteSpace: 'nowrap' }}>{p.name}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{p.purpose}</td>
+                  <td>{p.sees}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
     </>

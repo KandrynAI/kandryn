@@ -1,113 +1,63 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import Schematic from '@/components/Schematic';
-import { JsonLd, breadcrumbLd } from '@/lib/jsonld';
+import PageHeader from '@/components/layout/PageHeader';
+import { HOW_SECTIONS, ATTENTION } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'How it works',
-  description:
-    'Blue Mantis runs the middle of your delivery lifecycle: what happens between a ticket entering the queue and a pull request reaching your engineer.',
-  alternates: { canonical: '/how-it-works' },
+  description: 'A run is not a chat — it is a pipeline. Every stage is a discrete, inspectable step.',
 };
 
-const STAGES = [
-  {
-    h: 'Intake',
-    p: 'A ticket enters your queue the same way it always has. The orchestrator reads its functional intent, acceptance criteria, and any linked context from Jira, Linear, or Azure Boards. Nothing about how your team files work changes.',
-  },
-  {
-    h: 'Orchestration',
-    p: 'The orchestrator scopes the change and decides which specialists it needs. It dispatches Builder, Reviewer, Security, and QA agents and coordinates their work against the ticket. It holds the plan; the specialists do the work.',
-  },
-  {
-    h: 'Concurrent build and inspection',
-    p: 'Builder writes the change. At the same time, the Security agent checks dependencies and the QA agent runs and extends tests. Inspection happens alongside the build, not in a later pass, so problems surface while the work is still forming.',
-  },
-  {
-    h: 'Self-review',
-    p: 'The Reviewer agent gates the change against your repository’s standards before any human is involved. Work that does not meet the bar goes back to the specialists, not to your engineer.',
-  },
-  {
-    h: 'Human approval',
-    p: 'Nothing merges without your engineer’s approval. Blue Mantis opens a pull request and your engineer reviews and promotes it exactly as they do today. The final word on every line belongs to your team.',
-  },
-];
-
-export default function HowItWorks() {
+export default function HowItWorksPage() {
   return (
     <>
-      <JsonLd data={breadcrumbLd({ name: 'How it works', path: '/how-it-works' })} />
+      <PageHeader
+        title={<>A run is not a chat.<br />It&apos;s a pipeline.</>}
+        lead="Every stage below is a discrete, inspectable step. If one fails, the run row says which, and nothing half-finished lands in your repository."
+      />
 
-      <section className="hero">
-        <div className="container">
-          <h1>From ticket to pull request, without a handoff meeting.</h1>
-          <p className="lead">
-            Blue Mantis runs the middle of your software delivery lifecycle. Here is exactly what
-            happens between a ticket entering the queue and a pull request reaching your engineer.
-          </p>
-        </div>
-      </section>
-
-      <section className="blueprint tight">
-        <div className="container">
-          <Schematic
-            captions={[
-              'Tickets enter the same way they do today, from Jira, Linear, or Azure Boards.',
-              'The orchestrator scopes the work and dispatches Builder, Reviewer, Security, and QA agents concurrently.',
-              'A finished pull request waits for your engineer to review and promote, unchanged.',
-            ]}
-          />
-        </div>
-      </section>
-
-      <section>
-        <div className="container">
-          <div className="stages">
-            {STAGES.map((s) => (
-              <div className="stage" key={s.h}>
-                <h2>{s.h}</h2>
-                <p>{s.p}</p>
-              </div>
-            ))}
+      {HOW_SECTIONS.map((s) => (
+        <div
+          key={s.n}
+          className="stack-1"
+          style={{ display: 'grid', gridTemplateColumns: '220px 1fr 1fr', borderBottom: '2px solid var(--color-divider)' }}
+        >
+          <div style={{ padding: '40px 24px 40px 64px', borderRight: '2px solid var(--color-divider)' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--color-accent-700)' }}>{s.n}</div>
+            <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: '-0.02em', marginTop: 10 }}>{s.title}</div>
           </div>
-        </div>
-      </section>
-
-      <section className="band" aria-labelledby="scope-h">
-        <div className="container">
-          <div className="sec-head">
-            <h2 id="scope-h">What it handles, and what it leaves to you.</h2>
+          <div style={{ padding: '40px 32px', borderRight: '2px solid var(--color-divider)', fontSize: 16, lineHeight: 1.55, color: 'var(--color-neutral-800)', textWrap: 'pretty' }}>
+            {s.body}
           </div>
-          <div className="cols2">
-            <div>
-              <h3>What it handles well</h3>
-              <ul>
-                <li>Features with clear acceptance criteria.</li>
-                <li>Bug fixes.</li>
-                <li>Refactors.</li>
-                <li>Test coverage.</li>
-                <li>Dependency and API updates.</li>
-              </ul>
+          <div style={{ padding: '40px 64px 40px 32px' }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--color-neutral-600)', marginBottom: 12 }}>
+              {s.detailLabel}
             </div>
-            <div>
-              <h3>What it does not do</h3>
-              <ul>
-                <li>It does not merge its own work.</li>
-                <li>It does not invent requirements.</li>
-                <li>It does not touch anything outside the permissions you grant.</li>
-                <li>It does not replace scoping, architecture, or approval.</li>
-              </ul>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {s.details.map((d) => (
+                <div key={d} style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--color-neutral-800)', borderTop: '1px solid var(--color-neutral-300)', paddingTop: 8 }}>
+                  {d}
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      </section>
+      ))}
 
-      <section aria-label="Next steps">
-        <div className="container">
-          <div className="btn-row">
-            <Link href="/contact" className="btn btn-primary">Request early access</Link>
-            <Link href="/security" className="btn btn-outline">Read the security model →</Link>
-          </div>
+      {/* Attention */}
+      <section className="pad-x" style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' }}>
+        <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 24 }}>
+          What a run costs you in attention
+        </h2>
+        <div
+          className="grid-3 stack-1"
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '2px solid var(--color-divider)', borderLeft: '2px solid var(--color-divider)' }}
+        >
+          {ATTENTION.map((a) => (
+            <div key={a.value} style={{ borderRight: '2px solid var(--color-divider)', borderBottom: '2px solid var(--color-divider)', padding: 28 }}>
+              <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: '-0.03em' }}>{a.value}</div>
+              <div style={{ fontSize: 14, color: 'var(--color-neutral-700)', marginTop: 8 }}>{a.body}</div>
+            </div>
+          ))}
         </div>
       </section>
     </>

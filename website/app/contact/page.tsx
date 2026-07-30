@@ -1,39 +1,45 @@
 import type { Metadata } from 'next';
-import ContactForm from '@/components/ContactForm';
-import { WalkthroughButton } from '@/components/AccessButtons';
-import { JsonLd, breadcrumbLd } from '@/lib/jsonld';
+import ContactView from '@/components/ContactView';
 
 export const metadata: Metadata = {
-  title: 'Request early access',
-  description:
-    'Tell us about your stack and your backlog. Blue Mantis onboards a limited number of engineering teams each month. Request access or book a walkthrough.',
-  alternates: { canonical: '/contact' },
+  title: 'Contact',
+  description: "Bring one project. We'll wire it up with you — one real work item, run end to end, on a shared call.",
 };
 
-export default function Contact() {
-  return (
-    <>
-      <JsonLd data={breadcrumbLd({ name: 'Contact', path: '/contact' })} />
+const FACTS: [string, string][] = [
+  ['Typical reply', 'Within one business day, with a time and a short checklist.'],
+  ["You'll need", 'A tracker project, a repository, and one model key.'],
+  ['Prefer to talk first?', 'Book a walkthrough and we’ll screen-share the loop on a real ticket.'],
+];
 
-      <section className="hero">
-        <div className="container hero-grid">
-          <div className="hero-copy">
-            <h1>Request early access.</h1>
-            <p className="lead">
-              Tell us about your stack and your backlog. We onboard a limited number of engineering
-              teams each month.
+export default function ContactPage() {
+  return (
+    <div className="stack-1" style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', borderBottom: '2px solid var(--color-divider)' }}>
+      {/* LEFT */}
+      <div className="pad-x" style={{ padding: 64, borderRight: '2px solid var(--color-divider)' }}>
+        <div className="kicker" style={{ marginBottom: 20 }}>Request access</div>
+        <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 0.98 }}>
+          Bring one project.
+          <br />
+          We&apos;ll wire it up with you.
+        </h1>
+        <p style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 22, maxWidth: 560 }}>
+          Onboarding is a shared call: we connect your tracker and repository, run one real work item end to end, and
+          you keep whatever it produces.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 36 }}>
+          {FACTS.map(([lead, body]) => (
+            <p key={lead} style={{ fontSize: 15, color: 'var(--color-neutral-800)', borderTop: '1px solid var(--color-neutral-300)', paddingTop: 12 }}>
+              <strong style={{ fontWeight: 800, color: 'var(--color-text)' }}>{lead}.</strong> {body}
             </p>
-            <p className="dim" style={{ marginTop: 22 }}>Prefer a live demo first?</p>
-            <div className="btn-row" style={{ marginTop: 12 }}>
-              <WalkthroughButton className="btn btn-outline">Book a walkthrough</WalkthroughButton>
-            </div>
-            <p className="mono contact-reply">Typical reply within one business day.</p>
-          </div>
-          <div className="hero-form">
-            <ContactForm variant="request-access" heading="Request access" />
-          </div>
+          ))}
         </div>
-      </section>
-    </>
+      </div>
+
+      {/* RIGHT */}
+      <div className="pad-x" style={{ padding: 64 }}>
+        <ContactView />
+      </div>
+    </div>
   );
 }
