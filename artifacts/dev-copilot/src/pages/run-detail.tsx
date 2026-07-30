@@ -24,11 +24,11 @@ import {
 } from "@/services/api";
 
 const STATUS_META: Record<RunStatus, { label: string; className: string; icon: typeof Clock }> = {
-  scheduled: { label: "Scheduled", className: "text-amber-400 border-amber-400/40", icon: Clock },
-  queued: { label: "Queued", className: "text-blue-400 border-blue-400/40", icon: Loader2 },
-  running: { label: "Running", className: "text-blue-400 border-blue-400/40", icon: Loader2 },
-  succeeded: { label: "Succeeded", className: "text-emerald-400 border-emerald-400/40", icon: CheckCircle2 },
-  failed: { label: "Failed", className: "text-red-400 border-red-400/40", icon: XCircle },
+  scheduled: { label: "Scheduled", className: "text-amber-700 border-amber-600/40", icon: Clock },
+  queued: { label: "Queued", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
+  running: { label: "Running", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
+  succeeded: { label: "Succeeded", className: "text-emerald-700 border-emerald-600/40", icon: CheckCircle2 },
+  failed: { label: "Failed", className: "text-red-700 border-red-600/40", icon: XCircle },
   canceled: { label: "Canceled", className: "text-muted-foreground border-border", icon: XCircle },
 };
 
@@ -162,7 +162,7 @@ export default function RunDetailPage() {
           </p>
         )}
         {run.error && (
-          <p className="mt-3 rounded-md border border-red-400/30 bg-red-400/5 p-3 text-sm text-red-400">
+          <p className="mt-3 rounded-md border border-red-600/30 bg-red-50 p-3 text-sm text-red-700">
             {run.error}
           </p>
         )}
@@ -171,7 +171,7 @@ export default function RunDetailPage() {
             href={run.prUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-blue-400 hover:underline"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm text-blue-700 hover:underline"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             View pull request
@@ -203,7 +203,7 @@ export default function RunDetailPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold uppercase text-muted-foreground">{s.agent}</span>
                   {s.recommendation === "Recommended" && (
-                    <Badge variant="outline" className="border-emerald-400/40 text-emerald-400">
+                    <Badge variant="outline" className="border-emerald-600/40 text-emerald-700">
                       Recommended
                     </Badge>
                   )}

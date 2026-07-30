@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { AppHeader } from "./AppHeader";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 import { TabsProvider } from "@/context/TabsContext";
@@ -15,24 +16,21 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <TabsProvider>
       <div
-        style={{
-          display: "flex",
-          height: "100vh",
-          overflow: "hidden",
-          background: "var(--bg-app)",
-          color: "var(--text-primary)",
-          fontFamily: "var(--app-font-sans)",
-        }}
+        className="app-root"
+        style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "var(--app-font-sans)" }}
       >
-        <Sidebar isAzureConnected={isAzureConnected} isJiraConnected={isJiraConnected} />
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <TabBar />
-          <main
-            data-testid="app-main"
-            style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--bg-app)" }}
-          >
-            {children}
-          </main>
+        <AppHeader isAzureConnected={isAzureConnected} isJiraConnected={isJiraConnected} />
+        <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+          <Sidebar isAzureConnected={isAzureConnected} isJiraConnected={isJiraConnected} />
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <TabBar />
+            <main
+              data-testid="app-main"
+              style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--color-bg)" }}
+            >
+              {children}
+            </main>
+          </div>
         </div>
         <Toaster />
       </div>
