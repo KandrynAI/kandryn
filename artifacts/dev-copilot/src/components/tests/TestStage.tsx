@@ -104,7 +104,7 @@ export function TestStage({ workItemId, canPushToPlm }: { workItemId: number; ca
     <div className="rounded-lg border border-border bg-card/40">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
-          <FlaskConical className="h-4 w-4 text-amber-400" />
+          <FlaskConical className="h-4 w-4 text-amber-600" />
           <h2 className="text-sm font-semibold">Tests</h2>
         </div>
         {!tests && (

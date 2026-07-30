@@ -24,14 +24,6 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: "done", label: "Done", statuses: ["done"] },
 ];
 
-const TYPE_STYLE: Record<string, string> = {
-  epic: "text-purple-400 border-purple-400/40",
-  story: "text-blue-400 border-blue-400/40",
-  task: "text-emerald-400 border-emerald-400/40",
-  bug: "text-red-400 border-red-400/40",
-  test_case: "text-amber-400 border-amber-400/40",
-};
-
 export default function ProjectBoard() {
   const params = useParams<{ projectId: string }>();
   const projectId = Number(params.projectId);
@@ -136,58 +128,35 @@ export default function ProjectBoard() {
   };
   const visible = epicFilter == null ? all : all.filter((it) => inEpic(it, epicFilter));
 
-  const pill = (active: boolean) =>
-    `rounded-full border px-2.5 py-1 text-xs transition-colors ${
-      active ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground"
-    }`;
-
   return (
-    <div className="flex h-full flex-col gap-4 px-5 py-4">
+    <div style={{ display: "flex", height: "100%", flexDirection: "column" }}>
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, padding: "20px 32px", borderBottom: "2px solid var(--color-divider)" }}>
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">{project.name}</h1>
-          <p className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
-            <span className="font-mono">
-              {project.plmProvider === "jira" ? "Jira" : "Azure DevOps"}
-              {project.plmProjectKey ? ` · ${project.plmProjectKey}` : ""}
-            </span>
-            <span>·</span>
-            <span>{all.length} work items</span>
-            {project.lastSyncedAt && (
-              <>
-                <span>·</span>
-                <span>synced {new Date(project.lastSyncedAt).toLocaleString()}</span>
-              </>
-            )}
+          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>{project.name}</h1>
+          <p style={{ fontSize: 12, fontFamily: "var(--app-font-mono)", color: "var(--color-neutral-600)", marginTop: 4 }}>
+            {project.plmProvider === "jira" ? "jira" : "azure-devops"}
+            {project.plmProjectKey ? ` · ${project.plmProjectKey}` : ""} · {all.length} items
+            {project.lastSyncedAt ? ` · synced ${new Date(project.lastSyncedAt).toLocaleString()}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/p/${projectId}/runs`}>
-            <Button variant="outline" size="sm">
-              <History className="mr-2 h-3.5 w-3.5" />
-              Runs
-            </Button>
-          </Link>
-          <Button variant="outline" size="sm" onClick={onSync} disabled={syncing}>
-            <RefreshCw className={`mr-2 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing…" : "Sync"}
-          </Button>
-          <Button size="sm" onClick={() => setNewItemOpen(true)}>
-            <Plus className="mr-2 h-3.5 w-3.5" />
-            New item
-          </Button>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <Link href={`/p/${projectId}/runs`} className="btn btn-ghost btn-sm"><History className="h-3.5 w-3.5" />Runs</Link>
+          <button className="btn btn-ghost btn-sm" onClick={onSync} disabled={syncing}>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing…" : "Sync"}
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setNewItemOpen(true)}><Plus className="h-3.5 w-3.5" />New item</button>
         </div>
       </div>
 
       {/* Epic filter */}
       {epics.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button className={pill(epicFilter == null)} onClick={() => setEpicFilter(null)}>
-            All epics
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "12px 32px", borderBottom: "1px solid var(--color-neutral-300)" }}>
+          <button className={epicFilter == null ? "tag tag-accent" : "tag tag-outline"} style={{ cursor: "pointer", padding: "7px 12px", fontSize: 12, letterSpacing: "0.06em" }} onClick={() => setEpicFilter(null)}>
+            ALL EPICS
           </button>
           {epics.map((e) => (
-            <button key={e.id} className={pill(epicFilter === e.id)} onClick={() => setEpicFilter(e.id)} title={e.title}>
+            <button key={e.id} className={epicFilter === e.id ? "tag tag-accent" : "tag tag-outline"} style={{ cursor: "pointer", padding: "7px 12px", fontSize: 12, letterSpacing: "0.06em" }} onClick={() => setEpicFilter(e.id)} title={e.title}>
               {e.title.length > 28 ? `${e.title.slice(0, 28)}…` : e.title}
             </button>
           ))}
@@ -196,24 +165,24 @@ export default function ProjectBoard() {
 
       {/* Board */}
       {all.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border text-center">
-          <p className="text-sm text-muted-foreground">No work items in this project yet.</p>
-          <p className="text-xs text-muted-foreground">
-            Click <span className="font-medium">Sync</span> to pull the hierarchy from{" "}
-            {project.plmProvider === "jira" ? "Jira" : "Azure DevOps"}.
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 48, textAlign: "center" }}>
+          <p style={{ fontSize: 16, fontWeight: 700, color: "var(--color-neutral-600)" }}>No items yet</p>
+          <p style={{ fontSize: 13, color: "var(--color-neutral-500)" }}>
+            Click Sync to pull your {project.plmProvider === "jira" ? "Jira" : "Azure DevOps"} board.
           </p>
+          <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={onSync} disabled={syncing}>Sync now</button>
         </div>
       ) : (
-        <div className="grid flex-1 grid-cols-1 gap-3 overflow-y-auto md:grid-cols-2 xl:grid-cols-4">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderTop: "2px solid var(--color-divider)", flex: 1, overflowY: "auto" }}>
           {COLUMNS.map((col) => {
             const colItems = visible.filter((it) => col.statuses.includes(it.status));
             return (
-              <div key={col.key} className="flex min-h-0 flex-col rounded-md border border-border bg-card/40">
-                <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{col.label}</span>
-                  <span className="text-xs text-muted-foreground">{colItems.length}</span>
+              <div key={col.key} style={{ borderRight: "2px solid var(--color-divider)", padding: "14px 16px", minHeight: "calc(100vh - 260px)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase" }}>{col.label}</span>
+                  <span style={{ fontSize: 12, color: "var(--color-neutral-600)" }}>{colItems.length}</span>
                 </div>
-                <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {colItems.map((it) => (
                     <WorkItemCard
                       key={it.id}
@@ -275,54 +244,34 @@ function WorkItemCard({
   const runnable = item.itemType !== "epic";
   const breakable = item.itemType === "epic" || item.itemType === "story";
   return (
-    <div className="group rounded-md border border-border bg-background p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase ${TYPE_STYLE[item.itemType] ?? "text-muted-foreground border-border"}`}>
-          {item.itemType.replace("_", " ")}
-        </span>
+    <div className="bm-card group" style={{ background: "var(--color-neutral-100)", border: "1px solid var(--color-neutral-300)", boxShadow: "var(--shadow-sm)", padding: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+        <span className="tag tag-neutral">{item.itemType.replace("_", " ").toUpperCase()}</span>
         {item.externalId && (
-          <span className="font-mono text-[10px] text-muted-foreground">{item.externalId}</span>
+          <span style={{ fontSize: 11, fontFamily: "var(--app-font-mono)", color: "var(--color-neutral-600)" }}>{item.externalId}</span>
         )}
       </div>
-      <p className="mt-2 text-sm leading-snug">{item.title}</p>
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">{item.plmStatus ?? item.status}</span>
-          {scheduled && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-400">
-              <Clock className="h-2.5 w-2.5" />
-              scheduled
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
+      <p style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35, textWrap: "pretty" }}>{item.title}</p>
+      <div style={{ fontSize: 11, color: "var(--color-neutral-600)", marginTop: 6 }}>{item.plmStatus ?? item.status}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {item.plmUrl && (
-            <a href={item.plmUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+            <a href={item.plmUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-accent-700)", display: "inline-flex" }} title="Open in PLM">
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
+          {scheduled && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--color-accent-700)" }}>
+              <Clock className="h-2.5 w-2.5" />21:00
+            </span>
+          )}
+        </div>
+        <div className="bm-card-actions" style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {breakable && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-[11px] opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-              onClick={onBreakdown}
-              title="AI breakdown"
-            >
-              <Sparkles className="mr-1 h-3 w-3" />
-              Break down
-            </Button>
+            <button className="btn btn-ghost btn-xs" onClick={onBreakdown} title="AI breakdown"><Sparkles className="h-3 w-3" />Break down</button>
           )}
           {runnable && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-[11px] opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-              onClick={onRun}
-            >
-              <Play className="mr-1 h-3 w-3" />
-              Run
-            </Button>
+            <button className="bm-run-btn" onClick={onRun} title="Run agents"><Play className="h-3 w-3" style={{ marginRight: 4 }} />RUN</button>
           )}
         </div>
       </div>

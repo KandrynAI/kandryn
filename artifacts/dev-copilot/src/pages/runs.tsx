@@ -18,11 +18,11 @@ import {
 } from "@/services/api";
 
 const STATUS_META: Record<RunStatus, { label: string; className: string; icon: typeof Clock }> = {
-  scheduled: { label: "Scheduled", className: "text-amber-400 border-amber-400/40", icon: Clock },
-  queued: { label: "Queued", className: "text-blue-400 border-blue-400/40", icon: Loader2 },
-  running: { label: "Running", className: "text-blue-400 border-blue-400/40", icon: Loader2 },
-  succeeded: { label: "Succeeded", className: "text-emerald-400 border-emerald-400/40", icon: CheckCircle2 },
-  failed: { label: "Failed", className: "text-red-400 border-red-400/40", icon: XCircle },
+  scheduled: { label: "Scheduled", className: "text-amber-700 border-amber-600/40", icon: Clock },
+  queued: { label: "Queued", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
+  running: { label: "Running", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
+  succeeded: { label: "Succeeded", className: "text-emerald-700 border-emerald-600/40", icon: CheckCircle2 },
+  failed: { label: "Failed", className: "text-red-700 border-red-600/40", icon: XCircle },
   canceled: { label: "Canceled", className: "text-muted-foreground border-border", icon: XCircle },
 };
 

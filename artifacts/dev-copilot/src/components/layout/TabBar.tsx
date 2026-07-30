@@ -53,8 +53,8 @@ export function TabBar() {
         .dc-tabbar {
           display: flex; align-items: stretch;
           height: var(--tabbar-h); min-height: var(--tabbar-h);
-          background: var(--bg-surface);
-          border-bottom: 1px solid var(--hairline);
+          background: var(--color-neutral-100);
+          border-bottom: 1px solid var(--color-neutral-300);
           overflow-x: auto; overflow-y: hidden;
         }
         .dc-tabbar::-webkit-scrollbar { height: 0; }
@@ -62,21 +62,18 @@ export function TabBar() {
           display: inline-flex; align-items: center; gap: 7px;
           padding: 0 10px 0 12px;
           max-width: 220px; min-width: 0;
-          font-size: var(--fs-sm); font-family: var(--app-font-sans);
-          color: var(--text-secondary);
+          font-size: 12px; font-family: var(--app-font-sans);
+          color: var(--color-neutral-600);
           background: transparent;
-          border: none; border-right: 1px solid var(--hairline);
+          border: none;
           cursor: pointer; white-space: nowrap;
           position: relative;
           transition: background 120ms ease, color 120ms ease;
         }
-        .dc-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .dc-tab:hover { background: var(--color-neutral-200); color: var(--color-text); }
         .dc-tab.active {
-          background: var(--bg-app); color: var(--text-primary);
-        }
-        .dc-tab.active::before {
-          content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
-          background: var(--accent-blue);
+          background: var(--color-bg); color: var(--color-text); font-weight: 700;
+          box-shadow: inset 0 -2px 0 var(--color-accent-600);
         }
         .dc-tab-label { overflow: hidden; text-overflow: ellipsis; }
         .dc-tab-close {

@@ -10,7 +10,6 @@ import {
   useAuth,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
-import { dark } from "@clerk/themes";
 import { useTheme } from "next-themes";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -51,21 +50,26 @@ const clerkPubKey =
 // In dev this is empty; in prod Replit sets it automatically
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL as string | undefined;
 
-function getClerkAppearance(isDark: boolean) {
+function getClerkAppearance(_isDark: boolean) {
+  // App is light-only (Modernist). Ignore the theme flag and force the light palette.
   return {
-    baseTheme: isDark ? dark : undefined,
+    baseTheme: undefined,
     variables: {
-      colorPrimary: "#4d9cff",
-      colorBackground: isDark ? "#161a1f" : "#ffffff",
-      colorInputBackground: isDark ? "#1e2329" : "#f5f7fa",
-      colorText: isDark ? "#e8eaf0" : "#0d1117",
-      colorTextSecondary: isDark ? "#8b92a5" : "#4a5673",
-      colorNeutral: isDark ? "#8b92a5" : "#4a5673",
-      borderRadius: "6px",
-      fontFamily: "'Inter', sans-serif",
+      colorPrimary: "#1a4fd6",
+      colorBackground: "#ffffff",
+      colorInputBackground: "#ffffff",
+      colorInputText: "#161b24",
+      colorText: "#161b24",
+      colorTextSecondary: "#3c4553",
+      colorNeutral: "#3c4553",
+      colorDanger: "#c0392b",
+      borderRadius: "0px",
+      fontFamily: "'Archivo', system-ui, sans-serif",
     },
     elements: {
-      card: "shadow-xl",
+      card: "shadow-none",
+      formButtonPrimary:
+        "bg-[#1a4fd6] hover:bg-[#1741b0] text-white rounded-none normal-case tracking-normal",
     },
   };
 }
@@ -92,53 +96,96 @@ function LoadingScreen() {
 }
 
 function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
-  const { resolvedTheme } = useTheme();
-  const clerkAppearance = getClerkAppearance(resolvedTheme !== "light");
+  const clerkAppearance = getClerkAppearance(false);
   return (
     <div
       style={{
         minHeight: "100vh",
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "var(--bg-base)",
-        gap: 24,
+        background: "#eceff4",
+        padding: 24,
+        fontFamily: "'Archivo', system-ui, sans-serif",
       }}
     >
       <HideClerkDevBadge />
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <img src={`${basePath}/logo.png`} alt="Blue Mantis" style={{ width: 32, height: 32, objectFit: "contain" }} />
-        <span style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 700, fontFamily: "var(--font-sans)" }}>
-          Blue Mantis
-        </span>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          background: "#ffffff",
+          border: "2px solid color-mix(in srgb, #161b24 38%, transparent)",
+          boxShadow: "0 1px 2px rgba(22,27,36,0.04), 0 8px 24px rgba(22,27,36,0.08)",
+        }}
+      >
+        {/* Brand bar */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "18px 28px",
+            borderBottom: "2px solid color-mix(in srgb, #161b24 38%, transparent)",
+          }}
+        >
+          <img
+            src={`${basePath}/bluemantis-mark.png`}
+            alt=""
+            style={{ height: 24, width: "auto", objectFit: "contain" }}
+          />
+          <span style={{ color: "#161b24", fontSize: 16, fontWeight: 800, letterSpacing: "-0.01em" }}>
+            Blue Mantis
+          </span>
+        </div>
+
+        <div style={{ padding: "28px 28px 32px" }}>
+          <h1 style={{ color: "#161b24", fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>
+            {mode === "sign-in" ? "Sign in" : "Create your account"}
+          </h1>
+          <p style={{ color: "#3c4553", fontSize: 14, lineHeight: 1.5, margin: "8px 0 22px" }}>
+            {mode === "sign-in"
+              ? "Access your AI delivery workspace."
+              : "Set up your Blue Mantis workspace."}
+          </p>
+
+          {mode === "sign-in" ? (
+            <SignIn
+              routing="path"
+              path={`${basePath}/sign-in`}
+              appearance={clerkAppearance}
+              signUpUrl={`${basePath}/sign-up`}
+              forceRedirectUrl={`${basePath}/dashboard`}
+            />
+          ) : (
+            <SignUp
+              routing="path"
+              path={`${basePath}/sign-up`}
+              appearance={clerkAppearance}
+              signInUrl={`${basePath}/sign-in`}
+              forceRedirectUrl={`${basePath}/dashboard`}
+            />
+          )}
+
+          {mode === "sign-in" && (
+            <p
+              style={{
+                color: "#74808f",
+                fontSize: 13,
+                marginTop: 20,
+                paddingTop: 18,
+                borderTop: "1px solid #d4dbe5",
+              }}
+            >
+              Don't have an account?{" "}
+              {/* Full-page navigation to the marketing site, which opens the Request Access modal. */}
+              <a href="/?request-access=1" style={{ color: "#1a4fd6", fontWeight: 700, textDecoration: "none" }}>
+                Request access →
+              </a>
+            </p>
+          )}
+        </div>
       </div>
-      {mode === "sign-in" ? (
-        <SignIn
-          routing="path"
-          path={`${basePath}/sign-in`}
-          appearance={clerkAppearance}
-          signUpUrl={`${basePath}/sign-up`}
-          forceRedirectUrl={`${basePath}/dashboard`}
-        />
-      ) : (
-        <SignUp
-          routing="path"
-          path={`${basePath}/sign-up`}
-          appearance={clerkAppearance}
-          signInUrl={`${basePath}/sign-in`}
-          forceRedirectUrl={`${basePath}/dashboard`}
-        />
-      )}
-      {mode === "sign-in" && (
-        <p style={{ color: "#8b92a5", fontSize: 14, fontFamily: "'Inter', sans-serif", marginTop: 4, textAlign: "center" }}>
-          Don't have account?{" "}
-          {/* Full-page navigation to the marketing site, which opens the Request Access modal. */}
-          <a href="/?request-access=1" style={{ color: "#4d9cff", fontWeight: 600, textDecoration: "none" }}>
-            Request Your Access
-          </a>
-        </p>
-      )}
     </div>
   );
 }
