@@ -87,7 +87,8 @@ export default function DemoSection() {
               flexShrink: 0,
             }}
           >
-            <span className="bm-mark" style={{ width: 18, height: 18, color: 'var(--color-accent)' }} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/bluemantis-mark-dark.png" alt="Blue Mantis" style={{ height: 18, width: 'auto' }} />
             <span style={{ fontSize: 13, fontWeight: 800 }}>Blue Mantis</span>
           </div>
 

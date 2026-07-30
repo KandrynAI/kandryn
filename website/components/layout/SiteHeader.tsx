@@ -30,7 +30,8 @@ export default function SiteHeader() {
         style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, whiteSpace: 'nowrap' }}
         aria-label="Blue Mantis home"
       >
-        <span className="bm-mark" style={{ width: 26, height: 26, color: 'var(--color-accent)' }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/bluemantis-mark-dark.png" alt="Blue Mantis" style={{ height: 26, width: 'auto' }} />
         <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--color-text)' }}>Blue Mantis</span>
       </Link>
 

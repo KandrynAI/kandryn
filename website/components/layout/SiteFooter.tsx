@@ -23,7 +23,8 @@ export default function SiteFooter() {
         {/* Brand column */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="bm-mark" style={{ width: 24, height: 24, color: 'var(--color-accent-400)' }} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/bluemantis-mark-light.png" alt="Blue Mantis" style={{ height: 24, width: 'auto' }} />
             <span style={{ fontSize: 16, fontWeight: 800, color: '#ffffff' }}>Blue Mantis</span>
           </div>
           <p style={{ fontSize: 13, lineHeight: 1.55, marginTop: 14, maxWidth: 320, color: 'var(--color-neutral-400)' }}>
