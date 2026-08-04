@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw } from "lucide-react";
 import { TestStage } from "@/components/tests/TestStage";
 import {
   fetchRun,
   commitRunSuggestion,
+  reRunItem,
   ApiError,
   type RunDetail,
   type RunStatus,
   type RunSuggestion,
 } from "@/services/api";
+
+const RERUNNABLE = new Set<RunStatus>(["failed", "canceled"]);
 
 const STATUS_LABEL: Record<RunStatus, string> = {
   scheduled: "scheduled",
@@ -28,11 +31,13 @@ export default function RunDetailPage() {
   const params = useParams<{ runId: string }>();
   const runId = Number(params.runId);
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const [data, setData] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [committingId, setCommittingId] = useState<number | null>(null);
+  const [rerunning, setRerunning] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
@@ -65,6 +70,23 @@ export default function RunDetailPage() {
       if (timer.current) clearTimeout(timer.current);
     };
   }, [data, load]);
+
+  const onReRun = async () => {
+    if (!data) return;
+    setRerunning(true);
+    try {
+      const nr = await reRunItem(data.run.workItemId);
+      toast({ title: "Run started" });
+      navigate(`/runs/${nr.id}`);
+    } catch (err) {
+      setRerunning(false);
+      toast({
+        title: "Could not start run",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const onCommit = async (s: RunSuggestion) => {
     setCommittingId(s.id);
@@ -132,6 +154,31 @@ export default function RunDetailPage() {
       </div>
 
       <div style={{ padding: 20, maxWidth: 760 }}>
+        {RERUNNABLE.has(run.status) && (
+          <button
+            onClick={onReRun}
+            disabled={rerunning}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: "var(--fs-base)",
+              fontWeight: 600,
+              padding: "6px 14px",
+              borderRadius: 3,
+              background: "var(--c-blue)",
+              color: "#fff",
+              border: "none",
+              cursor: rerunning ? "default" : "pointer",
+              opacity: rerunning ? 0.7 : 1,
+              marginBottom: 16,
+            }}
+            title="Re-run this item"
+          >
+            {rerunning ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+            {rerunning ? "Starting…" : "Re-run this item"}
+          </button>
+        )}
         {run.refinePrompt && (
           <div style={{ marginBottom: 16, fontSize: "var(--fs-base)", color: "var(--c-ink-2)" }}>
             <span style={{ fontWeight: 600, color: "var(--c-ink)" }}>Refinement: </span>{run.refinePrompt}

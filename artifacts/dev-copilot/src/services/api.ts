@@ -266,6 +266,17 @@ export function createRun(
   });
 }
 
+/**
+ * Re-run a work item inline. Thin wrapper over `createRun` (which posts to
+ * `/api/work-items/:id/runs`) that normalises the `RunDetail | Run` response
+ * down to the new run's id.
+ */
+export async function reRunItem(workItemId: number): Promise<{ id: number }> {
+  const res = await createRun(workItemId);
+  const id = "run" in res ? res.run.id : res.id;
+  return { id };
+}
+
 export function fetchRuns(params: { projectId?: number; status?: RunStatus } = {}): Promise<Run[]> {
   const q = new URLSearchParams();
   if (params.projectId != null) q.set('projectId', String(params.projectId));
