@@ -1,18 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link } from "wouter";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import {
-  ArrowLeft,
-  ExternalLink,
-  GitCommit,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Clock,
-} from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2 } from "lucide-react";
 import { TestStage } from "@/components/tests/TestStage";
 import {
   fetchRun,
@@ -23,13 +13,13 @@ import {
   type RunSuggestion,
 } from "@/services/api";
 
-const STATUS_META: Record<RunStatus, { label: string; className: string; icon: typeof Clock }> = {
-  scheduled: { label: "Scheduled", className: "text-amber-700 border-amber-600/40", icon: Clock },
-  queued: { label: "Queued", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
-  running: { label: "Running", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
-  succeeded: { label: "Succeeded", className: "text-emerald-700 border-emerald-600/40", icon: CheckCircle2 },
-  failed: { label: "Failed", className: "text-red-700 border-red-600/40", icon: XCircle },
-  canceled: { label: "Canceled", className: "text-muted-foreground border-border", icon: XCircle },
+const STATUS_LABEL: Record<RunStatus, string> = {
+  scheduled: "scheduled",
+  queued: "queued",
+  running: "running",
+  succeeded: "succeeded",
+  failed: "failed",
+  canceled: "canceled",
 };
 
 const IN_PROGRESS: RunStatus[] = ["scheduled", "queued", "running"];
@@ -80,10 +70,7 @@ export default function RunDetailPage() {
     setCommittingId(s.id);
     try {
       const res = await commitRunSuggestion(runId, s.id);
-      toast({
-        title: "Committed & PR opened",
-        description: res.prUrl,
-      });
+      toast({ title: "Committed & PR opened", description: res.prUrl });
       await load(true);
     } catch (err) {
       toast({
@@ -98,10 +85,9 @@ export default function RunDetailPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex max-w-4xl flex-col gap-4 px-5 py-6">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-40 w-full" />
-        <Skeleton className="h-40 w-full" />
+      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, maxWidth: 720 }}>
+        <div className="skeleton" style={{ height: 56 }} />
+        <div className="skeleton" style={{ height: 160 }} />
       </div>
     );
   }
@@ -109,7 +95,7 @@ export default function RunDetailPage() {
   if (error || !data) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <p className="text-sm text-muted-foreground">{error ?? "Run not found."}</p>
+        <p style={{ fontSize: "var(--fs-lg)", color: "var(--c-ink-3)" }}>{error ?? "Run not found."}</p>
         <Link href="/dashboard">
           <Button variant="outline" size="sm">Back to dashboard</Button>
         </Link>
@@ -118,123 +104,148 @@ export default function RunDetailPage() {
   }
 
   const { run, suggestions } = data;
-  const meta = STATUS_META[run.status];
-  const StatusIcon = meta.icon;
   const inProgress = IN_PROGRESS.includes(run.status);
+  const infoCells: [string, string][] = [
+    ["Status", STATUS_LABEL[run.status]],
+    ["Trigger", run.trigger === "scheduled" ? "Scheduled" : "Manual"],
+    ["Auto-commit", run.autoCommit ? "On" : "Off"],
+    ["When", run.scheduledAt ? new Date(run.scheduledAt).toLocaleString() : run.startedAt ? new Date(run.startedAt).toLocaleString() : "—"],
+  ];
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-5 px-5 py-6">
-      <div className="flex items-center justify-between">
-        <Link href={`/p/${run.projectId}/runs`}>
-          <Button variant="ghost" size="sm" className="-ml-2">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Runs
-          </Button>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {/* Back link */}
+      <div style={{ padding: "10px 20px 0" }}>
+        <Link href={`/p/${run.projectId}/runs`} className="bm-ghost" style={{ border: "none", padding: "2px 0", color: "var(--c-ink-3)" }}>
+          <ArrowLeft size={12} />Runs
         </Link>
-        <Badge variant="outline" className={meta.className}>
-          <StatusIcon className={`mr-1.5 h-3.5 w-3.5 ${inProgress && run.status !== "scheduled" ? "animate-spin" : ""}`} />
-          {meta.label}
-        </Badge>
       </div>
 
-      <div className="rounded-lg border border-border bg-card/40 p-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-mono">Run #{run.id}</span>
-          <span>·</span>
-          <span>{run.trigger === "scheduled" ? "Scheduled" : "Manual"}</span>
-          {run.autoCommit && (
-            <>
-              <span>·</span>
-              <span>auto-commit</span>
-            </>
-          )}
-          {run.scheduledAt && (
-            <>
-              <span>·</span>
-              <span>for {new Date(run.scheduledAt).toLocaleString()}</span>
-            </>
-          )}
-        </div>
+      {/* Info strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderTop: "1px solid var(--c-border)", borderBottom: "1px solid var(--c-border)", marginTop: 10 }}>
+        {infoCells.map(([label, value], i) => (
+          <div key={label} style={{ padding: "12px 20px", borderRight: i < 3 ? "1px solid var(--c-border)" : "none" }}>
+            <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{label}</div>
+            <div style={{ fontSize: "var(--fs-base)", color: "var(--c-ink)", fontWeight: 500, marginTop: 3 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ padding: 20, maxWidth: 760 }}>
         {run.refinePrompt && (
-          <p className="mt-3 rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Refinement: </span>
-            {run.refinePrompt}
-          </p>
+          <div style={{ marginBottom: 16, fontSize: "var(--fs-base)", color: "var(--c-ink-2)" }}>
+            <span style={{ fontWeight: 600, color: "var(--c-ink)" }}>Refinement: </span>{run.refinePrompt}
+          </div>
         )}
+
         {run.error && (
-          <p className="mt-3 rounded-md border border-red-600/30 bg-red-50 p-3 text-sm text-red-700">
+          <div style={{ marginBottom: 16, border: "1px solid var(--c-red)", background: "var(--c-red-bg)", color: "var(--c-red)", padding: "12px 14px", borderRadius: 4, fontSize: "var(--fs-base)" }}>
             {run.error}
-          </p>
+          </div>
         )}
+
         {run.prUrl && (
-          <a
-            href={run.prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-blue-700 hover:underline"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            View pull request
-          </a>
+          <div style={{ marginBottom: 16, border: "1px solid var(--c-blue)", background: "var(--c-blue-bg)", padding: "12px 14px", borderRadius: 4, animation: "bmrise 0.3s ease-out both" }}>
+            <div style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "var(--c-blue)" }}>Committed & pull request opened</div>
+            <a href={run.prUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--fs-sm)", color: "var(--c-ink-2)", marginTop: 4 }}>
+              <ExternalLink size={12} />{run.prUrl}
+            </a>
+          </div>
+        )}
+
+        {inProgress ? (
+          <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 16 }}>
+            {run.status === "scheduled" ? (
+              <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-3)" }}>This run is scheduled and hasn't started yet.</p>
+            ) : (
+              <>
+                {["claude", "openai"].map((agent) => (
+                  <div key={agent}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}>{agent}</span>
+                      <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>generating…</span>
+                    </div>
+                    <div style={{ height: 4, background: "var(--c-raised)", borderRadius: 2 }}>
+                      <div style={{ height: 4, background: "var(--c-blue)", borderRadius: 2, animation: "bmbar 4s ease-out forwards" }} />
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", animation: "bmblink 1.4s infinite", marginTop: 4 }}>
+                  Agents are working — suggestions will appear here.
+                </div>
+              </>
+            )}
+          </div>
+        ) : suggestions.length === 0 ? (
+          <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-4)" }}>No suggestions were produced for this run.</p>
+        ) : (
+          <div>
+            <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", marginBottom: 8 }}>
+              {suggestions.length} suggestion{suggestions.length === 1 ? "" : "s"}
+            </div>
+            {suggestions.map((s) => (
+              <SuggestionCard key={s.id} s={s} committing={committingId === s.id} disabled={committingId !== null} onCommit={() => onCommit(s)} />
+            ))}
+          </div>
         )}
       </div>
-
-      {inProgress ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-12 text-center">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            {run.status === "scheduled"
-              ? "This run is scheduled and hasn't started yet."
-              : "Agents are working — suggestions will appear here."}
-          </p>
-        </div>
-      ) : suggestions.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border py-12 text-center">
-          <p className="text-sm text-muted-foreground">No suggestions were produced for this run.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <h2 className="text-sm font-semibold text-muted-foreground">
-            {suggestions.length} suggestion{suggestions.length === 1 ? "" : "s"}
-          </h2>
-          {suggestions.map((s) => (
-            <div key={s.id} className="overflow-hidden rounded-lg border border-border bg-card/40">
-              <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold uppercase text-muted-foreground">{s.agent}</span>
-                  {s.recommendation === "Recommended" && (
-                    <Badge variant="outline" className="border-emerald-600/40 text-emerald-700">
-                      Recommended
-                    </Badge>
-                  )}
-                  {s.score != null && (
-                    <span className="text-xs text-muted-foreground">{s.score}/10</span>
-                  )}
-                </div>
-                <Button size="sm" onClick={() => onCommit(s)} disabled={committingId !== null}>
-                  {committingId === s.id ? (
-                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <GitCommit className="mr-2 h-3.5 w-3.5" />
-                  )}
-                  Commit
-                </Button>
-              </div>
-              <div className="px-4 py-3">
-                <p className="font-mono text-xs text-muted-foreground">{s.filePath}</p>
-                {s.explanation && <p className="mt-2 text-sm">{s.explanation}</p>}
-                <pre className="mt-3 max-h-96 overflow-auto rounded-md bg-background p-3 text-xs">
-                  <code>{s.code}</code>
-                </pre>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {run.status === "succeeded" && run.commitHash && (
-        <TestStage workItemId={run.workItemId} canPushToPlm={true} />
+        <div style={{ padding: "0 20px 24px", maxWidth: 760 }}>
+          <TestStage workItemId={run.workItemId} canPushToPlm={true} />
+        </div>
       )}
+    </div>
+  );
+}
+
+function SuggestionCard({
+  s,
+  committing,
+  disabled,
+  onCommit,
+}: {
+  s: RunSuggestion;
+  committing: boolean;
+  disabled: boolean;
+  onCommit: () => void;
+}) {
+  const scorePct = s.score != null ? Math.max(0, Math.min(100, (s.score / 10) * 100)) : null;
+  return (
+    <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-surface)", marginBottom: 12, animation: "bmrise 0.3s ease-out both" }}>
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--c-border)", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-base)", color: "var(--c-ink-2)", fontWeight: 500 }}>{s.agent}</span>
+        {s.recommendation === "Recommended" && (
+          <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, background: "var(--c-blue)", color: "#fff", padding: "2px 6px", borderRadius: 2, letterSpacing: "0.05em" }}>Recommended</span>
+        )}
+        {s.score != null && <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>score {s.score}/10</span>}
+        <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>{s.filePath}</span>
+        <button className="bm-primary" onClick={onCommit} disabled={disabled}>
+          {committing ? <Loader2 size={12} className="animate-spin" /> : <GitCommit size={12} />}Commit
+        </button>
+      </div>
+
+      {scorePct != null && (
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--c-border)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 28px", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>Score</span>
+            <span style={{ height: 3, background: "var(--c-raised)", display: "block" }}>
+              <span style={{ display: "block", height: 3, background: "var(--c-blue)", width: `${scorePct}%` }} />
+            </span>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontFamily: "var(--mono)", textAlign: "right" }}>{Math.round(scorePct)}%</span>
+          </div>
+        </div>
+      )}
+
+      {s.explanation && (
+        <div style={{ padding: "10px 14px", fontSize: "var(--fs-base)", color: "var(--c-ink-2)", lineHeight: 1.55, borderBottom: "1px solid var(--c-border)" }}>
+          {s.explanation}
+        </div>
+      )}
+
+      <pre style={{ margin: 0, padding: "12px 14px", fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", lineHeight: 1.6, overflow: "auto", background: "var(--c-raised)", color: "var(--c-ink-2)" }}>
+        <code>{s.code}</code>
+      </pre>
     </div>
   );
 }

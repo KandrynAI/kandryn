@@ -432,15 +432,21 @@ function ProgressBar({ configured, total }: { configured: number; total: number 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const GROUPS: { label: string; ids: string[] }[] = [
+  { label: "Trackers", ids: ["jira", "azuredevops"] },
+  { label: "Repositories", ids: ["github", "azurerepos"] },
+  { label: "AI Models", ids: ["anthropic", "openai", "gemini", "copilot"] },
+];
+
 export default function SettingsPage() {
   const { configMap, loading, error, refreshConfig } = useConfig();
 
   const configuredCount = INTEGRATIONS.filter((integ) => integ.fields.every((f) => configMap[f.key]?.set)).length;
+  const byId = new Map(INTEGRATIONS.map((i) => [i.id, i]));
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-6">
-      <h1 className="text-lg font-semibold tracking-tight text-foreground">Settings</h1>
-      <p className="mb-6 mt-0.5 text-xs text-muted-foreground">
+      <p className="mb-6 text-xs text-muted-foreground">
         Connect your tools. Credentials are stored securely in the database and loaded automatically on startup.
       </p>
 
@@ -455,11 +461,30 @@ export default function SettingsPage() {
       ) : (
         <>
           <ProgressBar configured={configuredCount} total={INTEGRATIONS.length} />
-          <div className="flex flex-col gap-2.5">
-            {INTEGRATIONS.map((integ) => (
-              <IntegrationCard key={integ.id} integration={integ} configMap={configMap} onSaved={refreshConfig} />
-            ))}
-          </div>
+          {GROUPS.map((group) => (
+            <div key={group.label} style={{ marginBottom: 24 }}>
+              <div
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--c-ink-4)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  fontWeight: 600,
+                  marginBottom: 10,
+                }}
+              >
+                {group.label}
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {group.ids
+                  .map((id) => byId.get(id))
+                  .filter((i): i is Integration => Boolean(i))
+                  .map((integ) => (
+                    <IntegrationCard key={integ.id} integration={integ} configMap={configMap} onSaved={refreshConfig} />
+                  ))}
+              </div>
+            </div>
+          ))}
         </>
       )}
     </div>

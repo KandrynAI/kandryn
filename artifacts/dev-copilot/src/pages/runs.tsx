@@ -121,15 +121,12 @@ export default function RunsPage() {
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-5 px-5 py-6">
       <div className="flex items-center justify-between">
-        <div>
-          <Link href={`/p/${projectId}/board`}>
-            <Button variant="ghost" size="sm" className="-ml-2">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              {project.name}
-            </Button>
-          </Link>
-          <h1 className="mt-1 text-lg font-semibold tracking-tight">Runs</h1>
-        </div>
+        <Link href={`/p/${projectId}/board`}>
+          <Button variant="ghost" size="sm" className="-ml-2">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {project.name}
+          </Button>
+        </Link>
       </div>
 
       {list.length === 0 ? (
