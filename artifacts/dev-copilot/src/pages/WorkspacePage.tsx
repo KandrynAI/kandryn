@@ -21,10 +21,10 @@ const TYPE_LABELS: Record<string, string> = { feature: 'Feature', story: 'Story'
 const PRIORITY_LABELS: Record<string, string> = { critical: 'P1', high: 'P2', medium: 'P3', low: 'P4' };
 
 const AGENT_META: Record<string, { label: string; color: string }> = {
-  claude:      { label: 'Claude',       color: 'var(--accent-purple)' },
-  openai:      { label: 'OpenAI',       color: 'var(--accent-green)'  },
-  antigravity: { label: 'Anti Gravity', color: 'var(--accent-amber)'  },
-  copilot:     { label: 'MS Copilot',   color: 'var(--accent-blue)'   },
+  claude:      { label: 'Raptia', color: '#1a4fd6' },
+  openai:      { label: 'Fovea',  color: '#3a6cf0' },
+  antigravity: { label: 'Raptia', color: '#1a4fd6' },
+  copilot:     { label: 'Fovea',  color: '#3a6cf0' },
 };
 
 function langFromPath(p: string): string {
@@ -393,7 +393,7 @@ export default function WorkspacePage() {
       <div style={{ display: 'flex', flexDirection: 'column', height: '60%', minHeight: 0 }}>
         {/* Tab bar */}
         <div style={{ display: 'flex', background: 'var(--bg-surface)', borderBottom: '1px solid var(--hairline)', padding: '0 16px', overflowX: 'auto', flexShrink: 0 }}>
-          {(isGenerating ? ['claude', 'openai', 'antigravity', 'copilot'] : sortedSuggestions.map((s) => s.agent)).map((agentKey, idx) => {
+          {(isGenerating ? ['claude', 'openai'] : sortedSuggestions.map((s) => s.agent)).map((agentKey, idx) => {
             const meta = AGENT_META[agentKey];
             const suggestion = sortedSuggestions.find((s) => s.agent === agentKey);
             const isActive = agentKey === activeAgent;

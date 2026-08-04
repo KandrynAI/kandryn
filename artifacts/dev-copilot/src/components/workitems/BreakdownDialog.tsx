@@ -119,7 +119,7 @@ export function BreakdownDialog({
             Break down “{parent?.title}”
           </DialogTitle>
           <DialogDescription>
-            Claude proposed these child items. Edit, deselect, and create the ones you want.
+            Raptia proposed these child items. Edit, deselect, and create the ones you want.
           </DialogDescription>
         </DialogHeader>
 

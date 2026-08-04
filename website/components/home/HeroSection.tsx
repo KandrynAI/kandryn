@@ -38,7 +38,7 @@ export default function HeroSection() {
           }}
         >
           Blue Mantis reads a work item the way an engineer does — hierarchy, acceptance criteria,
-          the repository it belongs to — then runs two models against it, ranks what they produce,
+          the repository it belongs to — then runs two agents against it, ranks what they produce,
           and opens the pull request. Run it now, or queue tonight&apos;s work and read the diffs in
           the morning.
         </p>

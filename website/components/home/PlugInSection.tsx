@@ -5,14 +5,14 @@ const PLUG_ROWS = [
   ['Azure DevOps', 'The same sync against Azure Boards, with Feature mapped onto epic.'],
   ['GitHub', 'Branch, commit and pull request, with stack detection on connect. The primary provider.'],
   ['Azure Repos', 'Commits and pull requests against an existing file tree.'],
-  ['Anthropic · OpenAI', 'Two models per run, ranked by the synthesis engine, under your own keys.'],
+  ['Raptia · Fovea', 'Two agents per run, ranked by Synthesis.'],
 ];
 
 const DONT = [
   ['We don’t hold shared credentials.', 'Every key is stored against your user record and tested the moment you save it. No pooled key, no environment fallback in production.'],
   ['We don’t merge anything.', 'Blue Mantis opens the pull request. Your review rules and your CI decide whether it lands.'],
   ['We don’t rewrite your board.', 'Items and test cases go upstream only when you ask. The single automatic write-back is a status change when an item closes.'],
-  ['We don’t guess your stack.', 'Stack detection reads the bound repository so the models write your framework, not generic pseudocode.'],
+  ['We don’t guess your stack.', 'Stack detection reads the bound repository so the agents write your framework, not generic pseudocode.'],
 ];
 
 export default function PlugInSection() {

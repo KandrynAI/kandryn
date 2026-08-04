@@ -23,7 +23,7 @@ const jetbrainsMono = JetBrains_Mono({
 const SITE_URL = `https://${SITE.domain}`;
 const TITLE = 'Blue Mantis — the backlog writes the code back to you';
 const DESC =
-  'An AI delivery assistant that reads a work item, runs two models against it, ranks the answers, and opens the pull request. Run it now, or queue tonight and read the diffs in the morning.';
+  'An AI delivery assistant that reads a work item, runs two agents against it, ranks the answers, and opens the pull request. Run it now, or queue tonight and read the diffs in the morning.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

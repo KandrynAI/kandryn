@@ -1,4 +1,4 @@
-import { DEMO_CODE_CLAUDE, DEMO_CODE_GPT, DEMO_TESTS } from '@/lib/site';
+import { DEMO_CODE_RAPTIA, DEMO_CODE_FOVEA, DEMO_TESTS } from '@/lib/site';
 
 type Phase = 'running' | 'done' | 'committed';
 
@@ -10,8 +10,8 @@ const INFO = [
 ];
 
 const SUGGESTIONS = [
-  { agent: 'claude-sonnet-4-5', recommended: true, score: 92, file: 'src/routes/refunds.ts', code: DEMO_CODE_CLAUDE, explanation: 'Adds an idempotency guard that reads the header, returns the stored refund on a replay, and writes the row and its ledger entries inside one transaction — matching the repository’s existing Drizzle helper.' },
-  { agent: 'gpt-4o', recommended: false, score: 71, file: 'src/lib/idempotency.ts', code: DEMO_CODE_GPT, explanation: 'A smaller in-memory memoiser. Correct for a single process, but it does not survive a restart or share state across the settlement workers.' },
+  { agent: 'Raptia', recommended: true, score: 92, file: 'src/routes/refunds.ts', code: DEMO_CODE_RAPTIA, explanation: 'Adds an idempotency guard that reads the header, returns the stored refund on a replay, and writes the row and its ledger entries inside one transaction — matching the repository’s existing Drizzle helper.' },
+  { agent: 'Fovea', recommended: false, score: 71, file: 'src/lib/idempotency.ts', code: DEMO_CODE_FOVEA, explanation: 'A smaller in-memory memoiser. Correct for a single process, but it does not survive a restart or share state across the settlement workers.' },
 ];
 
 function Badge({ phase }: { phase: Phase }) {
@@ -91,8 +91,8 @@ export default function RunView({
       {phase === 'running' && (
         <div style={{ paddingTop: 40, display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 720 }}>
           {[
-            ['claude-sonnet-4-5', 'writing the change'],
-            ['gpt-4o', 'drafting an alternative'],
+            ['Raptia', 'writing the change'],
+            ['Fovea', 'drafting an alternative'],
           ].map(([agent, step]) => (
             <div key={agent}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
@@ -105,7 +105,7 @@ export default function RunView({
             </div>
           ))}
           <div style={{ fontSize: 13, color: 'var(--color-neutral-700)', animation: 'bmblink 1.4s infinite' }}>
-            Fetching repository context · extracting keywords · ranking with the synthesis engine…
+            Fetching repository context · extracting keywords · ranking with Synthesis…
           </div>
         </div>
       )}

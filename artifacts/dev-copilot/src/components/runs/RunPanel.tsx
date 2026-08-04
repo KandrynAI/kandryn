@@ -148,7 +148,7 @@ export function RunPanel({
             <Label htmlFor="refine">Refinement (optional)</Label>
             <Textarea
               id="refine"
-              placeholder="Add extra guidance for the agents — e.g. 'use the existing pagination helper', 'target the v2 endpoint'…"
+              placeholder="Ask Raptia and Fovea to adjust the approach…"
               value={refinePrompt}
               onChange={(e) => setRefinePrompt(e.target.value)}
               rows={4}
