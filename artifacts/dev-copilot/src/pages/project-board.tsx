@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "wouter";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, ExternalLink, Plus, Play, History, Clock, Sparkles } from "lucide-react";
+import { RefreshCw, ExternalLink, Plus, Clock, GitFork } from "lucide-react";
 import { RunPanel } from "@/components/runs/RunPanel";
 import { NewItemDialog } from "@/components/workitems/NewItemDialog";
 import { BreakdownDialog } from "@/components/workitems/BreakdownDialog";
+import { useTopBarActions } from "@/context/TopBarContext";
 import {
   fetchProject,
   fetchProjectWorkItems,
@@ -36,6 +36,7 @@ export default function ProjectBoard() {
   const [syncing, setSyncing] = useState(false);
   const [epicFilter, setEpicFilter] = useState<number | null>(null);
   const [runPanelItem, setRunPanelItem] = useState<WorkItem | null>(null);
+  const [runPanelSchedule, setRunPanelSchedule] = useState(false);
   const [newItemOpen, setNewItemOpen] = useState(false);
   const [breakdownItem, setBreakdownItem] = useState<WorkItem | null>(null);
   // Work item ids that currently have a scheduled (not-yet-run) run.
@@ -89,15 +90,37 @@ export default function ProjectBoard() {
     }
   }, [projectId, toast]);
 
+  const openRun = (item: WorkItem, schedule: boolean) => {
+    setRunPanelSchedule(schedule);
+    setRunPanelItem(item);
+  };
+
+  // Board actions live in the TopBar (shell). Registered here so their
+  // handlers stay wired to this page's state.
+  useTopBarActions(
+    <>
+      <Link href={`/p/${projectId}/runs`} className="bm-ghost">Runs</Link>
+      <button className="bm-ghost" onClick={onSync} disabled={syncing}>
+        <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+        {syncing ? "Syncing…" : "Sync"}
+      </button>
+      <button className="bm-ghost" onClick={() => setNewItemOpen(true)}>
+        <Plus size={12} />New item
+      </button>
+    </>,
+    [projectId, syncing],
+  );
+
   if (loading) {
     return (
-      <div className="flex h-full flex-col gap-4 px-5 py-4">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid flex-1 grid-cols-4 gap-3">
-          {COLUMNS.map((c) => (
-            <Skeleton key={c.key} className="h-full w-full" />
-          ))}
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", height: "100%", borderTop: "1px solid var(--c-border)" }}>
+        {COLUMNS.map((c) => (
+          <div key={c.key} style={{ borderRight: "1px solid var(--c-border)", padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton" style={{ height: 68, border: "1px solid var(--c-border)" }} />
+            ))}
+          </div>
+        ))}
       </div>
     );
   }
@@ -105,7 +128,7 @@ export default function ProjectBoard() {
   if (error || !project) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <p className="text-sm text-muted-foreground">{error ?? "Project not found."}</p>
+        <p style={{ fontSize: "var(--fs-lg)", color: "var(--c-ink-3)" }}>{error ?? "Project not found."}</p>
         <Link href="/dashboard">
           <Button variant="outline" size="sm">Back to dashboard</Button>
         </Link>
@@ -130,78 +153,54 @@ export default function ProjectBoard() {
 
   return (
     <div style={{ display: "flex", height: "100%", flexDirection: "column" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, padding: "20px 32px", borderBottom: "2px solid var(--color-divider)" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>{project.name}</h1>
-          <p style={{ fontSize: 12, fontFamily: "var(--app-font-mono)", color: "var(--color-neutral-600)", marginTop: 4 }}>
-            {project.plmProvider === "jira" ? "jira" : "azure-devops"}
-            {project.plmProjectKey ? ` · ${project.plmProjectKey}` : ""} · {all.length} items
-            {project.lastSyncedAt ? ` · synced ${new Date(project.lastSyncedAt).toLocaleString()}` : ""}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-          <Link href={`/p/${projectId}/runs`} className="btn btn-ghost btn-sm"><History className="h-3.5 w-3.5" />Runs</Link>
-          <button className="btn btn-ghost btn-sm" onClick={onSync} disabled={syncing}>
-            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing…" : "Sync"}
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={() => setNewItemOpen(true)}><Plus className="h-3.5 w-3.5" />New item</button>
-        </div>
-      </div>
-
       {/* Epic filter */}
       {epics.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "12px 32px", borderBottom: "1px solid var(--color-neutral-300)" }}>
-          <button className={epicFilter == null ? "tag tag-accent" : "tag tag-outline"} style={{ cursor: "pointer", padding: "7px 12px", fontSize: 12, letterSpacing: "0.06em" }} onClick={() => setEpicFilter(null)}>
-            ALL EPICS
-          </button>
+        <div style={{ display: "flex", gap: 6, padding: "8px 20px", borderBottom: "1px solid var(--c-border)", overflowX: "auto" }}>
+          <FilterPill active={epicFilter == null} onClick={() => setEpicFilter(null)}>All</FilterPill>
           {epics.map((e) => (
-            <button key={e.id} className={epicFilter === e.id ? "tag tag-accent" : "tag tag-outline"} style={{ cursor: "pointer", padding: "7px 12px", fontSize: 12, letterSpacing: "0.06em" }} onClick={() => setEpicFilter(e.id)} title={e.title}>
+            <FilterPill key={e.id} active={epicFilter === e.id} onClick={() => setEpicFilter(e.id)} title={e.title}>
               {e.title.length > 28 ? `${e.title.slice(0, 28)}…` : e.title}
-            </button>
+            </FilterPill>
           ))}
         </div>
       )}
 
       {/* Board */}
-      {all.length === 0 ? (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 48, textAlign: "center" }}>
-          <p style={{ fontSize: 16, fontWeight: 700, color: "var(--color-neutral-600)" }}>No items yet</p>
-          <p style={{ fontSize: 13, color: "var(--color-neutral-500)" }}>
-            Click Sync to pull your {project.plmProvider === "jira" ? "Jira" : "Azure DevOps"} board.
-          </p>
-          <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={onSync} disabled={syncing}>Sync now</button>
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderTop: "2px solid var(--color-divider)", flex: 1, overflowY: "auto" }}>
-          {COLUMNS.map((col) => {
-            const colItems = visible.filter((it) => col.statuses.includes(it.status));
-            return (
-              <div key={col.key} style={{ borderRight: "2px solid var(--color-divider)", padding: "14px 16px", minHeight: "calc(100vh - 260px)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase" }}>{col.label}</span>
-                  <span style={{ fontSize: 12, color: "var(--color-neutral-600)" }}>{colItems.length}</span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {colItems.map((it) => (
-                    <WorkItemCard
-                      key={it.id}
-                      item={it}
-                      scheduled={scheduledItems.has(it.id)}
-                      onRun={() => setRunPanelItem(it)}
-                      onBreakdown={() => setBreakdownItem(it)}
-                    />
-                  ))}
-                </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", flex: 1, overflow: "hidden", borderTop: "1px solid var(--c-border)" }}>
+        {COLUMNS.map((col, colIdx) => {
+          const colItems = visible.filter((it) => col.statuses.includes(it.status));
+          return (
+            <div key={col.key} style={{ borderRight: "1px solid var(--c-border)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--c-border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--c-surface)", flexShrink: 0 }}>
+                <span style={{ fontSize: "var(--fs-xs)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)" }}>{col.label}</span>
+                <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontFamily: "var(--mono)" }}>{colItems.length}</span>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <div style={{ padding: 8, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                {colIdx === 0 && all.length === 0 && (
+                  <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-4)", padding: "8px 2px" }}>
+                    No items. Click Sync to load your board.
+                  </p>
+                )}
+                {colItems.map((it) => (
+                  <WorkItemCard
+                    key={it.id}
+                    item={it}
+                    scheduled={scheduledItems.has(it.id)}
+                    onRun={() => openRun(it, false)}
+                    onSchedule={() => openRun(it, true)}
+                    onBreakdown={() => setBreakdownItem(it)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       <RunPanel
         item={runPanelItem}
         open={runPanelItem !== null}
+        scheduleDefault={runPanelSchedule}
         onOpenChange={(o) => {
           if (!o) setRunPanelItem(null);
         }}
@@ -229,51 +228,101 @@ export default function ProjectBoard() {
   );
 }
 
+function FilterPill({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        fontSize: "var(--fs-sm)",
+        fontWeight: 500,
+        padding: "3px 10px",
+        border: `1px solid ${active ? "var(--c-blue)" : "var(--c-border)"}`,
+        borderRadius: 3,
+        background: active ? "var(--c-blue)" : "transparent",
+        color: active ? "#fff" : "var(--c-ink-3)",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function WorkItemCard({
   item,
   scheduled,
   onRun,
+  onSchedule,
   onBreakdown,
 }: {
   item: WorkItem;
   scheduled: boolean;
   onRun: () => void;
+  onSchedule: () => void;
   onBreakdown: () => void;
 }) {
   // Epics group their children — they aren't run directly, but can be broken down.
   const runnable = item.itemType !== "epic";
   const breakable = item.itemType === "epic" || item.itemType === "story";
+  const typeClass = `bm-type bm-type-${item.itemType}`;
+
   return (
-    <div className="bm-card group" style={{ background: "var(--color-neutral-100)", border: "1px solid var(--color-neutral-300)", boxShadow: "var(--shadow-sm)", padding: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-        <span className="tag tag-neutral">{item.itemType.replace("_", " ").toUpperCase()}</span>
+    <div className="bm-board-card">
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+        <span className={typeClass}>{item.itemType.replace("_", " ")}</span>
         {item.externalId && (
-          <span style={{ fontSize: 11, fontFamily: "var(--app-font-mono)", color: "var(--color-neutral-600)" }}>{item.externalId}</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>{item.externalId}</span>
         )}
       </div>
-      <p style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35, textWrap: "pretty" }}>{item.title}</p>
-      <div style={{ fontSize: 11, color: "var(--color-neutral-600)", marginTop: 6 }}>{item.plmStatus ?? item.status}</div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+
+      <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink)", lineHeight: 1.35, textWrap: "pretty", marginBottom: 6 }}>{item.title}</p>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           {item.plmUrl && (
-            <a href={item.plmUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-accent-700)", display: "inline-flex" }} title="Open in PLM">
-              <ExternalLink className="h-3 w-3" />
+            <a href={item.plmUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--c-ink-4)", display: "inline-flex" }} title="Open in PLM">
+              <ExternalLink size={12} />
             </a>
           )}
-          {scheduled && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--color-accent-700)" }}>
-              <Clock className="h-2.5 w-2.5" />21:00
-            </span>
-          )}
+          <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {item.plmStatus ?? item.status}
+          </span>
         </div>
-        <div className="bm-card-actions" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {breakable && (
-            <button className="btn btn-ghost btn-xs" onClick={onBreakdown} title="AI breakdown"><Sparkles className="h-3 w-3" />Break down</button>
-          )}
-          {runnable && (
-            <button className="bm-run-btn" onClick={onRun} title="Run agents"><Play className="h-3 w-3" style={{ marginRight: 4 }} />RUN</button>
-          )}
-        </div>
+
+        {scheduled ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--fs-xs)", fontWeight: 600, color: "var(--c-amber)", flexShrink: 0 }}>
+            <Clock size={10} />Scheduled
+          </span>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+            {breakable && (
+              <button className="bm-icon-btn" onClick={onBreakdown} title="Break down">
+                <GitFork size={12} />
+              </button>
+            )}
+            {runnable && (
+              <>
+                <button className="bm-icon-btn" onClick={onSchedule} title="Schedule run">
+                  <Clock size={12} />
+                </button>
+                <button className="bm-run" onClick={onRun} title="Run agents">Run</button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
