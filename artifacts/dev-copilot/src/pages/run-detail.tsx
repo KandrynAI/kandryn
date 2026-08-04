@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw } from "lucide-react";
 import { TestStage } from "@/components/tests/TestStage";
+import { agentDisplay } from "@/lib/agents";
 import {
   fetchRun,
   commitRunSuggestion,
@@ -209,7 +210,7 @@ export default function RunDetailPage() {
                 {["claude", "openai"].map((agent) => (
                   <div key={agent}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}>{agent}</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}>{agentDisplay(agent).name}</span>
                       <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>generating…</span>
                     </div>
                     <div style={{ height: 4, background: "var(--c-raised)", borderRadius: 2 }}>
@@ -218,7 +219,7 @@ export default function RunDetailPage() {
                   </div>
                 ))}
                 <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", animation: "bmblink 1.4s infinite", marginTop: 4 }}>
-                  Agents are working — suggestions will appear here.
+                  Running Raptia and Fovea in parallel…
                 </div>
               </>
             )}
@@ -261,7 +262,7 @@ function SuggestionCard({
   return (
     <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-surface)", marginBottom: 12, animation: "bmrise 0.3s ease-out both" }}>
       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--c-border)", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-base)", color: "var(--c-ink-2)", fontWeight: 500 }}>{s.agent}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-base)", color: agentDisplay(s.agent).colour, fontWeight: 600 }}>{agentDisplay(s.agent).name}</span>
         {s.recommendation === "Recommended" && (
           <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, background: "var(--c-blue)", color: "#fff", padding: "2px 6px", borderRadius: 2, letterSpacing: "0.05em" }}>Recommended</span>
         )}

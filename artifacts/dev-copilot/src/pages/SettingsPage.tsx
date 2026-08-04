@@ -28,12 +28,12 @@ interface Integration {
 const INTEGRATIONS: Integration[] = [
   {
     id: "anthropic",
-    title: "Anthropic (Claude)",
-    subtitle: "AI code suggestions via Claude Sonnet",
+    title: "Agent A credentials",
+    subtitle: "Used by Raptia",
     icon: <AnthropicIcon />,
     testKey: "anthropic",
     fields: [
-      { key: "ANTHROPIC_API_KEY", label: "API Key", placeholder: "sk-ant-api03-…", hint: "Starts with sk-ant-" },
+      { key: "ANTHROPIC_API_KEY", label: "API key", placeholder: "sk-ant-api03-…", hint: "Starts with sk-ant-" },
     ],
     steps: [
       { label: "Go to console.anthropic.com and sign in" },
@@ -43,12 +43,12 @@ const INTEGRATIONS: Integration[] = [
   },
   {
     id: "openai",
-    title: "OpenAI (GPT-4o)",
-    subtitle: "Alternative AI suggestions via GPT-4o",
+    title: "Agent B credentials",
+    subtitle: "Used by Fovea",
     icon: <OpenAIIcon />,
     testKey: "openai",
     fields: [
-      { key: "OPENAI_API_KEY", label: "API Key", placeholder: "sk-proj-…", hint: "Starts with sk-" },
+      { key: "OPENAI_API_KEY", label: "API key", placeholder: "sk-proj-…", hint: "Starts with sk-" },
     ],
     steps: [
       { label: "Go to platform.openai.com and sign in" },
@@ -159,10 +159,10 @@ const INTEGRATIONS: Integration[] = [
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 function AnthropicIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#D4845A" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">A</text></svg>);
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1a4fd6" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">A</text></svg>);
 }
 function OpenAIIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#10A37F" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="9" fontWeight="700">GPT</text></svg>);
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#3a6cf0" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">B</text></svg>);
 }
 function GitHubIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#24292E" /><path d="M12 3.5C7.3 3.5 3.5 7.3 3.5 12c0 3.75 2.44 6.94 5.82 8.07.43.08.59-.18.59-.41V18.3c-2.37.51-2.87-1.14-2.87-1.14-.39-1-.95-1.26-.95-1.26-.77-.53.06-.52.06-.52.85.06 1.3.88 1.3.88.76 1.3 1.99.92 2.47.7.08-.55.3-.92.54-1.13-1.89-.21-3.88-.95-3.88-4.21 0-.93.33-1.69.88-2.29-.09-.21-.38-1.08.08-2.25 0 0 .72-.23 2.35.88a8.2 8.2 0 0 1 2.15-.29c.73 0 1.46.1 2.15.29 1.63-1.11 2.35-.88 2.35-.88.46 1.17.17 2.04.08 2.25.55.6.87 1.36.87 2.29 0 3.27-1.99 3.99-3.89 4.2.31.27.58.8.58 1.61v2.38c0 .23.15.5.59.41A8.51 8.51 0 0 0 20.5 12C20.5 7.3 16.7 3.5 12 3.5Z" fill="white" /></svg>);
@@ -435,7 +435,7 @@ function ProgressBar({ configured, total }: { configured: number; total: number 
 const GROUPS: { label: string; ids: string[] }[] = [
   { label: "Trackers", ids: ["jira", "azuredevops"] },
   { label: "Repositories", ids: ["github", "azurerepos"] },
-  { label: "AI Models", ids: ["anthropic", "openai", "gemini", "copilot"] },
+  { label: "Agents", ids: ["anthropic", "openai", "gemini", "copilot"] },
 ];
 
 export default function SettingsPage() {

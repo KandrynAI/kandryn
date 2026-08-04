@@ -61,7 +61,7 @@ export default function ResourcesView() {
         <div className="pad-x" style={{ padding: '48px 64px', borderRight: '2px solid var(--color-divider)', background: 'var(--color-accent-100)' }}>
           <div className="kicker">Featured guide</div>
           <h2 style={{ fontSize: 40, fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.02, marginTop: 14 }}>
-            Writing acceptance criteria a model can actually implement
+            Writing acceptance criteria an agent can actually implement
           </h2>
           <p style={{ fontSize: 16, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 18, maxWidth: 560 }}>
             The difference between a ticket a run nails on the first pass and one it flails on is almost always the
