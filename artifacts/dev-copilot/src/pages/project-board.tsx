@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, ExternalLink, Plus, Clock, GitFork } from "lucide-react";
@@ -24,10 +24,21 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: "done", label: "Done", statuses: ["done"] },
 ];
 
+const COL_PARAM_TO_KEY: Record<string, string> = {
+  open: "open",
+  progress: "in-progress",
+  review: "review",
+  done: "done",
+};
+
 export default function ProjectBoard() {
   const params = useParams<{ projectId: string }>();
   const projectId = Number(params.projectId);
   const { toast } = useToast();
+  const search = useSearch();
+  // ContextPanel deep-links here with ?col=open|progress|review|done to
+  // highlight a column.
+  const highlightKey = COL_PARAM_TO_KEY[new URLSearchParams(search).get("col") ?? ""] ?? null;
 
   const [project, setProject] = useState<Project | null>(null);
   const [items, setItems] = useState<WorkItem[] | null>(null);
@@ -169,11 +180,12 @@ export default function ProjectBoard() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", flex: 1, overflow: "hidden", borderTop: "1px solid var(--c-border)" }}>
         {COLUMNS.map((col, colIdx) => {
           const colItems = visible.filter((it) => col.statuses.includes(it.status));
+          const highlighted = col.key === highlightKey;
           return (
-            <div key={col.key} style={{ borderRight: "1px solid var(--c-border)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--c-border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--c-surface)", flexShrink: 0 }}>
-                <span style={{ fontSize: "var(--fs-xs)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)" }}>{col.label}</span>
-                <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontFamily: "var(--mono)" }}>{colItems.length}</span>
+            <div key={col.key} style={{ borderRight: "1px solid var(--c-border)", display: "flex", flexDirection: "column", overflow: "hidden", background: highlighted ? "var(--c-blue-bg)" : undefined }}>
+              <div style={{ padding: "8px 12px", borderBottom: highlighted ? "1px solid var(--c-blue)" : "1px solid var(--c-border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: highlighted ? "var(--c-blue-bg)" : "var(--c-surface)", flexShrink: 0 }}>
+                <span style={{ fontSize: "var(--fs-xs)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: highlighted ? "var(--c-blue)" : "var(--c-ink-4)" }}>{col.label}</span>
+                <span style={{ fontSize: "var(--fs-xs)", color: highlighted ? "var(--c-blue)" : "var(--c-ink-4)", fontFamily: "var(--mono)" }}>{colItems.length}</span>
               </div>
               <div style={{ padding: 8, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 {colIdx === 0 && all.length === 0 && (
