@@ -1,7 +1,24 @@
-import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { runsTable } from "./runs";
+
+/**
+ * Persisted rich test case (mirrors shared/types/testCase.ts, minus the
+ * client-only `selected` flag). Defined locally because lib/db is a composite
+ * project rooted at src/ and cannot import from ../../../../shared.
+ */
+export interface PersistedTestCase {
+  id: string;
+  title: string;
+  priority: "high" | "medium" | "low";
+  type: "happy-path" | "edge-case" | "failure";
+  given: string;
+  when: string;
+  then: string;
+  assertion: string;
+  tags: string[];
+}
 
 /**
  * A persisted agent suggestion produced by a run. Mirrors the CodeSuggestion
@@ -21,6 +38,7 @@ export const suggestionsTable = pgTable(
     language: text("language").notNull(),
     score: integer("score"),
     recommendation: text("recommendation"),
+    testCases: jsonb("test_cases").$type<PersistedTestCase[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("suggestions_run_id_idx").on(t.runId)],

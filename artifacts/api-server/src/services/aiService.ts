@@ -356,10 +356,15 @@ export async function generateBreakdown(
 // ---------------------------------------------------------------------------
 
 const TestCaseSchema = z.object({
+  id: z.string().default(""),
   title: z.string().min(1).max(200),
+  priority: z.enum(["high", "medium", "low"]).default("medium"),
+  type: z.enum(["happy-path", "edge-case", "failure"]).default("happy-path"),
   given: z.string().default(""),
   when: z.string().default(""),
   then: z.string().default(""),
+  assertion: z.string().default(""),
+  tags: z.array(z.string()).default([]),
 });
 const TestScriptSchema = z.object({
   filePath: z.string().min(1).max(300),
@@ -367,7 +372,7 @@ const TestScriptSchema = z.object({
   framework: z.string().default(""),
 });
 const TestGenSchema = z.object({
-  testCases: z.array(TestCaseSchema).min(1).max(20),
+  testCases: z.array(TestCaseSchema).min(1).max(30),
   testScript: TestScriptSchema,
 });
 export type GeneratedTestCase = z.infer<typeof TestCaseSchema>;
@@ -385,10 +390,11 @@ export interface TestGenInput {
 function buildTestPrompt(input: TestGenInput, stack: StackProfile | null, strict: boolean): string {
   const fw = input.framework || stack?.testFramework || "the project's test framework";
   const lang = stack?.language ?? "the implementation language";
-  return `You are a senior engineer writing tests for a change that has just been implemented.
+  return `You are a senior QA engineer writing test cases for a code change.
 
-## Acceptance criteria
-${input.acceptanceCriteria.length ? input.acceptanceCriteria.map((c) => `- ${c}`).join("\n") : "(none provided)"}
+Work item: ${input.title}
+Acceptance criteria:
+${input.acceptanceCriteria.length ? input.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n") : "(none provided)"}
 
 ## Implemented change
 ${input.suggestionExplanation}
@@ -398,13 +404,40 @@ ${input.suggestionCode.slice(0, 6000)}
 \`\`\`
 
 ## Task
-1. Write Given/When/Then test cases covering the acceptance criteria and the implemented change.
-2. Write one runnable automated test file using ${fw} in ${lang}, matching the project's conventions. Choose a sensible filePath next to the code under test.
+Generate DETAILED test cases. For each acceptance criterion, write at minimum one
+happy-path case and one edge/failure case. Then write one runnable automated test
+file using ${fw} in ${lang}, matching the project's conventions, at a sensible
+filePath next to the code under test.
+
+Rules:
+- Each test case must be specific and executable — not generic.
+- Reference actual values from the code (function names, error types, status codes,
+  field names) — not abstract descriptions.
+- Happy path: normal successful execution.
+- Edge cases: boundary values, empty inputs, concurrent calls.
+- Failure cases: invalid input, missing data, downstream errors.
+- For each case, identify the exact assertion (what to assert and why).
+- id runs "tc-001", "tc-002", … in order.
+- priority is "high" | "medium" | "low"; type is "happy-path" | "edge-case" | "failure".
+- tags reference which acceptance criterion a case covers, e.g. "acceptance-criteria-2",
+  plus "regression" where relevant.
 
 ## Output format
 Respond with ONLY a JSON object, no prose, no markdown fences:
 {
-  "testCases": [ { "title": "...", "given": "...", "when": "...", "then": "..." } ],
+  "testCases": [
+    {
+      "id": "tc-001",
+      "title": "Short descriptive title (max 8 words)",
+      "priority": "high",
+      "type": "happy-path",
+      "given": "The specific precondition — name real setup steps",
+      "when": "The exact action — name the function, endpoint, or event",
+      "then": "The precise assertion — what value, status, or state to check",
+      "assertion": "The exact code assertion, e.g. expect(result.status).toBe(201)",
+      "tags": ["acceptance-criteria-1", "regression"]
+    }
+  ],
   "testScript": { "filePath": "...", "code": "...", "framework": "${fw}" }
 }
 ${strict ? "\nIMPORTANT: Your previous response was not valid JSON matching this schema. Return ONLY the raw JSON object with the exact keys shown." : ""}`;
@@ -431,7 +464,14 @@ export async function generateTests(
     const block = message.content[0];
     if (block.type !== "text") throw new AIFormatError("Model returned a non-text block.");
     try {
-      return TestGenSchema.parse(extractJson(block.text));
+      const parsed = TestGenSchema.parse(extractJson(block.text));
+      // Guarantee stable ids even if the model omitted or duplicated them.
+      const seen = new Set<string>();
+      parsed.testCases.forEach((tc, i) => {
+        if (!tc.id || seen.has(tc.id)) tc.id = `tc-${String(i + 1).padStart(3, "0")}`;
+        seen.add(tc.id);
+      });
+      return parsed;
     } catch (err) {
       logger.warn({ attempt, err }, "Test generation parse failed");
       if (attempt === 1) throw new AIFormatError("The generated tests could not be parsed. Please try again.");

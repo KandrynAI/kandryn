@@ -209,15 +209,25 @@ export interface PlmTestCaseInput {
   given?: string;
   when?: string;
   then?: string;
+  priority?: "high" | "medium" | "low";
+  type?: "happy-path" | "edge-case" | "failure";
+  assertion?: string;
+  tags?: string[];
   /** External id/key of the story/work item this case tests. */
   parentExternalId: string;
 }
 
 function testCaseBody(input: PlmTestCaseInput): string {
   const parts: string[] = [];
+  const meta: string[] = [];
+  if (input.priority) meta.push(`Priority: ${input.priority}`);
+  if (input.type) meta.push(`Type: ${input.type}`);
+  if (meta.length) parts.push(meta.join(" · "));
   if (input.given?.trim()) parts.push(`Given: ${input.given.trim()}`);
   if (input.when?.trim()) parts.push(`When: ${input.when.trim()}`);
   if (input.then?.trim()) parts.push(`Then: ${input.then.trim()}`);
+  if (input.assertion?.trim()) parts.push(`Assert: ${input.assertion.trim()}`);
+  if (input.tags?.length) parts.push(`Tags: ${input.tags.join(", ")}`);
   return parts.join("\n");
 }
 
@@ -232,7 +242,7 @@ async function createJiraTestCase(
     project: { key: projectKey },
     summary: input.title.slice(0, 254),
     issuetype: { name: "Task" }, // Xray/Zephyr out of scope for v1 — labeled Task.
-    labels: ["test-case"],
+    labels: ["test-case", ...(input.tags ?? []).map((t) => t.replace(/\s+/g, "-")).slice(0, 8)],
   };
   if (body) fields.description = textToAdf(body);
 
