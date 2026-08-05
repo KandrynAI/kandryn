@@ -1,6 +1,8 @@
+# NOTE: graphify is installed as a CLI via `uv tool install graphifyy` in the
+# Dockerfile and invoked as a subprocess (`graphify extract`); it is NOT a
+# Python library import here, so it does not belong in this pip requirements set.
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
-graphifyy==0.10.0
 gitpython==3.1.43
 httpx==0.27.0
 python-multipart==0.0.9

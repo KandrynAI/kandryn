@@ -5,9 +5,9 @@ WORKDIR /app
 # Install system deps for gitpython
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# Install uv for graphify
+# Install uv, then the graphify CLI (invoked as a subprocess, not imported).
 RUN pip install uv
-RUN uv tool install graphifyy
+RUN uv tool install graphifyy==0.9.33
 
 # Add graphify to PATH
 ENV PATH="/root/.local/bin:$PATH"
