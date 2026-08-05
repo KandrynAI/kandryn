@@ -107,3 +107,46 @@ export function isGraphUsable(graphBuiltAt: Date | string | null | undefined, ma
   const ageMs = Date.now() - new Date(graphBuiltAt).getTime();
   return ageMs < maxAgeHours * 3600 * 1000;
 }
+
+/** Whether the Graphify microservice is configured for this deployment. */
+export function isGraphifyConfigured(): boolean {
+  return Boolean(process.env.GRAPHIFY_SERVICE_URL);
+}
+
+interface TriggerIndexArgs {
+  repoUrl: string;
+  githubToken: string;
+  repoId: number;
+  /** Optional pino-style logger for a warning if the trigger fetch rejects. */
+  log?: { warn: (obj: unknown, msg: string) => void };
+}
+
+/**
+ * Fire-and-forget request that asks the Graphify microservice to (re)index a
+ * repository. Used on connect (Phase 2), on manual Rebuild, and after a commit
+ * lands (Phase 3 — the graph is now stale). Returns whether a request was
+ * dispatched (false when the microservice isn't configured). Never throws and
+ * never blocks the caller: the microservice replies 202 and does the clone +
+ * extract in the background, POSTing the result back to /api/internal/graphify-callback.
+ */
+export function triggerRepoIndex({ repoUrl, githubToken, repoId, log }: TriggerIndexArgs): boolean {
+  const graphifyUrl = process.env.GRAPHIFY_SERVICE_URL;
+  if (!graphifyUrl) return false;
+
+  const callbackUrl = `${process.env.APP_BASE_URL ?? "https://getbluemantis.com"}/api/internal/graphify-callback`;
+  void fetch(`${graphifyUrl}/index`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-service-secret": process.env.GRAPHIFY_SERVICE_SECRET ?? "",
+    },
+    body: JSON.stringify({
+      repo_url: repoUrl,
+      github_token: githubToken,
+      repo_id: repoId,
+      callback_url: callbackUrl,
+    }),
+  }).catch((err) => log?.warn({ err }, "Graphify index trigger failed"));
+
+  return true;
+}

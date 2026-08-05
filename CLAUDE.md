@@ -93,7 +93,7 @@ Standalone **Clerk development instance** (`pk_test_…`), not Replit-managed.
 
 PostgreSQL on **Supabase**. Schema in `lib/db/src/schema/`. **All PKs are `serial` integers** (a uuid FK can't reference a serial PK). **Every query scoped to `userId`** — no global data.
 
-`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`.
+`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`. Later additive migrations to apply in Supabase before deploy: `0007_test_cases.sql`, `0008_score_breakdown.sql`, `0009_veria_review.sql`, `0010_graphify_graph.sql`, `0011_run_graph_context.sql`.
 
 | Table | Key columns |
 |---|---|
@@ -128,7 +128,7 @@ The end-to-end user journey, mapped to the code paths:
 
 Public (mounted **before** `requireAuth`): `POST /api/waitlist`, `POST /api/contact`, and the cron dispatcher. Everything else requires `requireAuth`.
 
-- **Repositories:** `GET/POST /api/repositories`, `GET/PATCH/DELETE /api/repositories/:id`, `GET /api/repositories/:repoId/stack`.
+- **Repositories:** `GET/POST /api/repositories`, `GET/PATCH/DELETE /api/repositories/:id`, `GET /api/repositories/:repoId/stack`. **Graphify:** `GET /api/repositories/:repoId/graph` (status: `built`/`builtAt`/`nodeCount`/`stale`), `POST /api/repositories/:repoId/graph` (upload graph.json), `POST /api/repositories/:repoId/graph/rebuild` (re-index via the microservice; `202`, or `503` when unconfigured).
 - **Projects:** `GET /api/projects` (with counts), `POST /api/projects`, `GET/PATCH/DELETE /api/projects/:id`, `POST /api/projects/backfill`, `GET /api/plm/:provider/projects`, `POST /api/projects/:id/sync`, `GET /api/projects/:id/work-items`, `POST /api/projects/:id/work-items` (`pushToPlm`).
 - **Work items:** `PATCH /api/work-items/:id` (local edit; `done` propagates via `closeTask`), `POST /api/work-items/:id/breakdown` (proposals, not saved).
 - **Runs:** `POST /api/work-items/:id/runs` (inline → `{run,suggestions}`; `scheduledAt` future ≤30d → `202`; ≤20 pending/user), `GET /api/runs?projectId=&status=`, `GET /api/runs/:id`, `POST /api/runs/:id/cancel`, `POST /api/runs/:id/commit`.
@@ -169,6 +169,7 @@ artifacts/api-server/src/
 - **Sync engine** (`syncService.syncProject`): project-scoped fetch, upsert on `(project_id, external_id)`, two-pass parent resolution, ADO `Feature`→`epic`, cancels pending runs on close. Jira uses the **enhanced** `GET /rest/api/3/search/jql` (classic `/search` is **410 Gone**), paginating by `nextPageToken`/`isLast`; domains normalized via `normalizeJiraDomain` (users enter `acme.atlassian.net` without a scheme).
 - **AI shapes:** `AIOrchestrator.generateSuggestions` runs both models in parallel; `SynthesisEngine` scores/ranks, flags top as `Recommended`. `generateBreakdown`/`generateTests` are zod-validated with one retry → else `AIFormatError` → 422. Mock agents (`antigravity`,`copilot`) gated behind `ENABLE_DEMO_AGENTS=true`.
 - **Commit/PR:** branch is deterministic `task/<id>`. `GitService.commitChanges(baseSha?)` defaults to the default-branch HEAD; the **test-script commit** passes the branch's own HEAD (`branchHeadSha`) so it stacks on the existing PR instead of overwriting the implementation commit.
+- **Graphify** (`graphifyService.ts`, `graphify-service/` microservice): a per-repo knowledge graph (`repositories.graph_json`/`graph_built_at`/`graph_node_count`) gives runs precise, low-token file context. `runService` picks the graph path when `isGraphUsable(graphBuiltAt)` (fresh <24h) → `git.fetchFileContextWithGraph` returns `{context, usedGraph}`; `usedGraph` persists to `runs.used_graph_context` (surfaced as a "Graph context" badge on run detail). **Phase 2:** the Python microservice (`/index`) clones + runs `graphify extract` and POSTs the graph to `POST /api/internal/graphify-callback` (guarded by `GRAPHIFY_SERVICE_SECRET`); triggered fire-and-forget on repo connect. **Phase 3:** `triggerRepoIndex()` (shared helper) also re-indexes after every commit (auto + manual) and on the **Rebuild graph** button (`POST /repositories/:repoId/graph/rebuild`, `503` when `GRAPHIFY_SERVICE_URL` unset). Re-indexing is a full re-extract via `/index` (a partial sparse-checkout would drop cross-file edges); developers without the microservice can still upload a `graph.json` by hand. Graph work is a **no-op unless `GRAPHIFY_SERVICE_URL` + `GRAPHIFY_SERVICE_SECRET` are set** — the keyword fallback (`fetchFileContext`) always runs otherwise.
 
 ### Error-handling conventions
 - Express 5 auto-propagates async throws → global handler in `app.ts` returns `{ error }`. Use try/catch only to return a non-500.
