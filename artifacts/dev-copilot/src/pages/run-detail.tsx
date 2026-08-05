@@ -11,6 +11,7 @@ import {
   commitRunSuggestion,
   reRunItem,
   runReview,
+  pushWorkItemToPlm,
   ApiError,
   type RunDetail,
   type RunStatus,
@@ -118,6 +119,24 @@ export default function RunDetailPage() {
       setRerunning(false);
       toast({
         title: "Could not start run",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onPromoteToPlm = async () => {
+    if (!data) return;
+    try {
+      const linked = await pushWorkItemToPlm(data.run.workItemId);
+      toast({
+        title: "Pushed to PLM",
+        description: linked.externalId ? `Created ${linked.externalId}. You can now push test cases.` : undefined,
+      });
+      await load(true);
+    } catch (err) {
+      toast({
+        title: "Could not push item to PLM",
         description: err instanceof ApiError ? err.message : "Something went wrong.",
         variant: "destructive",
       });
@@ -401,7 +420,7 @@ export default function RunDetailPage() {
 
       {run.status === "succeeded" && run.commitHash && (
         <div style={{ padding: "0 20px 24px", maxWidth: 760 }}>
-          <TestStage workItemId={run.workItemId} canPushToPlm={canPushToPlm} />
+          <TestStage workItemId={run.workItemId} canPushToPlm={canPushToPlm} onPushItemToPlm={onPromoteToPlm} />
         </div>
       )}
     </div>
