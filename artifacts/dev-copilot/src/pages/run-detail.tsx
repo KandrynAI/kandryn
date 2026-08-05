@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, GitPullRequest, ShieldCheck, Check } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, GitPullRequest, ShieldCheck, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
 import {
@@ -15,6 +16,8 @@ import {
   type RunStatus,
   type RunSuggestion,
   type ScoreBreakdown,
+  type Run,
+  type ReviewFinding,
 } from "@/services/api";
 
 /** Extract "123" from a PR URL (GitHub /pull/123 or ADO /pullrequest/123). */
@@ -92,10 +95,12 @@ export default function RunDetailPage() {
     load();
   }, [load]);
 
-  // Poll while the run is still in progress so scheduled/queued runs update live.
+  // Poll while the run is in progress, or while Veria is reviewing, so the
+  // page updates live without a manual refresh.
   useEffect(() => {
     if (!data) return;
-    if (!IN_PROGRESS.includes(data.run.status)) return;
+    const active = IN_PROGRESS.includes(data.run.status) || data.run.reviewStatus === "running";
+    if (!active) return;
     timer.current = setTimeout(() => load(true), 4000);
     return () => {
       if (timer.current) clearTimeout(timer.current);
@@ -146,15 +151,17 @@ export default function RunDetailPage() {
   const onReview = async () => {
     setReviewing(true);
     try {
-      await runReview(runId);
-      toast({ title: "Veria review started" });
+      const res = await runReview(runId);
+      toast({ title: res.review ? "Veria review complete." : "Veria is running — check back in a moment." });
       await load(true);
     } catch (err) {
-      // The review endpoint is a forthcoming feature; fail softly.
-      toast({
-        title: "Veria review is coming soon",
-        description: err instanceof ApiError && err.status !== 404 ? err.message : undefined,
-      });
+      if (err instanceof ApiError && err.status === 409) {
+        toast({ title: "Commit a suggestion before running Veria.", variant: "destructive" });
+      } else if (err instanceof ApiError && err.status === 424) {
+        toast({ title: "Add your Anthropic API key in Settings to run Veria.", variant: "destructive" });
+      } else {
+        toast({ title: "Veria could not complete. Try again.", variant: "destructive" });
+      }
     } finally {
       setReviewing(false);
     }
@@ -360,11 +367,142 @@ export default function RunDetailPage() {
         )}
       </div>
 
+      {isCommitted && run.reviewStatus && (
+        <div style={{ padding: "0 20px 8px", maxWidth: 760 }}>
+          <VeriaReview run={run} onReview={onReview} reviewing={reviewing} />
+        </div>
+      )}
+
       {run.status === "succeeded" && run.commitHash && (
         <div style={{ padding: "0 20px 24px", maxWidth: 760 }}>
           <TestStage workItemId={run.workItemId} canPushToPlm={true} />
         </div>
       )}
+    </div>
+  );
+}
+
+const FINDING_ICON = {
+  strength: ThumbsUp,
+  gap: AlertCircle,
+  risk: AlertTriangle,
+} as const;
+const FINDING_COLOR = {
+  strength: "var(--c-green)",
+  gap: "var(--c-amber)",
+  risk: "var(--c-red)",
+} as const;
+const SEVERITY_STYLE: Record<string, { bg: string; fg: string }> = {
+  high: { bg: "var(--c-red-bg)", fg: "var(--c-red)" },
+  medium: { bg: "var(--c-amber-bg)", fg: "var(--c-amber)" },
+  low: { bg: "var(--c-raised)", fg: "var(--c-ink-4)" },
+};
+
+function VeriaReview({ run, onReview, reviewing }: { run: Run; onReview: () => void; reviewing: boolean }) {
+  if (run.reviewStatus === "running") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--c-amber)", animation: "bmblink 1.4s infinite" }} />
+        <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)" }}>Veria reviewing committed code…</span>
+      </div>
+    );
+  }
+
+  if (run.reviewStatus === "failed") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0" }}>
+        <AlertCircle size={13} style={{ color: "var(--c-red)" }} />
+        <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-red)" }}>Veria could not complete the review.</span>
+        <button className="bm-ghost" style={{ marginLeft: "auto" }} onClick={onReview} disabled={reviewing}>
+          {reviewing ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}Retry
+        </button>
+      </div>
+    );
+  }
+
+  const review = run.review;
+  if (run.reviewStatus !== "done" || !review) return null;
+
+  const { covered, missed, partial } = review.acCoverage;
+  const noCoverage = covered.length === 0 && missed.length === 0 && partial.length === 0;
+
+  return (
+    <div style={{ animation: "bmrise 0.3s ease-out both" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--c-border)" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", fontWeight: 700 }}>
+          <ShieldCheck size={12} style={{ color: "var(--c-amber)" }} />Veria
+        </span>
+        <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>
+          Reviewed {formatDistanceToNow(new Date(review.generatedAt), { addSuffix: true })}
+        </span>
+      </div>
+
+      {/* Summary */}
+      <p style={{ borderLeft: "3px solid var(--c-amber)", paddingLeft: 10, margin: "10px 0", fontSize: "var(--fs-sm)", color: "var(--c-ink-2)", lineHeight: 1.6 }}>
+        {review.summary}
+      </p>
+
+      {/* AC coverage */}
+      <div style={{ fontSize: "var(--fs-xs)", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", fontWeight: 600, marginBottom: 8 }}>Acceptance criteria</div>
+      {noCoverage ? (
+        <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-green)" }}>All acceptance criteria addressed.</div>
+      ) : (
+        <>
+          {covered.map((c, i) => <CoverageRow key={`c${i}`} icon={Check} color="var(--c-green)" text={c} />)}
+          {partial.map((c, i) => <CoverageRow key={`p${i}`} icon={AlertCircle} color="var(--c-amber)" text={c} />)}
+          {missed.map((c, i) => <CoverageRow key={`m${i}`} icon={X} color="var(--c-red)" text={c} />)}
+        </>
+      )}
+
+      {/* Findings */}
+      {review.findings.length > 0 && (
+        <>
+          <div style={{ fontSize: "var(--fs-xs)", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", fontWeight: 600, margin: "14px 0 6px" }}>Findings</div>
+          {review.findings.map((f, i) => <FindingRow key={i} f={f} />)}
+        </>
+      )}
+
+      {/* Reviewer note */}
+      {review.reviewerNote && (
+        <div style={{ marginTop: 12, background: "var(--c-amber-bg)", borderLeft: "3px solid var(--c-amber)", padding: "8px 12px", display: "flex", gap: 7, alignItems: "flex-start" }}>
+          <Eye size={12} style={{ color: "var(--c-amber)", flexShrink: 0, marginTop: 1 }} />
+          <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}>
+            <span style={{ fontWeight: 600, color: "var(--c-ink)" }}>Focus: </span>{review.reviewerNote}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CoverageRow({ icon: Icon, color, text }: { icon: typeof Check; color: string; text: string }) {
+  return (
+    <div style={{ display: "flex", gap: 6, padding: "4px 0", alignItems: "flex-start" }}>
+      <Icon size={11} style={{ color, flexShrink: 0, marginTop: 2 }} />
+      <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-2)" }}>{text}</span>
+    </div>
+  );
+}
+
+function FindingRow({ f }: { f: ReviewFinding }) {
+  const Icon = FINDING_ICON[f.type];
+  const color = FINDING_COLOR[f.type];
+  const sev = f.severity ? SEVERITY_STYLE[f.severity] : null;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "14px 56px 1fr", gap: 8, padding: "7px 0", borderBottom: "1px solid var(--c-border)" }}>
+      <Icon size={12} style={{ color, marginTop: 2 }} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <span style={{ fontSize: "var(--fs-xs)", textTransform: "uppercase", fontWeight: 700, color }}>{f.type}</span>
+        {sev && f.type !== "strength" && (
+          <span style={{ fontSize: "var(--fs-xs)", padding: "1px 4px", borderRadius: 2, background: sev.bg, color: sev.fg, alignSelf: "flex-start" }}>{f.severity}</span>
+        )}
+      </div>
+      <div>
+        <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--c-ink)", marginBottom: 2 }}>{f.title}</div>
+        <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)", lineHeight: 1.5 }}>{f.detail}</div>
+        {f.acRef && <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontStyle: "italic", marginTop: 2 }}>{f.acRef}</div>}
+      </div>
     </div>
   );
 }
@@ -479,7 +617,7 @@ function SuggestionCard({
           </button>
           {onReview && (
             <button className="bm-ghost" onClick={onReview} disabled={reviewing}>
-              {reviewing ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}Run Veria
+              {reviewing ? <><Loader2 size={12} className="animate-spin" />Running Veria…</> : <><ShieldCheck size={12} />Run Veria</>}
             </button>
           )}
         </div>

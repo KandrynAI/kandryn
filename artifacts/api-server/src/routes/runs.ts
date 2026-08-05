@@ -3,6 +3,8 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, runsTable, tasksTable, suggestionsTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { executeRun, commitFromSuggestion, RunError } from "../services/runService.js";
+import { getConfigs } from "../services/configService.js";
+import { runVeriaReview } from "../services/veriaService.js";
 
 const router: IRouter = Router();
 
@@ -263,6 +265,94 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
       return;
     }
     throw err;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/review — Veria reviews the committed code against the AC.
+// A committed run is signalled by committedSuggestionId (there is no dedicated
+// "committed" status; the run stays "succeeded").
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/review", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const runId = params.data.id;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+
+  if (run.committedSuggestionId == null) {
+    res.status(409).json({ error: "Veria requires a committed run. Commit a suggestion first." });
+    return;
+  }
+  if (run.reviewStatus === "done" && run.review) {
+    res.status(200).json({ review: run.review });
+    return;
+  }
+  if (run.reviewStatus === "running") {
+    res.status(202).json({ message: "Veria is already running on this run." });
+    return;
+  }
+
+  // Mark running before the AI call (prevents double-dispatch).
+  await db.update(runsTable).set({ reviewStatus: "running" }).where(eq(runsTable.id, runId));
+
+  const [suggestion] = await db
+    .select()
+    .from(suggestionsTable)
+    .where(eq(suggestionsTable.id, run.committedSuggestionId));
+  if (!suggestion) {
+    await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(404).json({ error: "Committed suggestion record not found." });
+    return;
+  }
+
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+
+  // acceptance_criteria is a single newline-separated text column → string[].
+  const acceptanceCriteria = workItem?.acceptanceCriteria
+    ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY"]);
+  if (!creds.ANTHROPIC_API_KEY) {
+    await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Veria." });
+    return;
+  }
+
+  try {
+    const review = await runVeriaReview(
+      {
+        itemTitle: workItem?.title ?? "Untitled work item",
+        itemType: workItem?.itemType ?? workItem?.type ?? "task",
+        acceptanceCriteria,
+        suggestionAgent: suggestion.agent,
+        suggestionFilePath: suggestion.filePath,
+        suggestionCode: suggestion.code,
+      },
+      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+    );
+
+    await db.update(runsTable).set({ review, reviewStatus: "done" }).where(eq(runsTable.id, runId));
+    req.log.info({ runId }, "Veria review completed");
+    res.status(200).json({ review });
+  } catch (err) {
+    req.log.error({ err }, "Veria review failed");
+    await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(502).json({ error: "Veria could not complete the review. Try again." });
   }
 });
 

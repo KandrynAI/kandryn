@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
@@ -11,6 +11,28 @@ export type RunStatus =
   | "succeeded"
   | "failed"
   | "canceled";
+
+export type ReviewStatus = "pending" | "running" | "done" | "failed";
+
+/**
+ * Veria review result, persisted on the run. Mirrors
+ * shared/types/reviewResult.ts (kept local because lib/db is a composite
+ * project rooted at src/ and cannot import from ../../../../shared).
+ */
+export interface PersistedReviewFinding {
+  type: "strength" | "gap" | "risk";
+  title: string;
+  detail: string;
+  acRef?: string;
+  severity?: "low" | "medium" | "high";
+}
+export interface PersistedReviewResult {
+  summary: string;
+  acCoverage: { covered: string[]; missed: string[]; partial: string[] };
+  findings: PersistedReviewFinding[];
+  reviewerNote: string;
+  generatedAt: string;
+}
 
 /**
  * A durable execution of the agent pipeline against a work item. Every run
@@ -43,6 +65,10 @@ export const runsTable = pgTable(
     // cycle in the schema. Consumers null-check it. Used by test generation to
     // recover the chosen suggestion's code.
     committedSuggestionId: integer("committed_suggestion_id"),
+    // Veria review (0009_veria_review.sql). Both nullable — populated only when
+    // the user runs Veria on a committed run.
+    review: jsonb("review").$type<PersistedReviewResult | null>().default(null),
+    reviewStatus: text("review_status").$type<ReviewStatus | null>().default(null),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
