@@ -10,6 +10,8 @@ import {
 } from "@workspace/db";
 import { GitService } from "./gitService.js";
 import { AIOrchestrator, SynthesisEngine } from "./aiService.js";
+import { isGraphUsable } from "./graphifyService.js";
+import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import { getConfigs } from "./configService.js";
 import { sendRunCompleted, sendRunFailed } from "./emailService.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
@@ -82,7 +84,13 @@ export async function executeRun(runId: number): Promise<void> {
         githubToken: creds.GITHUB_TOKEN,
         azureReposToken: creds.AZURE_REPOS_TOKEN,
       });
-      codeContext = await git.fetchFileContext(String(workItem.id), keywords, stack);
+      // Use the Graphify graph for precise, low-token context when one is loaded
+      // and fresh; otherwise fetchFileContextWithGraph falls back to keywords.
+      const graph =
+        repo.graphJson && isGraphUsable(repo.graphBuiltAt)
+          ? (repo.graphJson as unknown as GraphifyGraph)
+          : null;
+      codeContext = await git.fetchFileContextWithGraph(String(workItem.id), keywords, stack, graph);
     } catch (e) {
       logger.warn({ runId, err: e }, "Run: git file context unavailable — proceeding without it");
     }

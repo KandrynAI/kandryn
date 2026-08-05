@@ -69,6 +69,28 @@ export function fetchTasks(): Promise<DevCopilotTask[]> {
   return request<DevCopilotTask[]>('/api/tasks');
 }
 
+export interface RepositoryGraphStatus {
+  built: boolean;
+  builtAt: string | null;
+  nodeCount: number | null;
+  stale: boolean;
+}
+
+export function fetchRepositoryGraphStatus(repoId: number): Promise<RepositoryGraphStatus> {
+  return request<RepositoryGraphStatus>(`/api/repositories/${repoId}/graph`);
+}
+
+export function uploadRepositoryGraph(
+  repoId: number,
+  graph: unknown,
+): Promise<{ nodeCount: number; edgeCount: number; message: string }> {
+  return request(`/api/repositories/${repoId}/graph`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ graph }),
+  });
+}
+
 export function fetchRepositories(): Promise<Repository[]> {
   return request<Repository[]>('/api/repositories');
 }
