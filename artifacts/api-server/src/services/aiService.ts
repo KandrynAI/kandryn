@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { z } from "zod/v4";
 import { buildPrompt } from "../stack/prompts.js";
+import { describeStack } from "./stackPromptBuilder.js";
 import { logger } from "../lib/logger.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js";
@@ -341,6 +342,8 @@ Work item: ${context?.title ?? "(untitled)"}
 Acceptance criteria:
 ${ac}
 
+Repository stack: ${describeStack(stack) || "not detected"}
+
 Suggestion A (Raptia):
 File: ${a.filePath}
 
@@ -365,7 +368,7 @@ Dimensions and weights:
 - correctness (35%): Does the code correctly solve the stated problem? Reference specific logic, conditions, or return values.
 - readability (20%): Is the code clear and maintainable? Reference naming, structure, or complexity.
 - minimalDiff (15%): Does it change only what is necessary? Reference scope of change.
-- conventions (15%): Does it follow the existing codebase patterns (${stack.frontend}/${stack.backend}/${stack.language})?
+- conventions (15%): Does it follow the conventions of a ${describeStack(stack) || "generic"} codebase? Check framework-specific patterns (${stack.backend || "general"} conventions, naming, structure) for the detected stack.
 - acCoverage (15%): How completely does it address the acceptance criteria? Reference which criteria are and are not covered.
 
 Then write:
@@ -629,6 +632,9 @@ ${s.code}
     .join("\n");
 
   return `You are a senior code reviewer evaluating AI-generated code suggestions.
+
+## Repository stack
+${describeStack(stack) || "not detected"}
 
 ## Stack Profile
 \`\`\`json

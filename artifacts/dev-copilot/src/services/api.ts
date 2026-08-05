@@ -263,6 +263,7 @@ export interface Run {
   commitHash: string | null;
   committedSuggestionId: number | null;
   usedGraphContext?: boolean;
+  stackDesc?: string | null;
   review?: ReviewResult | null;
   reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
   createdAt: string;

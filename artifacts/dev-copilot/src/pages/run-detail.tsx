@@ -225,6 +225,7 @@ export default function RunDetailPage() {
     ["Trigger", run.trigger === "scheduled" ? "Scheduled" : "Manual"],
     ["Auto-commit", run.autoCommit ? "On" : "Off"],
     ["When", run.scheduledAt ? new Date(run.scheduledAt).toLocaleString() : run.startedAt ? new Date(run.startedAt).toLocaleString() : "—"],
+    ["Stack", run.stackDesc || "Not detected"],
   ];
 
   return (
@@ -263,9 +264,9 @@ export default function RunDetailPage() {
       </div>
 
       {/* Info strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderTop: "1px solid var(--c-border)", borderBottom: "1px solid var(--c-border)", marginTop: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", borderTop: "1px solid var(--c-border)", borderBottom: "1px solid var(--c-border)", marginTop: 10 }}>
         {infoCells.map(([label, value], i) => (
-          <div key={label} style={{ padding: "12px 20px", borderRight: i < 3 ? "1px solid var(--c-border)" : "none" }}>
+          <div key={label} style={{ padding: "12px 20px", borderRight: i < infoCells.length - 1 ? "1px solid var(--c-border)" : "none" }}>
             <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{label}</div>
             <div style={{ fontSize: "var(--fs-base)", color: "var(--c-ink)", fontWeight: 500, marginTop: 3 }}>{value}</div>
           </div>
