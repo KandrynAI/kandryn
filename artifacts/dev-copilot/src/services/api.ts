@@ -316,6 +316,7 @@ export interface RunSuggestion {
   scoreBreakdown?: ScoreBreakdown | null;
   scoreNarrative?: string | null;
   testCases?: TestCase[];
+  testScript?: TestScript | null;
   createdAt: string;
 }
 
@@ -472,6 +473,9 @@ export interface TestCase {
   assertion: string;
   tags: string[];
   selected?: boolean; // client-side only, not persisted
+  // Set once the case has been pushed to the PLM (persisted server-side).
+  plmKey?: string;
+  plmUrl?: string;
 }
 
 export interface PushedTestCase {
