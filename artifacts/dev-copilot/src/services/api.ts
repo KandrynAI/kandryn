@@ -229,7 +229,25 @@ export interface Run {
   prUrl: string | null;
   commitHash: string | null;
   committedSuggestionId: number | null;
+  review?: ReviewResult | null;
+  reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
   createdAt: string;
+}
+
+export interface ReviewFinding {
+  type: 'strength' | 'gap' | 'risk';
+  title: string;
+  detail: string;
+  acRef?: string;
+  severity?: 'low' | 'medium' | 'high';
+}
+
+export interface ReviewResult {
+  summary: string;
+  acCoverage: { covered: string[]; missed: string[]; partial: string[] };
+  findings: ReviewFinding[];
+  reviewerNote: string;
+  generatedAt: string;
 }
 
 export interface ScoreDimension {
@@ -317,8 +335,8 @@ export function cancelRun(runId: number): Promise<Run> {
 }
 
 /** Trigger the Veria review agent for a committed run. */
-export function runReview(runId: number): Promise<{ status?: string }> {
-  return request<{ status?: string }>(`/api/runs/${runId}/review`, { method: 'POST' });
+export function runReview(runId: number): Promise<{ review: ReviewResult }> {
+  return request<{ review: ReviewResult }>(`/api/runs/${runId}/review`, { method: 'POST' });
 }
 
 export function commitRunSuggestion(
