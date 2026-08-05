@@ -228,6 +228,7 @@ export interface Run {
   error: string | null;
   prUrl: string | null;
   commitHash: string | null;
+  committedSuggestionId: number | null;
   createdAt: string;
 }
 

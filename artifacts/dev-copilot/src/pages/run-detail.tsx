@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText } from "lucide-react";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
 import {
@@ -153,10 +153,15 @@ export default function RunDetailPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {/* Back link */}
-      <div style={{ padding: "10px 20px 0" }}>
+      <div style={{ padding: "10px 20px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Link href={`/p/${run.projectId}/runs`} className="bm-ghost" style={{ border: "none", padding: "2px 0", color: "var(--c-ink-3)" }}>
           <ArrowLeft size={12} />Runs
         </Link>
+        {(run.status === "succeeded" || run.commitHash) && (
+          <button className="bm-ghost" onClick={() => navigate(`/runs/${runId}/report`)} title="View report">
+            <FileText size={14} />View report
+          </button>
+        )}
       </div>
 
       {/* Info strip */}

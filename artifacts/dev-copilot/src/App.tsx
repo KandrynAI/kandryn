@@ -31,6 +31,7 @@ import NewProject from "@/pages/new-project";
 import ProjectBoard from "@/pages/project-board";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
+import RunReportPage from "@/pages/run-report";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -248,6 +249,7 @@ function ProtectedApp() {
           <Route path="/projects/new" component={NewProject} />
           <Route path="/p/:projectId/board" component={ProjectBoard} />
           <Route path="/p/:projectId/runs" component={RunsPage} />
+          <Route path="/runs/:runId/report" component={RunReportPage} />
           <Route path="/runs/:runId" component={RunDetailPage} />
           <Route path="/workspace/:taskId" component={WorkspacePage} />
           <Route path="/dashboard" component={Dashboard} />
