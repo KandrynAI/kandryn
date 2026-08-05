@@ -57,36 +57,6 @@ const INTEGRATIONS: Integration[] = [
     ],
   },
   {
-    id: "gemini",
-    title: "Google Gemini",
-    subtitle: "AI code suggestions via Gemini 1.5 Pro / 2.0 Flash",
-    icon: <GeminiIcon />,
-    testKey: "gemini",
-    fields: [
-      { key: "GOOGLE_GEMINI_API_KEY", label: "API Key", placeholder: "AIza…", hint: "Starts with AIza — from Google AI Studio" },
-    ],
-    steps: [
-      { label: "Go to Google AI Studio and sign in", link: { text: "Open AI Studio", url: "https://aistudio.google.com/app/apikey" } },
-      { label: "Click Get API key → Create API key in new project (or an existing project)" },
-      { label: "Copy the key and paste it below — it starts with AIza" },
-    ],
-  },
-  {
-    id: "copilot",
-    title: "GitHub Copilot",
-    subtitle: "AI completions via GitHub Copilot (token stored for future use)",
-    icon: <CopilotIcon />,
-    testKey: "copilot",
-    fields: [
-      { key: "GITHUB_COPILOT_TOKEN", label: "Copilot Token", placeholder: "ghu_… or ghp_…", hint: "GitHub does not yet offer a public Copilot generation API" },
-    ],
-    steps: [
-      { label: "GitHub Copilot's code-generation API is not publicly available — only IDE plugins can use it" },
-      { label: "Save your token here now so the app is ready when GitHub opens up access", link: { text: "Check Copilot docs", url: "https://docs.github.com/en/copilot" } },
-      { label: "When a public API ships, no Settings change will be needed — just re-save the token" },
-    ],
-  },
-  {
     id: "github",
     title: "GitHub",
     subtitle: "File context for suggestions + PR creation",
@@ -175,12 +145,6 @@ function AzureIcon() {
 }
 function AzureReposIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#0078D4" /><path d="M17 7H13L7 12L13 17H17L11 12L17 7Z" fill="white" /><rect x="7" y="11" width="2" height="2" rx="1" fill="white" /></svg>);
-}
-function GeminiIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1A73E8" /><path d="M12 4L13.8 10.2H20.4L15 13.8L16.8 20L12 16.4L7.2 20L9 13.8L3.6 10.2H10.2L12 4Z" fill="white" /></svg>);
-}
-function CopilotIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#6E40C9" /><circle cx="9" cy="10" r="2" fill="white" /><circle cx="15" cy="10" r="2" fill="white" /><path d="M8 15c0 0 1.5 2 4 2s4-2 4-2" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none" /></svg>);
 }
 
 // ─── Tone helpers (success/error using brand tokens) ────────────────────────────
@@ -435,7 +399,7 @@ function ProgressBar({ configured, total }: { configured: number; total: number 
 const GROUPS: { label: string; ids: string[] }[] = [
   { label: "Trackers", ids: ["jira", "azuredevops"] },
   { label: "Repositories", ids: ["github", "azurerepos"] },
-  { label: "Agents", ids: ["anthropic", "openai", "gemini", "copilot"] },
+  { label: "Agents", ids: ["anthropic", "openai"] },
 ];
 
 export default function SettingsPage() {
