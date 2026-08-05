@@ -318,6 +318,11 @@ export async function reRunItem(workItemId: number): Promise<{ id: number }> {
   return { id };
 }
 
+/** Recent runs for a single work item (server caps this at 10). */
+export function fetchRunsForItem(workItemId: number): Promise<Run[]> {
+  return request<Run[]>(`/api/runs?workItemId=${workItemId}`);
+}
+
 export function fetchRuns(params: { projectId?: number; status?: RunStatus } = {}): Promise<Run[]> {
   const q = new URLSearchParams();
   if (params.projectId != null) q.set('projectId', String(params.projectId));

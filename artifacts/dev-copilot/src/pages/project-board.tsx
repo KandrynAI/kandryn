@@ -6,6 +6,7 @@ import { RefreshCw, ExternalLink, Plus, Clock, GitFork } from "lucide-react";
 import { RunPanel } from "@/components/runs/RunPanel";
 import { NewItemDialog } from "@/components/workitems/NewItemDialog";
 import { BreakdownDialog } from "@/components/workitems/BreakdownDialog";
+import { WorkItemPanel } from "@/components/board/WorkItemPanel";
 import { useTopBarActions } from "@/context/TopBarContext";
 import {
   fetchProject,
@@ -48,6 +49,7 @@ export default function ProjectBoard() {
   const [epicFilter, setEpicFilter] = useState<number | null>(null);
   const [runPanelItem, setRunPanelItem] = useState<WorkItem | null>(null);
   const [runPanelSchedule, setRunPanelSchedule] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
   const [newItemOpen, setNewItemOpen] = useState(false);
   const [breakdownItem, setBreakdownItem] = useState<WorkItem | null>(null);
   // Work item ids that currently have a scheduled (not-yet-run) run.
@@ -102,6 +104,8 @@ export default function ProjectBoard() {
   }, [projectId, toast]);
 
   const openRun = (item: WorkItem, schedule: boolean) => {
+    // Never show the detail panel and the run panel at once.
+    setSelectedItem(null);
     setRunPanelSchedule(schedule);
     setRunPanelItem(item);
   };
@@ -198,6 +202,7 @@ export default function ProjectBoard() {
                     key={it.id}
                     item={it}
                     scheduled={scheduledItems.has(it.id)}
+                    onOpen={() => setSelectedItem(it)}
                     onRun={() => openRun(it, false)}
                     onSchedule={() => openRun(it, true)}
                     onBreakdown={() => setBreakdownItem(it)}
@@ -208,6 +213,14 @@ export default function ProjectBoard() {
           );
         })}
       </div>
+
+      <WorkItemPanel
+        item={selectedItem}
+        projectId={projectId}
+        onClose={() => setSelectedItem(null)}
+        onRun={(it) => openRun(it, false)}
+        onSchedule={(it) => openRun(it, true)}
+      />
 
       <RunPanel
         item={runPanelItem}
@@ -276,12 +289,14 @@ function FilterPill({
 function WorkItemCard({
   item,
   scheduled,
+  onOpen,
   onRun,
   onSchedule,
   onBreakdown,
 }: {
   item: WorkItem;
   scheduled: boolean;
+  onOpen: () => void;
   onRun: () => void;
   onSchedule: () => void;
   onBreakdown: () => void;
@@ -290,9 +305,14 @@ function WorkItemCard({
   const runnable = item.itemType !== "epic";
   const breakable = item.itemType === "epic" || item.itemType === "story";
   const typeClass = `bm-type bm-type-${item.itemType}`;
+  // Buttons stop propagation so they don't also open the detail panel.
+  const stop = (fn: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    fn();
+  };
 
   return (
-    <div className="bm-board-card">
+    <div className="bm-board-card" onClick={onOpen} role="button">
       <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
         <span className={typeClass}>{item.itemType.replace("_", " ")}</span>
         {item.externalId && (
@@ -305,7 +325,7 @@ function WorkItemCard({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           {item.plmUrl && (
-            <a href={item.plmUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--c-ink-4)", display: "inline-flex" }} title="Open in PLM">
+            <a href={item.plmUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "var(--c-ink-4)", display: "inline-flex" }} title="Open in PLM">
               <ExternalLink size={12} />
             </a>
           )}
@@ -321,16 +341,16 @@ function WorkItemCard({
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
             {breakable && (
-              <button className="bm-icon-btn" onClick={onBreakdown} title="Break down">
+              <button className="bm-icon-btn" onClick={stop(onBreakdown)} title="Break down">
                 <GitFork size={12} />
               </button>
             )}
             {runnable && (
               <>
-                <button className="bm-icon-btn" onClick={onSchedule} title="Schedule run">
+                <button className="bm-icon-btn" onClick={stop(onSchedule)} title="Schedule run">
                   <Clock size={12} />
                 </button>
-                <button className="bm-run" onClick={onRun} title="Run agents">Run</button>
+                <button className="bm-run" onClick={stop(onRun)} title="Run agents">Run</button>
               </>
             )}
           </div>

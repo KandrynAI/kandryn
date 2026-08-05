@@ -28,6 +28,7 @@ const CommitRunBody = z.object({
 
 const ListRunsQuery = z.object({
   projectId: z.coerce.number().int().positive().optional(),
+  workItemId: z.coerce.number().int().positive().optional(),
   status: z
     .enum(["scheduled", "queued", "running", "succeeded", "failed", "canceled"])
     .optional(),
@@ -143,14 +144,17 @@ router.get("/runs", async (req, res): Promise<void> => {
   }
   const conds = [eq(runsTable.userId, req.userId)];
   if (query.data.projectId != null) conds.push(eq(runsTable.projectId, query.data.projectId));
+  if (query.data.workItemId != null) conds.push(eq(runsTable.workItemId, query.data.workItemId));
   if (query.data.status) conds.push(eq(runsTable.status, query.data.status));
 
+  // A per-item lookup wants a short recent history; the broad list keeps 200.
+  const limit = query.data.workItemId != null ? 10 : 200;
   const runs = await db
     .select()
     .from(runsTable)
     .where(and(...conds))
     .orderBy(desc(runsTable.createdAt))
-    .limit(200);
+    .limit(limit);
   res.json(runs);
 });
 

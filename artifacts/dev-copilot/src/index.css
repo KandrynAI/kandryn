@@ -269,6 +269,7 @@ a:hover { text-decoration: underline; }
 @keyframes bmrise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes bmpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .skeleton { background: var(--c-raised); animation: bmpulse 1.4s ease-in-out infinite; }
 
 /* legacy dc-* keyframes kept for any remaining references */
