@@ -133,11 +133,19 @@ router.post("/work-items/:id/tests/generate", async (req, res): Promise<void> =>
       { anthropicApiKey: creds.ANTHROPIC_API_KEY },
       stack,
     );
-    // Persist the rich cases on the committed suggestion so the run report and
-    // later reads can show them without regenerating.
+    // Persist the rich cases + script on the committed suggestion so the run
+    // detail can rehydrate them (show generated tests, regenerate, push). A
+    // (re)generate replaces both and clears any prior per-case push status.
     await db
       .update(suggestionsTable)
-      .set({ testCases: tests.testCases })
+      .set({
+        testCases: tests.testCases,
+        testScript: {
+          filePath: tests.testScript.filePath,
+          code: tests.testScript.code,
+          framework: tests.testScript.framework,
+        },
+      })
       .where(eq(suggestionsTable.id, committed.suggestion.id));
 
     req.log.info({ workItemId: workItem.id, cases: tests.testCases.length }, "Tests generated");
@@ -255,6 +263,22 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
     return;
   }
 
+  // The committed suggestion carries the persisted test cases; we write the
+  // per-case push status (plmKey/plmUrl) back onto it so the run detail shows
+  // each case as "Pushed" across reloads.
+  const committed = await latestCommittedRun(req.userId, workItem.id);
+  const persistPushStatus = async (
+    results: { testCaseId: string; plmUrl: string; plmKey: string }[],
+  ): Promise<void> => {
+    if (!committed?.suggestion || results.length === 0) return;
+    const byId = new Map(results.map((r) => [r.testCaseId, r]));
+    const merged = (committed.suggestion.testCases ?? []).map((c) => {
+      const hit = byId.get(c.id);
+      return hit ? { ...c, plmKey: hit.plmKey, plmUrl: hit.plmUrl } : c;
+    });
+    await db.update(suggestionsTable).set({ testCases: merged }).where(eq(suggestionsTable.id, committed.suggestion.id));
+  };
+
   const pushed: { testCaseId: string; plmUrl: string; plmKey: string }[] = [];
   try {
     for (let i = 0; i < parsed.data.testCases.length; i++) {
@@ -295,12 +319,15 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
     }
   } catch (err) {
     if (err instanceof PlmError) {
+      // Persist whatever succeeded before the failure so their status sticks.
+      await persistPushStatus(pushed);
       res.status(err.code === "not_connected" ? 424 : 502).json({ error: err.message, pushed });
       return;
     }
     throw err;
   }
 
+  await persistPushStatus(pushed);
   req.log.info({ workItemId: workItem.id, count: pushed.length }, "Test cases pushed to PLM");
   res.json({ pushed });
 });

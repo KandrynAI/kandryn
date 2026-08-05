@@ -11,6 +11,7 @@ import {
   ApiError,
   type GeneratedTests,
   type TestCase,
+  type TestScript,
 } from "@/services/api";
 
 type CaseRow = TestCase & { selected: boolean };
@@ -35,17 +36,30 @@ export function TestStage({
   workItemId,
   canPushToPlm,
   onPushItemToPlm,
+  initial,
 }: {
   workItemId: number;
   canPushToPlm: boolean;
   /** Promote a local-only work item into the PLM; enables case-push once linked. */
   onPushItemToPlm?: () => Promise<void>;
+  /** Persisted tests for this run (cases + script + push status) to rehydrate. */
+  initial?: { testCases: TestCase[]; testScript: TestScript | null } | null;
 }) {
   const { toast } = useToast();
-  const [tests, setTests] = useState<GeneratedTests | null>(null);
-  const [cases, setCases] = useState<CaseRow[]>([]);
-  const [filePath, setFilePath] = useState("");
-  const [code, setCode] = useState("");
+  const hasInitial = (initial?.testCases?.length ?? 0) > 0 || Boolean(initial?.testScript);
+  const [tests, setTests] = useState<GeneratedTests | null>(
+    hasInitial
+      ? {
+          testCases: initial?.testCases ?? [],
+          testScript: initial?.testScript ?? { filePath: "", code: "", framework: "" },
+        }
+      : null,
+  );
+  const [cases, setCases] = useState<CaseRow[]>(
+    () => (initial?.testCases ?? []).map((c) => ({ ...c, selected: true })),
+  );
+  const [filePath, setFilePath] = useState(initial?.testScript?.filePath ?? "");
+  const [code, setCode] = useState(initial?.testScript?.code ?? "");
   const [generating, setGenerating] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [committed, setCommitted] = useState(false);
@@ -53,7 +67,15 @@ export function TestStage({
   const [promoting, setPromoting] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [pushed, setPushed] = useState<Record<string, { plmUrl: string; plmKey: string }>>({});
+  // Seed push status from persisted per-case plmKey/plmUrl so already-pushed
+  // cases show "Pushed" after a reload.
+  const [pushed, setPushed] = useState<Record<string, { plmUrl: string; plmKey: string }>>(() => {
+    const seed: Record<string, { plmUrl: string; plmKey: string }> = {};
+    for (const c of initial?.testCases ?? []) {
+      if (c.plmKey && c.plmUrl) seed[c.id] = { plmKey: c.plmKey, plmUrl: c.plmUrl };
+    }
+    return seed;
+  });
 
   const generate = async () => {
     setGenerating(true);

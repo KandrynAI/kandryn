@@ -18,6 +18,17 @@ export interface PersistedTestCase {
   then: string;
   assertion: string;
   tags: string[];
+  // Set once the case has been pushed to the PLM (0012). Their presence marks
+  // the case as "Pushed" in the UI across reloads.
+  plmKey?: string;
+  plmUrl?: string;
+}
+
+/** Persisted test script (0012) — the runnable file committed to the PR. */
+export interface PersistedTestScript {
+  filePath: string;
+  code: string;
+  framework: string;
 }
 
 /** Mirrors shared/types/scoreBreakdown.ts (kept local for the composite build). */
@@ -58,6 +69,7 @@ export const suggestionsTable = pgTable(
     score: integer("score"),
     recommendation: text("recommendation"),
     testCases: jsonb("test_cases").$type<PersistedTestCase[]>().notNull().default([]),
+    testScript: jsonb("test_script").$type<PersistedTestScript | null>(),
     scoreBreakdown: jsonb("score_breakdown").$type<PersistedScoreBreakdown | null>(),
     scoreNarrative: text("score_narrative"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

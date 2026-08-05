@@ -420,7 +420,12 @@ export default function RunDetailPage() {
 
       {run.status === "succeeded" && run.commitHash && (
         <div style={{ padding: "0 20px 24px", maxWidth: 760 }}>
-          <TestStage workItemId={run.workItemId} canPushToPlm={canPushToPlm} onPushItemToPlm={onPromoteToPlm} />
+          <TestStage
+            workItemId={run.workItemId}
+            canPushToPlm={canPushToPlm}
+            onPushItemToPlm={onPromoteToPlm}
+            initial={committedSug ? { testCases: committedSug.testCases ?? [], testScript: committedSug.testScript ?? null } : null}
+          />
         </div>
       )}
     </div>
