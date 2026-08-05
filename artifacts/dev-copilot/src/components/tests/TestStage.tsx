@@ -31,7 +31,16 @@ const FILTERS: { key: Filter; label: string }[] = [
  * runnable script for a committed work item, commit the script to the same PR,
  * and push selected cases to the PLM.
  */
-export function TestStage({ workItemId, canPushToPlm }: { workItemId: number; canPushToPlm: boolean }) {
+export function TestStage({
+  workItemId,
+  canPushToPlm,
+  onPushItemToPlm,
+}: {
+  workItemId: number;
+  canPushToPlm: boolean;
+  /** Promote a local-only work item into the PLM; enables case-push once linked. */
+  onPushItemToPlm?: () => Promise<void>;
+}) {
   const { toast } = useToast();
   const [tests, setTests] = useState<GeneratedTests | null>(null);
   const [cases, setCases] = useState<CaseRow[]>([]);
@@ -41,6 +50,7 @@ export function TestStage({ workItemId, canPushToPlm }: { workItemId: number; ca
   const [committing, setCommitting] = useState(false);
   const [committed, setCommitted] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [promoting, setPromoting] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pushed, setPushed] = useState<Record<string, { plmUrl: string; plmKey: string }>>({});
@@ -218,9 +228,29 @@ export function TestStage({ workItemId, canPushToPlm }: { workItemId: number; ca
             </div>
 
             {!canPushToPlm && (
-              <p style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginBottom: 8 }}>
-                This work item isn't linked to a Jira/ADO story, so cases can't be pushed. The script can still be committed.
-              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                <p style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", margin: 0 }}>
+                  This work item isn't linked to a Jira/ADO story, so cases can't be pushed. The script can still be committed.
+                </p>
+                {onPushItemToPlm && (
+                  <button
+                    className="bm-ghost"
+                    disabled={promoting}
+                    onClick={async () => {
+                      setPromoting(true);
+                      try {
+                        await onPushItemToPlm();
+                      } finally {
+                        setPromoting(false);
+                      }
+                    }}
+                    title="Create this item in Jira/ADO so test cases can be pushed under it"
+                  >
+                    {promoting ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                    {promoting ? "Pushing item…" : "Push item to PLM"}
+                  </button>
+                )}
+              </div>
             )}
 
             {/* filter pills */}

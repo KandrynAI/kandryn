@@ -437,6 +437,15 @@ export function updateWorkItem(
   });
 }
 
+/**
+ * Promote a local-only work item into the project's PLM (Jira/ADO). Returns the
+ * now-linked work item (externalId/source/plmUrl populated). Throws ApiError:
+ * 409 if already linked, 424 when the PLM isn't connected, 502 on a PLM API error.
+ */
+export function pushWorkItemToPlm(workItemId: number): Promise<WorkItem> {
+  return request<WorkItem>(`/api/work-items/${workItemId}/push-to-plm`, { method: 'POST' });
+}
+
 export interface BreakdownChild {
   itemType: 'story' | 'task' | 'bug';
   title: string;
