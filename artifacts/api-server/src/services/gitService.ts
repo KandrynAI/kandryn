@@ -137,12 +137,23 @@ class GitHubClient implements GitProviderClient {
   }
 
   async createBranch(branchName: string, fromRef: string): Promise<void> {
-    await this.octokit.git.createRef({
-      owner: this.owner,
-      repo: this.repo,
-      ref: `refs/heads/${branchName}`,
-      sha: fromRef,
-    });
+    try {
+      await this.octokit.git.createRef({
+        owner: this.owner,
+        repo: this.repo,
+        ref: `refs/heads/${branchName}`,
+        sha: fromRef,
+      });
+    } catch (err) {
+      // 422 "Reference already exists" — the deterministic branch task/<id> is
+      // left from an earlier commit or a retry. Reuse it; commitChanges will
+      // move it to the new commit.
+      if ((err as { status?: number }).status === 422) {
+        logger.info({ branchName }, "Branch already exists — reusing");
+        return;
+      }
+      throw err;
+    }
   }
 
   async getBranchSha(branchName: string): Promise<string> {
@@ -194,26 +205,48 @@ class GitHubClient implements GitProviderClient {
       parents: [baseRef],
     });
 
+    // force so a reused branch (task/<id> from a prior commit) can be moved to
+    // the new commit even when it isn't a fast-forward. When baseSha is the
+    // branch's own HEAD (test-script stacking) this is a fast-forward anyway.
     await this.octokit.git.updateRef({
       owner: this.owner,
       repo: this.repo,
       ref: `heads/${params.branchName}`,
       sha: commit.sha,
+      force: true,
     });
 
     return commit.sha;
   }
 
   async createPullRequest(params: PullRequestParams): Promise<string> {
-    const { data } = await this.octokit.pulls.create({
-      owner: this.owner,
-      repo: this.repo,
-      title: params.title,
-      body: params.body,
-      head: params.head,
-      base: params.base,
-    });
-    return data.html_url;
+    try {
+      const { data } = await this.octokit.pulls.create({
+        owner: this.owner,
+        repo: this.repo,
+        title: params.title,
+        body: params.body,
+        head: params.head,
+        base: params.base,
+      });
+      return data.html_url;
+    } catch (err) {
+      // 422 when an open PR already exists for this head branch — reuse it
+      // rather than failing the commit.
+      if ((err as { status?: number }).status === 422) {
+        const { data: existing } = await this.octokit.pulls.list({
+          owner: this.owner,
+          repo: this.repo,
+          head: `${this.owner}:${params.head}`,
+          state: "open",
+        });
+        if (existing.length > 0) {
+          logger.info({ head: params.head, url: existing[0].html_url }, "PR already exists — reusing");
+          return existing[0].html_url;
+        }
+      }
+      throw err;
+    }
   }
 }
 
@@ -288,6 +321,14 @@ class AzureReposClient implements GitProviderClient {
   }
 
   async createBranch(branchName: string, fromRef: string): Promise<void> {
+    // Reuse the deterministic branch if it already exists (prior commit/retry).
+    const existing = await this.request<{ value: Array<{ objectId: string }> }>(
+      `/refs?filter=heads/${branchName}&api-version=7.1`,
+    ).catch(() => ({ value: [] as Array<{ objectId: string }> }));
+    if (existing.value?.length) {
+      logger.info({ branchName }, "Azure Repos branch already exists — reusing");
+      return;
+    }
     const OLD_ZERO = "0000000000000000000000000000000000000000";
     await this.request(`/refs?api-version=7.1`, {
       method: "POST",
