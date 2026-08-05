@@ -188,6 +188,11 @@ export default function RunDetailPage() {
   }
 
   const { run, suggestions } = data;
+  // Test cases can only be pushed when the work item is linked to a Jira/ADO
+  // story (has an externalId + a PLM source). Mirrors the server guard in
+  // routes/tests.ts so the Push button is disabled instead of hitting a 422.
+  const wi = data.workItem;
+  const canPushToPlm = Boolean(wi?.externalId) && (wi?.source === "jira" || wi?.source === "azure-devops");
   // A committed run has no dedicated status here — it's signalled by
   // committedSuggestionId (the run stays "succeeded").
   const committedId = run.committedSuggestionId ?? null;
@@ -396,7 +401,7 @@ export default function RunDetailPage() {
 
       {run.status === "succeeded" && run.commitHash && (
         <div style={{ padding: "0 20px 24px", maxWidth: 760 }}>
-          <TestStage workItemId={run.workItemId} canPushToPlm={true} />
+          <TestStage workItemId={run.workItemId} canPushToPlm={canPushToPlm} />
         </div>
       )}
     </div>

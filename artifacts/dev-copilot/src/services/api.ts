@@ -319,9 +319,16 @@ export interface RunSuggestion {
   createdAt: string;
 }
 
+export interface RunWorkItemSummary {
+  externalId: string | null;
+  source: string | null;
+}
+
 export interface RunDetail {
   run: Run;
   suggestions: RunSuggestion[];
+  /** Present on GET /runs/:id; used to gate PLM actions (e.g. test-case push). */
+  workItem?: RunWorkItemSummary | null;
 }
 
 /**
