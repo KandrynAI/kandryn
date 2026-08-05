@@ -316,6 +316,11 @@ export function cancelRun(runId: number): Promise<Run> {
   return request<Run>(`/api/runs/${runId}/cancel`, { method: 'POST' });
 }
 
+/** Trigger the Veria review agent for a committed run. */
+export function runReview(runId: number): Promise<{ status?: string }> {
+  return request<{ status?: string }>(`/api/runs/${runId}/review`, { method: 'POST' });
+}
+
 export function commitRunSuggestion(
   runId: number,
   suggestionId: number,
