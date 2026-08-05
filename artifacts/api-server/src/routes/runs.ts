@@ -227,6 +227,27 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid submission" });
     return;
   }
+
+  // Enforce a single commit per run. (Commit is signalled by
+  // committedSuggestionId — this codebase has no dedicated "committed" status;
+  // a committed run stays "succeeded".)
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, params.data.id), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (run.committedSuggestionId !== null) {
+    res.status(409).json({
+      error: "This run has already been committed.",
+      committedSuggestionId: run.committedSuggestionId,
+      prUrl: run.prUrl ?? null,
+    });
+    return;
+  }
+
   try {
     const result = await commitFromSuggestion(
       req.userId,
