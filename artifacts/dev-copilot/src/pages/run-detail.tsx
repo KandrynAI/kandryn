@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
 import {
@@ -13,7 +13,22 @@ import {
   type RunDetail,
   type RunStatus,
   type RunSuggestion,
+  type ScoreBreakdown,
 } from "@/services/api";
+
+const DIMENSIONS: { key: keyof Pick<ScoreBreakdown, "correctness" | "readability" | "minimalDiff" | "conventions" | "acCoverage">; label: string }[] = [
+  { key: "correctness", label: "Correctness" },
+  { key: "readability", label: "Readability" },
+  { key: "minimalDiff", label: "Minimal diff" },
+  { key: "conventions", label: "Conventions" },
+  { key: "acCoverage", label: "AC coverage" },
+];
+
+const VERDICT_STYLE: Record<string, { bg: string; fg: string }> = {
+  strong: { bg: "var(--c-green-bg)", fg: "var(--c-green)" },
+  adequate: { bg: "var(--c-amber-bg)", fg: "var(--c-amber)" },
+  weak: { bg: "var(--c-red-bg)", fg: "var(--c-red)" },
+};
 
 const RERUNNABLE = new Set<RunStatus>(["failed", "canceled"]);
 
@@ -228,7 +243,8 @@ export default function RunDetailPage() {
           <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-4)" }}>No suggestions were produced for this run.</p>
         ) : (
           <div>
-            <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", marginBottom: 8 }}>
+            <ConfidenceStrip suggestions={suggestions} />
+            <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", margin: "12px 0 8px" }}>
               {suggestions.length} suggestion{suggestions.length === 1 ? "" : "s"}
             </div>
             {suggestions.map((s) => (
@@ -294,6 +310,68 @@ function SuggestionCard({
       <pre style={{ margin: 0, padding: "12px 14px", fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", lineHeight: 1.6, overflow: "auto", background: "var(--c-raised)", color: "var(--c-ink-2)" }}>
         <code>{s.code}</code>
       </pre>
+
+      {s.scoreBreakdown && <ScoreAnalysis breakdown={s.scoreBreakdown} />}
+    </div>
+  );
+}
+
+function ScoreAnalysis({ breakdown }: { breakdown: ScoreBreakdown }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: "1px solid var(--c-border)" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="bm-ghost"
+        style={{ border: "none", margin: "8px 14px", padding: "2px 0", color: "var(--c-ink-3)" }}
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}Score analysis
+      </button>
+
+      {open && (
+        <div style={{ borderTop: "1px solid var(--c-border)", padding: "12px 16px" }}>
+          {breakdown.overallNarrative && (
+            <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-2)", lineHeight: 1.6, borderLeft: "3px solid var(--c-blue)", background: "var(--c-blue-bg)", padding: "10px 12px", marginBottom: 12 }}>
+              {breakdown.overallNarrative}
+            </p>
+          )}
+
+          {DIMENSIONS.map(({ key, label }, i) => {
+            const d = breakdown[key];
+            const vs = VERDICT_STYLE[d.verdict] ?? VERDICT_STYLE.adequate;
+            return (
+              <div key={key} style={{ display: "grid", gridTemplateColumns: "120px 1fr 48px 80px", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: i < DIMENSIONS.length - 1 ? "1px solid var(--c-border)" : "none" }}>
+                <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+                <span style={{ height: 4, background: "var(--c-raised)", display: "block", borderRadius: 2 }}>
+                  <span className="score-fill" style={{ display: "block", height: 4, background: "var(--c-blue)", width: `${Math.max(0, Math.min(100, d.score))}%`, borderRadius: 2 }} />
+                </span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-2)", fontWeight: 600 }}>{Math.round(d.score)}</span>
+                <span style={{ justifySelf: "start", fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", padding: "2px 6px", borderRadius: 3, background: vs.bg, color: vs.fg }}>{d.verdict}</span>
+              </div>
+            );
+          })}
+
+          <p style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 10 }}>
+            Weights: Correctness 35% · Readability 20% · Minimal diff 15% · Conventions 15% · AC coverage 15%
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfidenceStrip({ suggestions }: { suggestions: RunSuggestion[] }) {
+  const recommended = suggestions.find((s) => s.recommendation === "Recommended") ?? suggestions[0];
+  const b = recommended?.scoreBreakdown;
+  if (!b) return null;
+  const colour = b.confidence >= 80 ? "var(--c-green)" : b.confidence >= 60 ? "var(--c-amber)" : "var(--c-ink-3)";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 16, background: "var(--c-surface)", border: "1px solid var(--c-border)", padding: "10px 16px" }}>
+      <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Synthesis confidence</span>
+      <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xl)", fontWeight: 600, color: colour }}>{Math.round(b.confidence)}%</span>
+      {b.confidenceReason && (
+        <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)", maxWidth: 300, textWrap: "pretty" }}>{b.confidenceReason}</span>
+      )}
     </div>
   );
 }
