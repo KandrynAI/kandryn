@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { sql, eq } from "drizzle-orm";
+import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
 import { logger } from "../lib/logger.js";
 
@@ -85,5 +85,54 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
 // triggering. Both still require the CRON_SECRET bearer (checked in-handler).
 router.get("/internal/dispatch-runs", dispatchHandler);
 router.post("/internal/dispatch-runs", dispatchHandler);
+
+/**
+ * Graphify microservice callback (spec Phase 2). Not behind requireAuth —
+ * mounted before it and guarded by the shared GRAPHIFY_SERVICE_SECRET. The
+ * microservice POSTs the built graph (or an error) for a repo_id when indexing
+ * finishes.
+ */
+router.post("/internal/graphify-callback", async (req: Request, res: Response): Promise<void> => {
+  const secret = req.header("x-service-secret");
+  if (!process.env.GRAPHIFY_SERVICE_SECRET || secret !== process.env.GRAPHIFY_SERVICE_SECRET) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { repo_id, graph, error } = (req.body ?? {}) as {
+    repo_id?: number;
+    graph?: { nodes?: unknown[] } | null;
+    error?: string | null;
+  };
+  const repoId = Number(repo_id);
+  if (!Number.isFinite(repoId)) {
+    res.status(400).json({ error: "Invalid repo_id" });
+    return;
+  }
+
+  if (error || !graph) {
+    logger.warn({ repoId, error }, "Graphify indexing failed");
+    // Record the attempt so the UI shows a (failed) build rather than nothing.
+    await db
+      .update(repositoriesTable)
+      .set({ graphBuiltAt: new Date(), graphNodeCount: 0 })
+      .where(eq(repositoriesTable.id, repoId));
+    res.status(200).json({ received: true });
+    return;
+  }
+
+  const nodeCount = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
+  await db
+    .update(repositoriesTable)
+    .set({
+      graphJson: graph as typeof repositoriesTable.$inferInsert.graphJson,
+      graphBuiltAt: new Date(),
+      graphNodeCount: nodeCount,
+    })
+    .where(eq(repositoriesTable.id, repoId));
+
+  logger.info({ repoId, nodes: nodeCount }, "Graph stored");
+  res.status(200).json({ received: true, nodes: nodeCount });
+});
 
 export default router;

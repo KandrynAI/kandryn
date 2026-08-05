@@ -134,6 +134,27 @@ router.post("/repositories", async (req, res): Promise<void> => {
     .from(repositoriesTable)
     .where(eq(repositoriesTable.id, repo.id));
 
+  // Trigger async Graphify indexing if the microservice is configured
+  // (Phase 2). Fire-and-forget — never blocks the response.
+  const graphifyUrl = process.env.GRAPHIFY_SERVICE_URL;
+  if (graphifyUrl) {
+    const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
+    const callbackUrl = `${process.env.APP_BASE_URL ?? "https://getbluemantis.com"}/api/internal/graphify-callback`;
+    void fetch(`${graphifyUrl}/index`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-service-secret": process.env.GRAPHIFY_SERVICE_SECRET ?? "",
+      },
+      body: JSON.stringify({
+        repo_url: updated.url,
+        github_token: cfg.GITHUB_TOKEN ?? "",
+        repo_id: updated.id,
+        callback_url: callbackUrl,
+      }),
+    }).catch((err) => req.log.warn({ err }, "Graphify index trigger failed"));
+  }
+
   res.status(201).json(GetRepositoryResponse.parse(updated));
 });
 
