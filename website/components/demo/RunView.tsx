@@ -104,8 +104,20 @@ export default function RunView({
               </div>
             </div>
           ))}
+
+          {/* Synthesia waits for the two generators, then ranks. */}
+          <div style={{ borderTop: '1px solid var(--color-neutral-300)', paddingTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500 }}>Synthesia</span>
+              <span style={{ color: 'var(--color-neutral-700)' }}>ranking suggestions</span>
+            </div>
+            <div style={{ height: 6, background: 'var(--color-neutral-300)' }}>
+              <div style={{ height: 6, background: 'var(--color-accent)', width: 0, animation: 'bmbar 2s ease-out 4s forwards' }} />
+            </div>
+          </div>
+
           <div style={{ fontSize: 13, color: 'var(--color-neutral-700)', animation: 'bmblink 1.4s infinite' }}>
-            Fetching repository context · extracting keywords · ranking with Synthesis…
+            Fetching repository context · extracting keywords · Synthesia ranking…
           </div>
         </div>
       )}
