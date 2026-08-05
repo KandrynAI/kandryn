@@ -180,7 +180,15 @@ router.get("/runs/:id", async (req, res): Promise<void> => {
     .from(suggestionsTable)
     .where(eq(suggestionsTable.runId, run.id))
     .orderBy(desc(suggestionsTable.score));
-  res.json({ run, suggestions });
+
+  // Minimal work-item summary so the client can gate PLM actions (e.g. pushing
+  // test cases) on the item's real PLM-link state instead of assuming it.
+  const [workItem] = await db
+    .select({ externalId: tasksTable.externalId, source: tasksTable.source })
+    .from(tasksTable)
+    .where(eq(tasksTable.id, run.workItemId));
+
+  res.json({ run, suggestions, workItem: workItem ?? null });
 });
 
 // ---------------------------------------------------------------------------
