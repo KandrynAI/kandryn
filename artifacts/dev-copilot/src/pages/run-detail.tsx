@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, GitPullRequest, ShieldCheck, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, GitPullRequest, ShieldCheck, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
@@ -210,11 +210,32 @@ export default function RunDetailPage() {
         <Link href={`/p/${run.projectId}/runs`} className="bm-ghost" style={{ border: "none", padding: "2px 0", color: "var(--c-ink-3)" }}>
           <ArrowLeft size={12} />Runs
         </Link>
-        {(run.status === "succeeded" || run.commitHash) && (
-          <button className="bm-ghost" onClick={() => navigate(`/runs/${runId}/report`)} title="View report">
-            <FileText size={14} />View report
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {run.usedGraphContext && (
+            <span
+              title="This run used the Graphify knowledge graph for precise, low-token file context."
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--fs-xs)",
+                fontWeight: 600,
+                color: "var(--c-blue)",
+                background: "var(--c-blue-bg, rgba(25,195,154,0.10))",
+                border: "1px solid var(--c-blue)",
+                borderRadius: 999,
+                padding: "2px 9px",
+              }}
+            >
+              <Network size={12} />Graph context
+            </span>
+          )}
+          {(run.status === "succeeded" || run.commitHash) && (
+            <button className="bm-ghost" onClick={() => navigate(`/runs/${runId}/report`)} title="View report">
+              <FileText size={14} />View report
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Info strip */}

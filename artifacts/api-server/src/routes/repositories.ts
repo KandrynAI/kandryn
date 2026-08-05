@@ -18,7 +18,7 @@ import { detectStack } from "../stack/detector.js";
 import { fetchFilePaths } from "../adapters/gitService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
-import { isGraphUsable } from "../services/graphifyService.js";
+import { isGraphUsable, isGraphifyConfigured, triggerRepoIndex } from "../services/graphifyService.js";
 
 const router: IRouter = Router();
 
@@ -136,23 +136,9 @@ router.post("/repositories", async (req, res): Promise<void> => {
 
   // Trigger async Graphify indexing if the microservice is configured
   // (Phase 2). Fire-and-forget — never blocks the response.
-  const graphifyUrl = process.env.GRAPHIFY_SERVICE_URL;
-  if (graphifyUrl) {
+  if (isGraphifyConfigured()) {
     const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
-    const callbackUrl = `${process.env.APP_BASE_URL ?? "https://getbluemantis.com"}/api/internal/graphify-callback`;
-    void fetch(`${graphifyUrl}/index`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-service-secret": process.env.GRAPHIFY_SERVICE_SECRET ?? "",
-      },
-      body: JSON.stringify({
-        repo_url: updated.url,
-        github_token: cfg.GITHUB_TOKEN ?? "",
-        repo_id: updated.id,
-        callback_url: callbackUrl,
-      }),
-    }).catch((err) => req.log.warn({ err }, "Graphify index trigger failed"));
+    triggerRepoIndex({ repoUrl: updated.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: updated.id, log: req.log });
   }
 
   res.status(201).json(GetRepositoryResponse.parse(updated));
@@ -267,6 +253,38 @@ router.post("/repositories/:repoId/graph", async (req, res): Promise<void> => {
     edgeCount: graph.edges.length,
     message: `Graph loaded: ${graph.nodes.length} nodes, ${graph.edges.length} edges.`,
   });
+});
+
+// ---------------------------------------------------------------------------
+// POST /repositories/:repoId/graph/rebuild — ask the microservice to re-index
+// this repo (Phase 3). 202 accepted; the graph updates via the callback. 503
+// when the microservice isn't configured for this deployment.
+// ---------------------------------------------------------------------------
+router.post("/repositories/:repoId/graph/rebuild", async (req, res): Promise<void> => {
+  const params = RepoIdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid repository id" });
+    return;
+  }
+  const [repo] = await db
+    .select()
+    .from(repositoriesTable)
+    .where(and(eq(repositoriesTable.id, params.data.repoId), eq(repositoriesTable.userId, req.userId)));
+  if (!repo) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+  if (!isGraphifyConfigured()) {
+    res.status(503).json({
+      error: "Graphify service is not configured. Upload a graph.json manually, or set GRAPHIFY_SERVICE_URL.",
+    });
+    return;
+  }
+
+  const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
+  triggerRepoIndex({ repoUrl: repo.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: repo.id, log: req.log });
+  req.log.info({ repoId: repo.id }, "Graphify rebuild triggered");
+  res.status(202).json({ status: "indexing", message: "Rebuild started — the graph will update shortly." });
 });
 
 router.delete("/repositories/:id", async (req, res): Promise<void> => {

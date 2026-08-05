@@ -9,7 +9,7 @@ import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { fetchRepositoryGraphStatus, uploadRepositoryGraph, ApiError } from "@/services/api";
+import { fetchRepositoryGraphStatus, uploadRepositoryGraph, rebuildRepositoryGraph, ApiError } from "@/services/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -254,11 +254,32 @@ function GraphifySection({ repoId }: { repoId: number }) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const { data: status, isLoading } = useQuery({
     queryKey: ["repo", repoId, "graph"],
     queryFn: () => fetchRepositoryGraphStatus(repoId),
   });
+
+  const onRebuild = async () => {
+    setRebuilding(true);
+    try {
+      const res = await rebuildRepositoryGraph(repoId);
+      toast({ title: "Rebuild started", description: res.message });
+      // Re-index runs in the background; poll the status a moment later.
+      setTimeout(() => qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] }), 4000);
+    } catch (err) {
+      const notConfigured = err instanceof ApiError && err.status === 503;
+      toast({
+        title: notConfigured ? "Automatic rebuild unavailable" : "Rebuild failed",
+        description:
+          err instanceof ApiError ? err.message : "Could not start the rebuild.",
+        variant: "destructive",
+      });
+    } finally {
+      setRebuilding(false);
+    }
+  };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -316,12 +337,21 @@ function GraphifySection({ repoId }: { repoId: number }) {
           </div>
         )}
 
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input ref={fileRef} type="file" accept=".json" style={{ display: "none" }} onChange={onFile} />
           <Button variant="outline" size="sm" className="font-mono text-xs" disabled={uploading} onClick={() => fileRef.current?.click()}>
             {uploading ? "Uploading…" : built ? "Re-upload graph.json" : "Upload graph.json"}
           </Button>
+          <Button variant="outline" size="sm" className="font-mono text-xs" disabled={rebuilding} onClick={onRebuild}>
+            {rebuilding ? "Rebuilding…" : "Rebuild graph"}
+          </Button>
         </div>
+        {built && (
+          <p style={{ fontSize: 12, color: "var(--c-ink-4)", marginTop: 8, lineHeight: 1.5 }}>
+            Rebuild re-indexes from the latest default branch via the Graphify service. The graph also
+            re-indexes automatically after Blue Mantis commits code.
+          </p>
+        )}
       </CardContent>
     </Card>
   );

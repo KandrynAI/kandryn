@@ -503,14 +503,14 @@ export class GitService {
     keywords: string[],
     stack: StackProfile,
     graph: GraphifyGraph | null,
-  ): Promise<string> {
+  ): Promise<{ context: string; usedGraph: boolean }> {
     if (!graph || !graph.nodes?.length) {
-      return this.fetchFileContext(taskId, keywords, stack);
+      return { context: await this.fetchFileContext(taskId, keywords, stack), usedGraph: false };
     }
 
     const results = queryGraph(graph, keywords, 8);
     if (results.length === 0) {
-      return this.fetchFileContext(taskId, keywords, stack);
+      return { context: await this.fetchFileContext(taskId, keywords, stack), usedGraph: false };
     }
 
     const sections: string[] = [];
@@ -535,9 +535,9 @@ export class GitService {
     }
 
     if (sections.length === 0) {
-      return this.fetchFileContext(taskId, keywords, stack);
+      return { context: await this.fetchFileContext(taskId, keywords, stack), usedGraph: false };
     }
-    return sections.join("\n\n---\n\n");
+    return { context: sections.join("\n\n---\n\n"), usedGraph: true };
   }
 
   private async getFileContent(filePath: string): Promise<string> {

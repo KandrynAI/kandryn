@@ -91,6 +91,17 @@ export function uploadRepositoryGraph(
   });
 }
 
+/**
+ * Ask the Graphify microservice to re-index this repo (Phase 3). Resolves 202
+ * (indexing started); throws ApiError 503 when no microservice is configured —
+ * callers should fall back to prompting a manual graph.json upload.
+ */
+export function rebuildRepositoryGraph(
+  repoId: number,
+): Promise<{ status: string; message: string }> {
+  return request(`/api/repositories/${repoId}/graph/rebuild`, { method: 'POST' });
+}
+
 export function fetchRepositories(): Promise<Repository[]> {
   return request<Repository[]>('/api/repositories');
 }
@@ -251,6 +262,7 @@ export interface Run {
   prUrl: string | null;
   commitHash: string | null;
   committedSuggestionId: number | null;
+  usedGraphContext?: boolean;
   review?: ReviewResult | null;
   reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
   createdAt: string;

@@ -65,6 +65,9 @@ export const runsTable = pgTable(
     // cycle in the schema. Consumers null-check it. Used by test generation to
     // recover the chosen suggestion's code.
     committedSuggestionId: integer("committed_suggestion_id"),
+    // Whether this run's code context came from the Graphify knowledge graph
+    // (precise, low-token) rather than the keyword fallback (0011_run_graph_context.sql).
+    usedGraphContext: boolean("used_graph_context").notNull().default(false),
     // Veria review (0009_veria_review.sql). Both nullable — populated only when
     // the user runs Veria on a committed run.
     review: jsonb("review").$type<PersistedReviewResult | null>().default(null),
