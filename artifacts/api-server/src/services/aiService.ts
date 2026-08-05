@@ -205,6 +205,45 @@ interface ScoredEntry {
   recommendation: string;
 }
 
+export interface SynthesisContext {
+  title: string;
+  acceptanceCriteria: string[];
+}
+
+const ScoreDimensionSchema = z.object({
+  score: z.number(),
+  weight: z.number(),
+  verdict: z.enum(["strong", "adequate", "weak"]),
+  reason: z.string().default(""),
+});
+const ScoreBreakdownSchema = z.object({
+  correctness: ScoreDimensionSchema,
+  readability: ScoreDimensionSchema,
+  minimalDiff: ScoreDimensionSchema,
+  conventions: ScoreDimensionSchema,
+  acCoverage: ScoreDimensionSchema,
+  overallNarrative: z.string().default(""),
+  recommendation: z.enum(["Recommended", "Alternative"]).default("Alternative"),
+  confidence: z.number().default(50),
+  confidenceReason: z.string().default(""),
+});
+const ScorePairSchema = z.object({
+  suggestionA: ScoreBreakdownSchema,
+  suggestionB: ScoreBreakdownSchema,
+});
+type ScoreBreakdownOut = z.infer<typeof ScoreBreakdownSchema>;
+
+/** Weighted average of the five 0–100 dimensions → an integer 0–10 overall. */
+function weightedScore10(b: ScoreBreakdownOut): number {
+  const raw =
+    b.correctness.score * 0.35 +
+    b.readability.score * 0.2 +
+    b.minimalDiff.score * 0.15 +
+    b.conventions.score * 0.15 +
+    b.acCoverage.score * 0.15;
+  return Math.round(Math.max(0, Math.min(100, raw)) / 10);
+}
+
 export class SynthesisEngine {
   private readonly anthropicApiKey: string | undefined;
 
@@ -215,13 +254,51 @@ export class SynthesisEngine {
   async synthesize(
     suggestions: CodeSuggestion[],
     stack: StackProfile,
+    context?: SynthesisContext,
   ): Promise<CodeSuggestion[]> {
     if (suggestions.length === 0) return [];
 
     const client = new Anthropic({ apiKey: this.anthropicApiKey });
 
-    const synthesisPrompt = buildSynthesisPrompt(suggestions, stack);
+    // Rich per-dimension breakdown for the two-agent pair (A = first, B = second).
+    if (suggestions.length >= 2) {
+      try {
+        const message = await client.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: 8192,
+          messages: [{ role: "user", content: buildScoreAnalysisPrompt(suggestions[0], suggestions[1], stack, context) }],
+        });
+        const block = message.content[0];
+        if (block.type !== "text") throw new Error("Claude returned non-text block");
+        const pair = ScorePairSchema.parse(extractJson(block.text));
 
+        const breakdowns = [pair.suggestionA, pair.suggestionB];
+        const result: CodeSuggestion[] = suggestions.map((s, i) => {
+          const b = breakdowns[i];
+          if (!b) return { ...s, score: 0, recommendation: "Alternative", scoreBreakdown: null, scoreNarrative: null };
+          return {
+            ...s,
+            score: weightedScore10(b),
+            recommendation: b.recommendation,
+            scoreBreakdown: b,
+            scoreNarrative: b.overallNarrative,
+          };
+        });
+
+        result.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        result.forEach((s, i) => {
+          const rec = i === 0 ? "Recommended" : "Alternative";
+          s.recommendation = rec;
+          if (s.scoreBreakdown) s.scoreBreakdown.recommendation = rec;
+        });
+        return result;
+      } catch (err) {
+        logger.warn({ err }, "SynthesisEngine: breakdown scoring failed — falling back to simple scoring");
+      }
+    }
+
+    // Fallback: simple 0–10 scoring (also used when there is a single suggestion).
+    const synthesisPrompt = buildSynthesisPrompt(suggestions, stack);
     let scored: ScoredEntry[];
     try {
       const message = await client.messages.create({
@@ -229,16 +306,12 @@ export class SynthesisEngine {
         max_tokens: 8192,
         messages: [{ role: "user", content: synthesisPrompt }],
       });
-
       const block = message.content[0];
       if (block.type !== "text") throw new Error("Claude returned non-text block");
       scored = extractJson<ScoredEntry[]>(block.text);
     } catch (err) {
       logger.warn({ err }, "SynthesisEngine: Claude scoring failed — using default scores");
-      scored = suggestions.map((_, i) => ({
-        score: suggestions.length - i,
-        recommendation: "",
-      }));
+      scored = suggestions.map((_, i) => ({ score: suggestions.length - i, recommendation: "" }));
     }
 
     const result: CodeSuggestion[] = suggestions.map((s, i) => ({
@@ -246,15 +319,76 @@ export class SynthesisEngine {
       score: scored[i]?.score ?? 0,
       recommendation: scored[i]?.recommendation ?? "",
     }));
-
     result.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-
-    if (result.length > 0) {
-      result[0].recommendation = "Recommended";
-    }
-
+    if (result.length > 0) result[0].recommendation = "Recommended";
     return result;
   }
+}
+
+function buildScoreAnalysisPrompt(
+  a: CodeSuggestion,
+  b: CodeSuggestion,
+  stack: StackProfile,
+  context?: SynthesisContext,
+): string {
+  const ac = context?.acceptanceCriteria?.length
+    ? context.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")
+    : "(none provided)";
+  return `You are the Synthesis engine for Blue Mantis. You evaluate two code
+suggestions for the same work item and explain your reasoning clearly.
+
+Work item: ${context?.title ?? "(untitled)"}
+Acceptance criteria:
+${ac}
+
+Suggestion A (Raptia):
+File: ${a.filePath}
+
+\`\`\`${a.language}
+${a.code.slice(0, 6000)}
+\`\`\`
+
+Suggestion B (Fovea):
+File: ${b.filePath}
+
+\`\`\`${b.language}
+${b.code.slice(0, 6000)}
+\`\`\`
+
+Score each suggestion on five dimensions. For each dimension give:
+- score: 0–100
+- weight: the percentage weight this dimension carries (weights must sum to 100)
+- verdict: "strong" (>=80), "adequate" (50–79), or "weak" (<50)
+- reason: one specific sentence referencing actual code details
+
+Dimensions and weights:
+- correctness (35%): Does the code correctly solve the stated problem? Reference specific logic, conditions, or return values.
+- readability (20%): Is the code clear and maintainable? Reference naming, structure, or complexity.
+- minimalDiff (15%): Does it change only what is necessary? Reference scope of change.
+- conventions (15%): Does it follow the existing codebase patterns (${stack.frontend}/${stack.backend}/${stack.language})?
+- acCoverage (15%): How completely does it address the acceptance criteria? Reference which criteria are and are not covered.
+
+Then write:
+- overallNarrative: 2-3 sentences explaining the ranking decision in plain English, referencing actual code details.
+- recommendation: "Recommended" for the higher-scoring suggestion, "Alternative" for the other.
+- confidence: 0–100. 90+ = clearly better, 70-89 = probably better, 50-69 = marginal, <50 = too close to call.
+- confidenceReason: one sentence explaining the confidence level.
+
+Return ONLY a JSON object, no markdown fences, with this exact structure:
+{
+  "suggestionA": {
+    "correctness": { "score": N, "weight": 35, "verdict": "...", "reason": "..." },
+    "readability": { "score": N, "weight": 20, "verdict": "...", "reason": "..." },
+    "minimalDiff": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "conventions": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "acCoverage":  { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "overallNarrative": "...",
+    "recommendation": "Recommended" | "Alternative",
+    "confidence": N,
+    "confidenceReason": "..."
+  },
+  "suggestionB": { ...same shape... }
+}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -94,7 +94,10 @@ export async function executeRun(runId: number): Promise<void> {
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
     const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack);
-    const ranked = await synth.synthesize(raw, stack);
+    const ranked = await synth.synthesize(raw, stack, {
+      title: devTask.title,
+      acceptanceCriteria: devTask.acceptanceCriteria,
+    });
 
     // Persist suggestions and keep the inserted rows so we can record which one
     // gets committed (index-aligned with `ranked`).
@@ -112,6 +115,8 @@ export async function executeRun(runId: number): Promise<void> {
             language: s.language,
             score: s.score != null ? Math.round(s.score) : null,
             recommendation: s.recommendation ?? null,
+            scoreBreakdown: s.scoreBreakdown ?? null,
+            scoreNarrative: s.scoreNarrative ?? null,
           })),
         )
         .returning();

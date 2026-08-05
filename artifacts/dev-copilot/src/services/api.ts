@@ -231,6 +231,25 @@ export interface Run {
   createdAt: string;
 }
 
+export interface ScoreDimension {
+  score: number;
+  weight: number;
+  verdict: 'strong' | 'adequate' | 'weak';
+  reason: string;
+}
+
+export interface ScoreBreakdown {
+  correctness: ScoreDimension;
+  readability: ScoreDimension;
+  minimalDiff: ScoreDimension;
+  conventions: ScoreDimension;
+  acCoverage: ScoreDimension;
+  overallNarrative: string;
+  recommendation: 'Recommended' | 'Alternative';
+  confidence: number;
+  confidenceReason: string;
+}
+
 export interface RunSuggestion {
   id: number;
   runId: number;
@@ -241,6 +260,9 @@ export interface RunSuggestion {
   language: string;
   score: number | null;
   recommendation: string | null;
+  scoreBreakdown?: ScoreBreakdown | null;
+  scoreNarrative?: string | null;
+  testCases?: TestCase[];
   createdAt: string;
 }
 

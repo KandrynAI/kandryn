@@ -20,6 +20,25 @@ export interface PersistedTestCase {
   tags: string[];
 }
 
+/** Mirrors shared/types/scoreBreakdown.ts (kept local for the composite build). */
+export interface PersistedScoreDimension {
+  score: number;
+  weight: number;
+  verdict: "strong" | "adequate" | "weak";
+  reason: string;
+}
+export interface PersistedScoreBreakdown {
+  correctness: PersistedScoreDimension;
+  readability: PersistedScoreDimension;
+  minimalDiff: PersistedScoreDimension;
+  conventions: PersistedScoreDimension;
+  acCoverage: PersistedScoreDimension;
+  overallNarrative: string;
+  recommendation: "Recommended" | "Alternative";
+  confidence: number;
+  confidenceReason: string;
+}
+
 /**
  * A persisted agent suggestion produced by a run. Mirrors the CodeSuggestion
  * shape (shared/types/codeSuggestion.ts) so runs can be committed from later.
@@ -39,6 +58,8 @@ export const suggestionsTable = pgTable(
     score: integer("score"),
     recommendation: text("recommendation"),
     testCases: jsonb("test_cases").$type<PersistedTestCase[]>().notNull().default([]),
+    scoreBreakdown: jsonb("score_breakdown").$type<PersistedScoreBreakdown | null>(),
+    scoreNarrative: text("score_narrative"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("suggestions_run_id_idx").on(t.runId)],
