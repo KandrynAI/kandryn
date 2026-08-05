@@ -38,9 +38,9 @@ export default function HeroSection() {
           }}
         >
           Blue Mantis reads a work item the way an engineer does — hierarchy, acceptance criteria,
-          the repository it belongs to — then runs two agents against it, ranks what they produce,
-          and opens the pull request. Run it now, or queue tonight&apos;s work and read the diffs in
-          the morning.
+          the repository it belongs to — then runs four agents against it — Raptia and Fovea generate
+          competing suggestions, Synthesia ranks them, and the pull request opens. Run it now, or queue
+          tonight&apos;s work and read the diffs in the morning.
         </p>
         <div style={{ display: 'flex', gap: 14, marginTop: 40, flexWrap: 'wrap' }}>
           <Btn variant="primary" href="/contact">Request access</Btn>

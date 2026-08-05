@@ -20,7 +20,7 @@ export const NAV_ITEMS = [
 
 export const HERO_STATS = [
   { value: 'Epic → PR', body: 'One thread from the work item to the branch, the commit and the review.' },
-  { value: '2 agents', body: 'Raptia and Fovea run in parallel; Synthesis ranks the answers.' },
+  { value: '4 agents', body: 'Raptia and Fovea generate in parallel. Synthesia ranks. Veria reviews after commit.' },
   { value: 'Every 5 min', body: 'The dispatcher claims scheduled runs around the clock, then emails you the result.' },
   { value: 'Tests too', body: 'Given/When/Then cases pushed back to the tracker, the script stacked on the same PR.' },
 ];
@@ -30,7 +30,7 @@ export const STEPS = [
   { n: '02', title: 'Bind a project', body: 'A three-step wizard ties one tracker project to one repository, validating both live.' },
   { n: '03', title: 'Sync', body: 'The epic→story→task tree lands on a board, parents resolved, closed items cleaned up.' },
   { n: '04', title: 'Author', body: 'Write items locally or push them upstream, or have an epic broken down into children you approve.' },
-  { n: '05', title: 'Run', body: 'Now, or scheduled up to thirty days out. Two agents, one ranked shortlist.' },
+  { n: '05', title: 'Run', body: 'Now, or scheduled up to thirty days out. Raptia and Fovea generate in parallel; Synthesia produces a ranked shortlist.' },
   { n: '06', title: 'Commit', body: 'The chosen suggestion becomes a branch, a commit and a pull request; the item moves to review.' },
   { n: '07', title: 'Test', body: 'Given/When/Then cases and a runnable script, stacked onto the same pull request.' },
   { n: '08', title: 'Repeat', body: 'The dispatcher sweeps every five minutes and emails you when a scheduled run lands.' },
@@ -39,7 +39,7 @@ export const STEPS = [
 export const HOW_SECTIONS = [
   {
     n: 'STAGE 01', title: 'Context',
-    body: 'Before an agent sees anything, the run assembles the case file: the work item, its parents, the acceptance criteria, and the files in the bound repository that the keyword extractor judges relevant. The detected stack profile rides along, so the agent writes Express and Drizzle rather than generic pseudocode.',
+    body: 'Before an agent sees anything, the run assembles the case file: the work item, its parents, the acceptance criteria, and the files in the bound repository that the keyword extractor judges relevant. The detected stack profile rides along, so the agents write Express and Drizzle rather than generic pseudocode.',
     detailLabel: 'WHAT GOES IN',
     details: ['Work item title, description and acceptance criteria', 'The epic and story above it, for intent', 'Relevant repository files and the detected stack', 'Your refinement prompt, if you wrote one'],
   },
@@ -47,11 +47,11 @@ export const HOW_SECTIONS = [
     n: 'STAGE 02', title: 'Two answers',
     body: 'Raptia and Fovea run in parallel against the same case file. They reason differently by design — when one misreads the acceptance criteria, the other usually does not.',
     detailLabel: 'WHY PARALLEL',
-    details: ['One shared context, two independent reasoning paths', 'No sequential prompting, so no shared blind spot', 'Either answer is committable — Synthesis tells you which', 'Both are kept on the run for later comparison'],
+    details: ['One shared context, two independent reasoning paths', 'No sequential prompting, so no shared blind spot', 'Either answer is committable — Synthesia tells you which', 'Both are kept on the run for later comparison'],
   },
   {
-    n: 'STAGE 03', title: 'Ranking',
-    body: 'Synthesis scores each suggestion on stack fit, blast radius and how much of the acceptance criteria it actually covers, then flags the leader as Recommended. The score is visible; you are free to disagree with it.',
+    n: 'STAGE 03', title: 'Synthesia ranks',
+    body: 'Synthesia scores each suggestion on stack fit, blast radius, and how much of the acceptance criteria it actually covers, then flags the leader as Recommended. The score is visible; you are free to disagree with it.',
     detailLabel: 'SCORED ON',
     details: ["Fit with the repository's existing patterns", 'Size and reach of the change', 'Coverage of the stated acceptance criteria', 'Whether it invents APIs that do not exist'],
   },
@@ -67,6 +67,12 @@ export const HOW_SECTIONS = [
     detailLabel: 'THE LOOP',
     details: ['Up to twenty pending runs per user', 'Claimed two at a time, no double-dispatch', 'Runs stuck over twenty minutes are failed', 'Completion and failure both send email'],
   },
+  {
+    n: 'STAGE 06', title: 'Veria reviews',
+    body: 'After you commit a suggestion, Veria reads the committed code against the acceptance criteria and writes a structured review: what was addressed, what was missed, and what the human reviewer should focus on.',
+    detailLabel: 'WHAT VERIA CHECKS',
+    details: ['Which acceptance criteria are fully covered', 'Which are partially addressed or missing', 'Specific strengths in the committed code', 'Risks or gaps to watch in code review'],
+  },
 ];
 
 export const ATTENTION = [
@@ -80,8 +86,10 @@ export const INTEGRATIONS = [
   { name: 'Azure DevOps', tag: 'TRACKER', body: 'The same sync against Azure Boards, with Feature mapped onto epic so the hierarchy lines up with Jira projects.', creds: 'AZURE_DEVOPS_ORG · AZURE_DEVOPS_PROJECT · AZURE_DEVOPS_PAT', note: 'Work-item creation and test-case push both supported.' },
   { name: 'GitHub', tag: 'PRIMARY REPO', body: 'Branch, commit and pull request. Stack detection reads the repository on connect, and the test-script commit stacks onto the existing PR rather than overwriting it.', creds: 'GITHUB_TOKEN (PAT) or the OAuth token from sign-in', note: 'The primary provider, and the one we test first on every release.' },
   { name: 'Azure Repos', tag: 'REPO', body: 'Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.', creds: 'AZURE_REPOS_ORG · AZURE_REPOS_TOKEN', note: 'Edits to existing files are reliable; brand-new file adds can fail.' },
-  { name: 'Raptia', tag: 'AGENT', body: 'The first of two agents that runs on every Blue Mantis pipeline. Raptia is optimised for precision — it reads the work item, the acceptance criteria, and the repository context, then commits to a single well-reasoned answer.', creds: 'Configured automatically — no separate credential needed', note: 'Raptia and Fovea always run together. You cannot run one without the other.' },
-  { name: 'Fovea', tag: 'AGENT', body: 'The second agent. Fovea takes a wider view of the same context — it considers more of the repository before settling on an approach, which means it often catches what Raptia misses.', creds: 'Configured automatically — no separate credential needed', note: 'The Synthesis engine scores both agents and flags the stronger answer.' },
+  { name: 'Raptia', tag: 'AGENT', body: 'The first of two generation agents that runs on every Blue Mantis pipeline. Raptia is optimised for precision — it reads the work item, the acceptance criteria, and the repository context, then commits to a single well-reasoned answer.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'Raptia and Fovea always run together in parallel.' },
+  { name: 'Fovea', tag: 'AGENT', body: 'The second generation agent. Fovea takes a wider view of the same context — it considers more of the repository before settling on an approach, which means it often catches what Raptia misses.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'The Synthesia agent scores both and flags the stronger answer.' },
+  { name: 'Synthesia', tag: 'AGENT', body: 'The ranking agent. After Raptia and Fovea complete, Synthesia scores both suggestions on correctness, readability, diff size, convention adherence, and acceptance-criteria coverage — then recommends the better one with a confidence score.', creds: 'Runs automatically after every generation — no configuration needed', note: 'Synthesia\'s verdict is visible on every run. You can always override it.' },
+  { name: 'Veria', tag: 'AGENT', body: 'The review agent. After you commit a suggestion, Veria reads the committed code against the work item\'s acceptance criteria and produces a structured review: strengths, gaps, risks, and a one-sentence focus note for the human reviewer.', creds: 'User-triggered post-commit — runs on demand, not automatically', note: 'Veria only activates after a suggestion is committed to a branch.' },
 ];
 
 export const CAPABILITY_MATRIX = [
@@ -99,7 +107,7 @@ export const RESOURCES = [
   { kind: 'GUIDE', cat: 'Guides', meta: '12 min', title: 'From epic to eight children in one breakdown', body: 'How to review an AI breakdown quickly: what to accept, what to rewrite, what to delete outright.', cta: 'Read' },
   { kind: 'PATTERN', cat: 'Patterns', meta: '6 min', title: 'Refinement prompts that survive code review', body: 'Short, repository-specific instructions beat long style essays. Nine examples with their diffs.', cta: 'Read' },
   { kind: 'PATTERN', cat: 'Patterns', meta: '7 min', title: 'When to switch auto-commit on', body: 'A rule of thumb: auto-commit for mechanical work, review-first for anything touching money or auth.', cta: 'Read' },
-  { kind: 'ENGINEERING', cat: 'Engineering', meta: '11 min', title: 'How Synthesis ranks two answers', body: 'Scoring on stack fit, blast radius and test surface — and why the second answer sometimes wins.', cta: 'Read' },
+  { kind: 'ENGINEERING', cat: 'Engineering', meta: '11 min', title: 'How Synthesia ranks two answers', body: 'How Synthesia scores Raptia and Fovea on stack fit, blast radius, and AC coverage — and why the second answer sometimes wins.', cta: 'Read' },
   { kind: 'ENGINEERING', cat: 'Engineering', meta: '8 min', title: 'Scheduling, dispatch and the five-minute sweep', body: 'What happens between pressing Schedule and finding a pull request the next morning.', cta: 'Read' },
   { kind: 'TEMPLATE', cat: 'Templates', meta: 'Download', title: 'Acceptance-criteria template for agent runs', body: 'A Given/When/Then skeleton that maps cleanly onto generated tests.', cta: 'Get it' },
   { kind: 'TEMPLATE', cat: 'Templates', meta: 'Download', title: 'Pilot checklist for the first two weeks', body: 'What to instrument, which items to point it at, and how to tell whether it is working.', cta: 'Get it' },
@@ -107,7 +115,7 @@ export const RESOURCES = [
 ];
 
 export const QUICKSTART = [
-  { n: '01', title: 'Connect your credentials', body: 'Tracker and repository credentials, tested as you save them.', time: '5 min' },
+  { n: '01', title: 'Connect your credentials', body: 'Tracker and repository credentials, tested as you save them. Agent infrastructure needs no separate key.', time: '5 min' },
   { n: '02', title: 'Bind your first project', body: 'One tracker project to one repository, validated live.', time: '2 min' },
   { n: '03', title: 'Sync and read the board', body: 'The hierarchy arrives; check the parents look right.', time: '1 min' },
   { n: '04', title: 'Run one small item', body: 'Pick something mechanical for the first run, not the payments rewrite.', time: '4 min' },
@@ -126,25 +134,25 @@ export const SECURITY_PRINCIPLES = [
   { title: 'Every query is scoped', body: 'Projects, work items, runs and suggestions are all filtered by user on every read and write. There is no global collection a bug could expose.' },
   { title: 'Write access is narrow', body: 'Blue Mantis creates branches, commits and pull requests. It does not merge, force-push, or touch your default branch.' },
   { title: 'The tracker stays yours', body: 'Items and test cases are pushed only when you ask. The single automatic write-back is a status change when an item closes.' },
-  { title: 'Agents see a case file, not a repository', body: 'Only the files selected as relevant to the work item, plus the detected stack profile, are passed to the agent pipeline — scoped to the files selected as relevant to the work item.' },
+  { title: 'Agents see a case file, not a repository', body: 'Only the files selected as relevant to the work item, plus the detected stack profile, are passed to the agent pipeline — scoped to what the keyword extractor judges relevant.' },
   { title: 'Failures are contained', body: 'A run that fails records the error and stops. Nothing half-written reaches your repository, and stuck runs are swept after twenty minutes.' },
 ];
 
 export const PROCESSORS = [
   { name: 'Supabase (Postgres)', purpose: 'Application database', sees: 'Work items, runs, suggestions, your encrypted-at-rest config' },
   { name: 'Clerk', purpose: 'Authentication', sees: 'Email, session, OAuth identity' },
-  { name: 'Blue Mantis Agent Pipeline', purpose: 'Code generation', sees: 'The case file for a run — work item, acceptance criteria, and selected repository files' },
+  { name: 'Blue Mantis agent pipeline', purpose: 'Code generation and review', sees: 'The case file for a run — work item, acceptance criteria, and selected repository files' },
   { name: 'Resend', purpose: 'Transactional email', sees: 'Your address and the run outcome' },
 ];
 
 export const FAQS = [
   { q: 'Does Blue Mantis merge code?', a: 'No. It creates a branch named task/<id>, commits the suggestion you chose, and opens a pull request. Merging stays with your review rules and your CI.' },
-  { q: 'Whose API keys does it use?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored per user, tested when you save them, and never written to a log line. Agent infrastructure is managed by Blue Mantis.' },
+  { q: 'How are credentials handled?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored against your user, tested when you save them, and never written to a log line. Agent infrastructure is managed by Blue Mantis — no model API keys required from you.' },
   { q: 'How much of my repository do the agents see?', a: 'The files the keyword extractor selects as relevant to the work item, plus the detected stack profile. Not the whole tree, and nothing outside the repository you bound to the project.' },
   { q: 'What happens if a scheduled run fails?', a: 'The run row records the error, the item is left untouched, and the owner gets an email. Runs stuck longer than twenty minutes are swept to failed by the dispatcher.' },
   { q: 'Can it write to my tracker?', a: 'Only where you ask it to: new items and test cases you explicitly push, and a status change when an item closes. Nothing else propagates upstream.' },
   { q: 'Which providers work best?', a: 'GitHub is the primary, auto-synced provider. Azure Repos works for edits to existing files; adding a brand-new file can fail there.' },
-  { q: 'Two agents — why not one?', a: 'Raptia and Fovea reason differently by design. Running both in parallel and ranking the results gives Synthesis something to compare — and gives you a second option when the first answer is wrong.' },
+  { q: 'Four agents — why so many?', a: 'Each agent has a distinct role. Raptia and Fovea generate competing suggestions in parallel — they reason differently by design, so when one misreads the ticket, the other usually does not. Synthesia scores both and recommends the stronger answer. Veria reviews the committed code against the acceptance criteria after you commit. Together they cover the full delivery loop from generation to review.' },
   { q: 'Can I try it on one project?', a: 'That is how every pilot starts: one tracker project, one repository, one real work item run end to end on a shared call.' },
 ];
 
