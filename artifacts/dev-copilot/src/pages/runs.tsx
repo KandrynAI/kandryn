@@ -147,6 +147,9 @@ export default function RunsPage() {
     ? allRuns.filter((r) => {
         if (statusFilter === "running") return r.status === "running" || r.status === "queued";
         if (statusFilter === "scheduled") return r.status === "scheduled";
+        // A committed run has no dedicated status — it's a succeeded run that
+        // produced a commit (dashboard "Linked commits" deep-links here).
+        if (statusFilter === "committed") return r.commitHash != null || r.committedSuggestionId != null;
         return r.status === statusFilter;
       })
     : allRuns;
