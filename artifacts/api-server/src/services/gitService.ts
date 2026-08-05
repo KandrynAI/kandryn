@@ -4,6 +4,8 @@ import { db, repositoriesTable } from "@workspace/db";
 import type { Repository } from "@workspace/db";
 import { detectStack, type StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
+import { queryGraph } from "./graphifyService.js";
+import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
 // ---------------------------------------------------------------------------
 // Stack → file extension mapping
@@ -488,6 +490,69 @@ export class GitService {
     }
 
     return output.trim();
+  }
+
+  /**
+   * Graph-aware file context (Graphify). When a usable graph is provided, query
+   * it for the most relevant nodes and fetch only those file sections — far
+   * fewer tokens than keyword-guessing whole files. Falls back to the keyword
+   * method (fetchFileContext) when there's no graph or the query is empty.
+   */
+  async fetchFileContextWithGraph(
+    taskId: string,
+    keywords: string[],
+    stack: StackProfile,
+    graph: GraphifyGraph | null,
+  ): Promise<string> {
+    if (!graph || !graph.nodes?.length) {
+      return this.fetchFileContext(taskId, keywords, stack);
+    }
+
+    const results = queryGraph(graph, keywords, 8);
+    if (results.length === 0) {
+      return this.fetchFileContext(taskId, keywords, stack);
+    }
+
+    const sections: string[] = [];
+    let totalChars = 0;
+    const MAX_CHARS = 6000; // tighter budget — graph context is more precise
+
+    for (const result of results) {
+      if (totalChars >= MAX_CHARS) break;
+      try {
+        const content = await this.fetchFileSection(result.filePath, result.lineStart, result.lineEnd);
+        if (content) {
+          const header =
+            `// ${result.filePath}` +
+            (result.lineStart ? ` (lines ${result.lineStart}-${result.lineEnd ?? "+"})` : "") +
+            ` [${result.relation}, confidence: ${(result.confidence * 100).toFixed(0)}%]\n`;
+          sections.push(header + content);
+          totalChars += header.length + content.length;
+        }
+      } catch {
+        // Skip files that can't be fetched — don't fail the run.
+      }
+    }
+
+    if (sections.length === 0) {
+      return this.fetchFileContext(taskId, keywords, stack);
+    }
+    return sections.join("\n\n---\n\n");
+  }
+
+  private async getFileContent(filePath: string): Promise<string> {
+    return this.client.fetchFileContent(filePath);
+  }
+
+  private async fetchFileSection(filePath: string, lineStart?: number, lineEnd?: number): Promise<string> {
+    const content = await this.getFileContent(filePath);
+    if (!content) return "";
+    if (!lineStart) return content.slice(0, 2000);
+
+    const lines = content.split("\n");
+    const start = Math.max(0, lineStart - 5); // 5 lines before
+    const end = Math.min(lines.length, (lineEnd ?? lineStart + 40) + 5); // 5 lines after
+    return lines.slice(start, end).join("\n");
   }
 
   async createBranch(taskId: string): Promise<void> {

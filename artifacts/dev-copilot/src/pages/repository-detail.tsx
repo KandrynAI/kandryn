@@ -3,12 +3,13 @@ import { useParams, useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Database, Edit, Trash2, ArrowLeft, Layout as LayoutIcon, Server, FileCode, Clock, GitBranch, Github, Link as LinkIcon, CheckSquare } from "lucide-react";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { fetchRepositoryGraphStatus, uploadRepositoryGraph, ApiError } from "@/services/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,7 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 
 const formSchema = z.object({
@@ -201,6 +202,8 @@ export default function RepositoryDetail() {
         </Card>
       </div>
 
+      <GraphifySection repoId={id} />
+
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold tracking-tight">Linked Tasks</h2>
@@ -243,6 +246,84 @@ export default function RepositoryDetail() {
         </div>
       </div>
     </div>
+  );
+}
+
+function GraphifySection({ repoId }: { repoId: number }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: ["repo", repoId, "graph"],
+    queryFn: () => fetchRepositoryGraphStatus(repoId),
+  });
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const graph = JSON.parse(await file.text());
+      const res = await uploadRepositoryGraph(repoId, graph);
+      toast({ title: res.message });
+      qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] });
+    } catch (err) {
+      toast({
+        title: "Upload failed",
+        description: err instanceof ApiError ? err.message : "Could not parse graph.json.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const built = status?.built ?? false;
+  const stale = status?.stale ?? false;
+  const dot = !built ? "#9ba3ac" : stale ? "#d4821a" : "#1a7f4b";
+  const statusText = isLoading
+    ? "Checking…"
+    : !built
+      ? "Not loaded"
+      : `Loaded — ${status?.nodeCount ?? 0} nodes${status?.builtAt ? `, built ${formatDistanceToNow(new Date(status.builtAt))} ago` : ""}${stale ? " · Rebuild recommended" : ""}`;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm font-mono text-muted-foreground">Graphify context</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2 text-sm">
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, display: "inline-block", flexShrink: 0 }} />
+          <span>{statusText}</span>
+        </div>
+
+        {!built && !isLoading && (
+          <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 4, padding: "14px 16px", marginTop: 10 }}>
+            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", marginBottom: 8, fontWeight: 600 }}>Graph context</div>
+            <p style={{ fontSize: 13, color: "var(--c-ink-2)", lineHeight: 1.6 }}>
+              Blue Mantis uses a Graphify knowledge graph to send Raptia and Fovea precise file context instead of guessing
+              from keywords. This reduces tokens per run by up to 5×.
+            </p>
+            <ol style={{ fontSize: 13, color: "var(--c-ink-2)", marginTop: 10, paddingLeft: 18, lineHeight: 1.8 }}>
+              <li>Install Graphify: <code style={{ fontFamily: "var(--mono)" }}>uv tool install graphifyy</code></li>
+              <li>In Claude Code on your repository: <code style={{ fontFamily: "var(--mono)" }}>/graphify . --code-only --no-viz</code></li>
+              <li>Upload the result:</li>
+            </ol>
+          </div>
+        )}
+
+        <div style={{ marginTop: 12 }}>
+          <input ref={fileRef} type="file" accept=".json" style={{ display: "none" }} onChange={onFile} />
+          <Button variant="outline" size="sm" className="font-mono text-xs" disabled={uploading} onClick={() => fileRef.current?.click()}>
+            {uploading ? "Uploading…" : built ? "Re-upload graph.json" : "Upload graph.json"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
