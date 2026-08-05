@@ -68,6 +68,9 @@ export const runsTable = pgTable(
     // Whether this run's code context came from the Graphify knowledge graph
     // (precise, low-token) rather than the keyword fallback (0011_run_graph_context.sql).
     usedGraphContext: boolean("used_graph_context").notNull().default(false),
+    // Human-readable stack this run targeted, e.g. "react · nodejs · postgresql"
+    // (0013_run_stack.sql). Null for runs created before the column existed.
+    stackDesc: text("stack_desc"),
     // Veria review (0009_veria_review.sql). Both nullable — populated only when
     // the user runs Veria on a committed run.
     review: jsonb("review").$type<PersistedReviewResult | null>().default(null),

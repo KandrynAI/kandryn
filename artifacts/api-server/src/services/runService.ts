@@ -11,6 +11,7 @@ import {
 import { GitService } from "./gitService.js";
 import { AIOrchestrator, SynthesisEngine } from "./aiService.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
+import { describeStack } from "./stackPromptBuilder.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import { getConfigs } from "./configService.js";
 import { sendRunCompleted, sendRunFailed } from "./emailService.js";
@@ -66,6 +67,12 @@ export async function executeRun(runId: number): Promise<void> {
     if (!repo) throw new Error("Repository not found");
 
     const stack = repo.stackProfile as StackProfile;
+    // Record the stack this run targets (surfaced in the run info strip) and log
+    // it. Persisted early so even a later failure shows which stack was used.
+    const stackDesc = describeStack(stack);
+    logger.info({ runId, workItemId: workItem.id, stackDesc }, "Running agents with stack-aware prompt");
+    await db.update(runsTable).set({ stackDesc }).where(eq(runsTable.id, runId));
+
     const creds = await getConfigs(userId, [
       "ANTHROPIC_API_KEY",
       "OPENAI_API_KEY",
