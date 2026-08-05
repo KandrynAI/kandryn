@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useGetDashboardStats, useGetRecentActivity } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { GitCommit, CheckSquare, GitPullRequest, Loader2 } from "lucide-react";
+import { GitCommit, CheckSquare, FileText, FlaskConical, ChevronRight, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { fetchRuns, reRunItem, ApiError, type Run } from "@/services/api";
+import { fetchRuns, fetchProjects, reRunItem, ApiError, type Run, type Project } from "@/services/api";
 
 const RERUNNABLE = new Set(["failed", "canceled"]);
 
@@ -17,14 +17,27 @@ export default function Dashboard() {
 
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [rerunning, setRerunning] = useState<Set<number>>(new Set());
+  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchRuns()
+    // The dashboard isn't on a /p/:id route, so the "active" project is the
+    // first one (same fallback the ContextPanel uses).
+    fetchProjects()
+      .then((ps: Project[]) => setActiveProjectId(ps[0]?.id ?? null))
+      .catch(() => setActiveProjectId(null));
+  }, []);
+
+  useEffect(() => {
+    fetchRuns({ limit: 5 })
       .then((rs) =>
-        setRuns([...rs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8)),
+        setRuns([...rs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5)),
       )
       .catch(() => setRuns([]));
   }, []);
+
+  // Project-scoped tiles fall back to project creation when there's no project.
+  const goProject = (suffix: string) =>
+    navigate(activeProjectId ? `/p/${activeProjectId}${suffix}` : "/projects/new");
 
   const reRun = async (run: Run, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -52,6 +65,10 @@ export default function Dashboard() {
     <div>
       <style>{`
         .dash-row:hover { background: var(--c-surface); }
+        .dash-stat { cursor: pointer; position: relative; transition: background 150ms ease; }
+        .dash-stat:hover { background: var(--c-surface); }
+        .dash-chev { position: absolute; right: 8px; bottom: 8px; opacity: 0; transition: opacity 150ms ease; color: var(--c-ink-4); }
+        .dash-stat:hover .dash-chev { opacity: 1; }
         .dash-rerun {
           font-size: var(--fs-xs); font-weight: 600; padding: 2px 8px; border-radius: 3px;
           background: transparent; color: var(--c-blue); border: 1px solid var(--c-blue);
@@ -63,10 +80,10 @@ export default function Dashboard() {
 
       {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid var(--c-border)" }}>
-        <Stat label="Repositories" value={stats?.totalRepositories} loading={statsLoading} testId="total-repositories" first />
-        <Stat label="Active tasks" value={(stats?.openTasks || 0) + (stats?.inProgressTasks || 0)} loading={statsLoading} testId="active-tasks" />
-        <Stat label="Completed" value={stats?.completedTasks} loading={statsLoading} testId="completed-tasks" />
-        <Stat label="Linked commits" value={stats?.linkedCommits} loading={statsLoading} testId="linked-commits" />
+        <Stat label="Repositories" value={stats?.totalRepositories} loading={statsLoading} testId="total-repositories" first onClick={() => navigate("/repositories")} />
+        <Stat label="Active tasks" value={(stats?.openTasks || 0) + (stats?.inProgressTasks || 0)} loading={statsLoading} testId="active-tasks" onClick={() => goProject("/board")} />
+        <Stat label="Completed" value={stats?.completedTasks} loading={statsLoading} testId="completed-tasks" onClick={() => goProject("/board?col=done")} />
+        <Stat label="Linked commits" value={stats?.linkedCommits} loading={statsLoading} testId="linked-commits" onClick={() => goProject("/runs?status=committed")} />
       </div>
 
       {/* Recent runs */}
@@ -123,11 +140,15 @@ export default function Dashboard() {
             {activity.map((item, i: number) => (
               <div
                 key={item.id ?? i}
+                className="dash-row"
                 data-testid={`activity-item-${item.id}`}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: "1px solid var(--c-border)" }}
+                onClick={() => navigate(`/tasks/${item.id}`)}
+                role="button"
+                title={`Open ${item.title}`}
+                style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: "1px solid var(--c-border)" }}
               >
                 <span style={{ color: "var(--c-ink-4)", display: "inline-flex" }}>
-                  {item.linkedCommit ? <GitCommit size={14} /> : item.status === "done" ? <CheckSquare size={14} /> : <GitPullRequest size={14} />}
+                  {item.type === "test_case" ? <FlaskConical size={14} /> : item.linkedCommit ? <GitCommit size={14} /> : item.status === "done" ? <CheckSquare size={14} /> : <FileText size={14} />}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: "var(--fs-base)", color: "var(--c-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {item.title}
@@ -158,15 +179,23 @@ function Stat({
   loading,
   testId,
   first,
+  onClick,
 }: {
   label: string;
   value?: number;
   loading: boolean;
   testId: string;
   first?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div style={{ padding: "14px 20px", borderRight: "1px solid var(--c-border)", borderLeft: first ? "none" : undefined }}>
+    <div
+      className={onClick ? "dash-stat" : undefined}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      title={onClick ? `Open ${label}` : undefined}
+      style={{ padding: "14px 20px", borderRight: "1px solid var(--c-border)", borderLeft: first ? "none" : undefined }}
+    >
       {loading ? (
         <Skeleton className="h-6 w-12" />
       ) : (
@@ -177,6 +206,7 @@ function Stat({
       <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 3, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 500 }}>
         {label}
       </div>
+      {onClick && <ChevronRight size={12} className="dash-chev" />}
     </div>
   );
 }

@@ -32,6 +32,7 @@ const ListRunsQuery = z.object({
   status: z
     .enum(["scheduled", "queued", "running", "succeeded", "failed", "canceled"])
     .optional(),
+  limit: z.coerce.number().int().positive().max(50).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -147,8 +148,9 @@ router.get("/runs", async (req, res): Promise<void> => {
   if (query.data.workItemId != null) conds.push(eq(runsTable.workItemId, query.data.workItemId));
   if (query.data.status) conds.push(eq(runsTable.status, query.data.status));
 
-  // A per-item lookup wants a short recent history; the broad list keeps 200.
-  const limit = query.data.workItemId != null ? 10 : 200;
+  // An explicit ?limit wins (capped at 50 by the schema); otherwise a per-item
+  // lookup wants a short recent history and the broad list keeps 200.
+  const limit = query.data.limit ?? (query.data.workItemId != null ? 10 : 200);
   const runs = await db
     .select()
     .from(runsTable)

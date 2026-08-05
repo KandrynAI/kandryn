@@ -366,10 +366,11 @@ export function fetchRunsForItem(workItemId: number): Promise<Run[]> {
   return request<Run[]>(`/api/runs?workItemId=${workItemId}`);
 }
 
-export function fetchRuns(params: { projectId?: number; status?: RunStatus } = {}): Promise<Run[]> {
+export function fetchRuns(params: { projectId?: number; status?: RunStatus; limit?: number } = {}): Promise<Run[]> {
   const q = new URLSearchParams();
   if (params.projectId != null) q.set('projectId', String(params.projectId));
   if (params.status) q.set('status', params.status);
+  if (params.limit != null) q.set('limit', String(params.limit));
   const qs = q.toString();
   return request<Run[]>(`/api/runs${qs ? `?${qs}` : ''}`);
 }
