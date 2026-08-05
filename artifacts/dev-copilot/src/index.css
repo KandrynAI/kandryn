@@ -388,3 +388,36 @@ a:hover { text-decoration: underline; }
 [class*="rounded-"] {
   border-radius: 4px !important;
 }
+
+/* =========================================================================
+   Print / PDF — hide the app shell chrome and print only the report content.
+   (Adapted from the spec's body>*:not(.report-root): the report renders
+   inside AppShell, so we hide the rail/panel/topbar by data-testid instead.)
+   ========================================================================= */
+@media print {
+  [data-testid="command-rail"],
+  [data-testid="context-panel"],
+  [data-testid="topbar"],
+  [data-testid="tabbar"],
+  .screen-only {
+    display: none !important;
+  }
+  html, body { height: auto !important; overflow: visible !important; }
+  [data-testid="app-shell"],
+  [data-testid="app-main-col"],
+  [data-testid="app-main"] { overflow: visible !important; height: auto !important; }
+
+  @page { size: A4; margin: 20mm 16mm; }
+
+  body { font-size: 11px; }
+  .report-content { max-width: none !important; padding: 0 !important; }
+
+  .report-section,
+  .code-block,
+  table { page-break-inside: avoid; }
+
+  pre { white-space: pre-wrap; word-break: break-all; }
+
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .score-fill { background: #1a56db !important; }
+}
