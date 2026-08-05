@@ -234,6 +234,8 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 | `RESEND_API_KEY` / `WAITLIST_FROM_EMAIL` | ⚠️ | Email; without the key, email is a no-op |
 | `APP_BASE_URL` | ❌ | Email link origin (default `https://getbluemantis.com`) |
 | `ENABLE_DEMO_AGENTS` | ❌ | `true` adds mock agents (default off) |
+| `GRAPHIFY_SERVICE_URL` | ❌ | Graphify microservice base URL (optional; enables server-side auto-indexing) |
+| `GRAPHIFY_SERVICE_SECRET` | ❌ | Shared secret for Graphify microservice auth (`x-service-secret`) |
 | `SESSION_SECRET` | ❌ | Session signing |
 | `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`GITHUB_TOKEN`/`AZURE_REPOS_TOKEN`/`ADO_*`/`JIRA_*` | ❌ | Fallbacks only — real values are **per-user** in `integration_configs` |
 
