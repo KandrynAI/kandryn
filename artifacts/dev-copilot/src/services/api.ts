@@ -361,10 +361,22 @@ export function breakdownWorkItem(workItemId: number): Promise<{ parentId: numbe
 /* ---- Test generation & push-back (Phase 5) ---- */
 
 export interface TestCase {
+  id: string;
   title: string;
+  priority: 'high' | 'medium' | 'low';
+  type: 'happy-path' | 'edge-case' | 'failure';
   given: string;
   when: string;
   then: string;
+  assertion: string;
+  tags: string[];
+  selected?: boolean; // client-side only, not persisted
+}
+
+export interface PushedTestCase {
+  testCaseId: string;
+  plmUrl: string;
+  plmKey: string;
 }
 
 export interface TestScript {
@@ -397,8 +409,8 @@ export function commitTestScript(
 export function pushTestCases(
   workItemId: number,
   testCases: TestCase[],
-): Promise<{ created: { externalId: string; plmUrl: string; title: string }[] }> {
-  return request<{ created: { externalId: string; plmUrl: string; title: string }[] }>(
+): Promise<{ pushed: PushedTestCase[] }> {
+  return request<{ pushed: PushedTestCase[] }>(
     `/api/work-items/${workItemId}/tests/push`,
     {
       method: 'POST',

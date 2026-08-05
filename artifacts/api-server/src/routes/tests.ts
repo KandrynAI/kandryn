@@ -133,6 +133,13 @@ router.post("/work-items/:id/tests/generate", async (req, res): Promise<void> =>
       { anthropicApiKey: creds.ANTHROPIC_API_KEY },
       stack,
     );
+    // Persist the rich cases on the committed suggestion so the run report and
+    // later reads can show them without regenerating.
+    await db
+      .update(suggestionsTable)
+      .set({ testCases: tests.testCases })
+      .where(eq(suggestionsTable.id, committed.suggestion.id));
+
     req.log.info({ workItemId: workItem.id, cases: tests.testCases.length }, "Tests generated");
     res.json(tests);
   } catch (err) {
@@ -211,14 +218,19 @@ const PushTestsBody = z.object({
   testCases: z
     .array(
       z.object({
+        id: z.string().optional(),
         title: z.string().min(1).max(200),
         given: z.string().optional(),
         when: z.string().optional(),
         then: z.string().optional(),
+        priority: z.enum(["high", "medium", "low"]).optional(),
+        type: z.enum(["happy-path", "edge-case", "failure"]).optional(),
+        assertion: z.string().optional(),
+        tags: z.array(z.string()).optional(),
       }),
     )
     .min(1)
-    .max(20),
+    .max(30),
 });
 
 router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
@@ -243,9 +255,11 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
     return;
   }
 
-  const created: { externalId: string; plmUrl: string; title: string }[] = [];
+  const pushed: { testCaseId: string; plmUrl: string; plmKey: string }[] = [];
   try {
-    for (const tc of parsed.data.testCases) {
+    for (let i = 0; i < parsed.data.testCases.length; i++) {
+      const tc = parsed.data.testCases[i];
+      const testCaseId = tc.id ?? `tc-${String(i + 1).padStart(3, "0")}`;
       const result = await createPlmTestCase(
         req.userId,
         { plmProvider: project.plmProvider, plmProjectKey: project.plmProjectKey },
@@ -262,26 +276,33 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
         type: "task",
         itemType: "test_case",
         title: tc.title,
-        description: [tc.given && `Given: ${tc.given}`, tc.when && `When: ${tc.when}`, tc.then && `Then: ${tc.then}`]
-          .filter(Boolean)
-          .join("\n") || null,
-        priority: "medium",
+        description:
+          [
+            (tc.priority || tc.type) && `${tc.priority ?? ""}${tc.priority && tc.type ? " · " : ""}${tc.type ?? ""}`.trim(),
+            tc.given && `Given: ${tc.given}`,
+            tc.when && `When: ${tc.when}`,
+            tc.then && `Then: ${tc.then}`,
+            tc.assertion && `Assert: ${tc.assertion}`,
+          ]
+            .filter(Boolean)
+            .join("\n") || null,
+        priority: tc.priority === "high" ? "high" : tc.priority === "low" ? "low" : "medium",
         status: "open",
         parentId: workItem.id,
         plmUrl: result.plmUrl,
       });
-      created.push({ externalId: result.externalId, plmUrl: result.plmUrl, title: tc.title });
+      pushed.push({ testCaseId, plmUrl: result.plmUrl, plmKey: result.externalId });
     }
   } catch (err) {
     if (err instanceof PlmError) {
-      res.status(err.code === "not_connected" ? 424 : 502).json({ error: err.message, created });
+      res.status(err.code === "not_connected" ? 424 : 502).json({ error: err.message, pushed });
       return;
     }
     throw err;
   }
 
-  req.log.info({ workItemId: workItem.id, count: created.length }, "Test cases pushed to PLM");
-  res.json({ created });
+  req.log.info({ workItemId: workItem.id, count: pushed.length }, "Test cases pushed to PLM");
+  res.json({ pushed });
 });
 
 export default router;
