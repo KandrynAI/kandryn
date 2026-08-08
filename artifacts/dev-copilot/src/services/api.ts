@@ -298,6 +298,9 @@ export interface ScoreBreakdown {
   minimalDiff: ScoreDimension;
   conventions: ScoreDimension;
   acCoverage: ScoreDimension;
+  // Behaviour signals (weight 0 — informational). Optional for older runs.
+  ambiguityHandling?: ScoreDimension;
+  surgicalPrecision?: ScoreDimension;
   overallNarrative: string;
   recommendation: 'Recommended' | 'Alternative';
   confidence: number;

@@ -1,15 +1,69 @@
 import type { StackProfile } from "../stack/detector.js";
 
+const KARPATHY_RUNTIME_SECTION = `
+CODING BEHAVIOUR — follow all four rules on every suggestion:
+
+RULE 1 — THINK BEFORE CODING
+Before writing code, consider whether the acceptance criteria
+are complete and unambiguous. If any criterion is vague,
+contradictory, or could be interpreted in more than one way:
+  - Name the ambiguity explicitly in your explanation
+  - State the interpretation you chose and why
+  - Do not silently assume — surface the uncertainty
+If the criteria cannot be fully implemented in a single file
+change (e.g. requires a config change, environment variable,
+or a second file), say so in your explanation.
+
+RULE 2 — SIMPLICITY FIRST
+Write the minimum code that satisfies the acceptance criteria.
+Nothing else.
+  - No helper functions that are not called by this change
+  - No abstractions for code used only once
+  - No error handling for scenarios not mentioned in the criteria
+  - No "while I'm here" additions
+  - No configurability that was not asked for
+If 20 lines solves it, do not write 60.
+The test: does every line of your suggestion trace to a specific
+acceptance criterion? If a line does not, remove it.
+
+RULE 3 — SURGICAL CHANGES
+Modify only the files and functions directly required by the
+work item. Leave everything else exactly as it is.
+  - Do not rename variables or functions not part of the task
+  - Do not reformat or re-indent adjacent code
+  - Do not refactor things that are not broken
+  - Do not fix other bugs you notice in the file
+  - Match the existing code style even if you would do it differently
+Every changed line must be explainable by the work item.
+
+RULE 4 — MAP YOUR CODE TO THE CRITERIA
+In your explanation, explicitly state which part of your code
+addresses which acceptance criterion.
+Use this format:
+  "Criterion 1 (idempotency check): lines 14-18 — the existing
+   row lookup before insert."
+  "Criterion 2 (400 on missing key): line 8 — the header check."
+If a criterion is fully addressed: mark it covered.
+If a criterion is partially addressed: say what is missing.
+If a criterion is not addressed by code (e.g. needs a deploy
+config change): say so explicitly.
+`;
+
 /**
- * Build the stack-aware instruction block prepended to the shared generation
- * prompt so Raptia and Fovea target the repo's exact language, framework, and
- * conventions. Returns "" when no stack is known (graceful no-op — the prompt is
- * unchanged from the stack-agnostic default).
+ * Build the instruction block prepended to the shared generation prompt. Always
+ * includes the Karpathy runtime coding-behaviour rules; when a stack is known it
+ * also appends the repo's exact language/framework/conventions. Never returns ""
+ * — even undetected-stack customers get the behaviour rules.
  */
 export function buildStackAwarePrompt(stack: StackProfile | null): string {
-  if (!stack) return "";
-
   const parts: string[] = [];
+
+  // Karpathy runtime principles — always first so the model anchors on
+  // behaviour before reading the stack or work item.
+  parts.push(KARPATHY_RUNTIME_SECTION);
+  parts.push("");
+
+  if (!stack) return parts.join("\n");
 
   const frontendInstructions: Record<string, string> = {
     react:
