@@ -1,10 +1,14 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { db, runsTable, tasksTable, suggestionsTable } from "@workspace/db";
+import { db, runsTable, tasksTable, suggestionsTable, projectsTable, repositoriesTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { executeRun, commitFromSuggestion, RunError } from "../services/runService.js";
 import { getConfigs } from "../services/configService.js";
 import { runVeriaReview } from "../services/veriaService.js";
+import { runAegisScan } from "../services/aegisService.js";
+import { createAegisPlmTicket } from "../services/aegisPlmService.js";
+import { postSecurityStatus } from "../services/gitService.js";
+import type { PlmProvider } from "../services/plmWrite.js";
 
 const router: IRouter = Router();
 
@@ -367,6 +371,141 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     req.log.error({ err }, "Veria review failed");
     await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
     res.status(502).json({ error: "Veria could not complete the review. Try again." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/security — Aegis scans the committed code for vulnerabilities,
+// files PLM tickets for High/Critical findings, posts a GitHub commit status
+// check, and records the stop-gate decision. A committed run is signalled by
+// committedSuggestionId (no dedicated "committed" status). Mirrors the Veria
+// route's guard/lifecycle.
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/security", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const runId = params.data.id;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+  if (run.committedSuggestionId == null) {
+    res.status(409).json({ error: "Aegis requires a committed run. Commit a suggestion first." });
+    return;
+  }
+  if (run.securityScanStatus === "done" && run.securityScan) {
+    res.status(200).json({ scan: run.securityScan });
+    return;
+  }
+  if (run.securityScanStatus === "running") {
+    res.status(202).json({ message: "Aegis is already scanning." });
+    return;
+  }
+
+  // Mark running before the AI call (prevents double-dispatch).
+  await db
+    .update(runsTable)
+    .set({ securityScanStatus: "running", securityGate: "pending" })
+    .where(eq(runsTable.id, runId));
+
+  const [suggestion] = await db
+    .select()
+    .from(suggestionsTable)
+    .where(eq(suggestionsTable.id, run.committedSuggestionId));
+  if (!suggestion) {
+    await db.update(runsTable).set({ securityScanStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(404).json({ error: "Committed suggestion record not found." });
+    return;
+  }
+
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+  const acceptanceCriteria = workItem?.acceptanceCriteria
+    ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
+  const repo = project?.repositoryId
+    ? (await db.select().from(repositoriesTable).where(eq(repositoriesTable.id, project.repositoryId)))[0]
+    : undefined;
+
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]);
+  if (!creds.ANTHROPIC_API_KEY) {
+    await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Aegis." });
+    return;
+  }
+
+  try {
+    const scan = await runAegisScan(
+      {
+        itemTitle: workItem?.title ?? "Untitled work item",
+        itemType: workItem?.itemType ?? workItem?.type ?? "task",
+        acceptanceCriteria,
+        filePath: suggestion.filePath,
+        code: suggestion.code,
+        language: suggestion.language ?? undefined,
+        stackDesc: run.stackDesc ?? undefined,
+      },
+      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+    );
+
+    // File PLM tickets for High/Critical findings (best-effort; never fatal).
+    const canFilePlm =
+      workItem?.externalId &&
+      (project?.plmProvider === "jira" || project?.plmProvider === "azure-devops") &&
+      project.plmProjectKey;
+    if (canFilePlm && workItem && project) {
+      for (const finding of scan.findings) {
+        if (finding.severity !== "critical" && finding.severity !== "high") continue;
+        const ticket = await createAegisPlmTicket({
+          finding,
+          parentExternalId: workItem.externalId as string,
+          parentTitle: workItem.title,
+          plmProvider: project.plmProvider as PlmProvider,
+          plmProjectKey: project.plmProjectKey,
+          userId: req.userId,
+        });
+        if (ticket) {
+          finding.plmTicketUrl = ticket.ticketUrl;
+          finding.plmTicketKey = ticket.ticketKey;
+        }
+      }
+    }
+
+    await db
+      .update(runsTable)
+      .set({ securityScan: scan, securityScanStatus: "done", securityGate: scan.gateDecision })
+      .where(eq(runsTable.id, runId));
+
+    // Post the GitHub commit status check (the stop-gate signal).
+    if (repo && run.commitHash) {
+      const gateDesc =
+        scan.gateDecision === "blocked"
+          ? `Blocked: ${scan.highCount} high, ${scan.criticalCount} critical finding(s)`
+          : `Approved: ${scan.findings.length} finding(s), none critical/high`;
+      await postSecurityStatus(repo.url, run.commitHash, scan.gateDecision, gateDesc, creds.GITHUB_TOKEN);
+    }
+
+    req.log.info({ runId, gate: scan.gateDecision, findings: scan.findings.length }, "Aegis scan completed");
+    res.status(200).json({ scan });
+  } catch (err) {
+    req.log.error({ err }, "Aegis scan failed");
+    await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+    res.status(502).json({ error: "Aegis could not complete the scan. Try again." });
   }
 });
 

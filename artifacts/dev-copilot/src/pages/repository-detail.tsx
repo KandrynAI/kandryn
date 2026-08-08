@@ -2,7 +2,7 @@ import { useGetRepository, useUpdateRepository, useDeleteRepository, getListRepo
 import { useParams, useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Database, Edit, Trash2, ArrowLeft, Layout as LayoutIcon, Server, FileCode, Clock, GitBranch, Github, Link as LinkIcon, CheckSquare } from "lucide-react";
+import { Database, Edit, Trash2, ArrowLeft, Layout as LayoutIcon, Server, FileCode, Clock, GitBranch, Github, Link as LinkIcon, CheckSquare, ShieldAlert, Copy, X } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiGithub } from "react-icons/si";
@@ -202,6 +202,8 @@ export default function RepositoryDetail() {
         </Card>
       </div>
 
+      <AegisSetupNotice repoId={id} provider={repo.provider} url={repo.url} />
+
       <GraphifySection repoId={id} />
 
       <div className="space-y-4">
@@ -246,6 +248,61 @@ export default function RepositoryDetail() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AegisSetupNotice({ repoId, provider, url }: { repoId: number; provider: string; url: string }) {
+  const { toast } = useToast();
+  const key = `bm_aegis_setup_dismissed_${repoId}`;
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  if (provider !== "github" || dismissed) return null;
+
+  const dismiss = () => {
+    try {
+      localStorage.setItem(key, "1");
+    } catch { /* ignore */ }
+    setDismissed(true);
+  };
+
+  const copyCheckName = async () => {
+    try {
+      await navigator.clipboard.writeText("blue-mantis/security");
+      toast({ title: "Copied", description: "blue-mantis/security" });
+    } catch {
+      toast({ title: "Copy failed", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card className="border-amber-500/30">
+      <CardHeader>
+        <CardTitle className="text-sm font-mono text-muted-foreground flex items-center justify-between">
+          <span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" /> Security gate setup</span>
+          <button onClick={dismiss} title="Dismiss" className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          To enforce the Aegis stop gate, add <code className="font-mono">blue-mantis/security</code> as a required status
+          check on your main branch in GitHub: Settings → Branches → Branch protection rules → Require status checks.
+        </p>
+        <div className="mt-3 flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" className="font-mono text-xs" onClick={copyCheckName}>
+            <Copy className="mr-2 h-3.5 w-3.5" /> Copy check name
+          </Button>
+          <Button variant="outline" size="sm" className="font-mono text-xs" onClick={() => window.open(`${url}/settings/branches`, "_blank")}>
+            <LinkIcon className="mr-2 h-3.5 w-3.5" /> Open GitHub branch settings →
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

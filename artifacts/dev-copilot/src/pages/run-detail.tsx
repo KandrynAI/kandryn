@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, GitPullRequest, ShieldCheck, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
@@ -11,6 +11,7 @@ import {
   commitRunSuggestion,
   reRunItem,
   runReview,
+  runAegisScan,
   pushWorkItemToPlm,
   ApiError,
   type RunDetail,
@@ -19,6 +20,7 @@ import {
   type ScoreBreakdown,
   type Run,
   type ReviewFinding,
+  type AegisFinding,
 } from "@/services/api";
 
 /** Extract "123" from a PR URL (GitHub /pull/123 or ADO /pullrequest/123). */
@@ -73,6 +75,7 @@ export default function RunDetailPage() {
   const [committingId, setCommittingId] = useState<number | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [aegisLoading, setAegisLoading] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
@@ -100,7 +103,10 @@ export default function RunDetailPage() {
   // page updates live without a manual refresh.
   useEffect(() => {
     if (!data) return;
-    const active = IN_PROGRESS.includes(data.run.status) || data.run.reviewStatus === "running";
+    const active =
+      IN_PROGRESS.includes(data.run.status) ||
+      data.run.reviewStatus === "running" ||
+      data.run.securityScanStatus === "running";
     if (!active) return;
     timer.current = setTimeout(() => load(true), 4000);
     return () => {
@@ -183,6 +189,27 @@ export default function RunDetailPage() {
       }
     } finally {
       setReviewing(false);
+    }
+  };
+
+  const onAegis = async () => {
+    setAegisLoading(true);
+    try {
+      await runAegisScan(runId);
+      toast({ title: "Aegis scan complete." });
+      await load(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 202) {
+        toast({ title: "Aegis is already scanning." });
+      } else if (err instanceof ApiError && err.status === 409) {
+        toast({ title: "Commit a suggestion before running Aegis.", variant: "destructive" });
+      } else if (err instanceof ApiError && err.status === 424) {
+        toast({ title: "Add your Anthropic API key in Settings to run Aegis.", variant: "destructive" });
+      } else {
+        toast({ title: "Aegis scan failed. Try again.", variant: "destructive" });
+      }
+    } finally {
+      setAegisLoading(false);
     }
   };
 
@@ -419,6 +446,12 @@ export default function RunDetailPage() {
         </div>
       )}
 
+      {isCommitted && (
+        <div style={{ padding: "0 20px 8px", maxWidth: 760 }}>
+          <AegisSection run={run} onScan={onAegis} scanning={aegisLoading} />
+        </div>
+      )}
+
       {run.status === "succeeded" && run.commitHash && (
         <div style={{ padding: "0 20px 24px", maxWidth: 760 }}>
           <TestStage
@@ -448,6 +481,139 @@ const SEVERITY_STYLE: Record<string, { bg: string; fg: string }> = {
   medium: { bg: "var(--c-amber-bg)", fg: "var(--c-amber)" },
   low: { bg: "var(--c-raised)", fg: "var(--c-ink-4)" },
 };
+
+const SEV_BADGE: Record<string, { bg: string; fg: string }> = {
+  critical: { bg: "#7f1d1d", fg: "#fee2e2" },
+  high: { bg: "#f87171", fg: "#7f1d1d" },
+  medium: { bg: "#fbbf24", fg: "#78350f" },
+  low: { bg: "#d4d4d4", fg: "#171717" },
+  info: { bg: "#e5e5e5", fg: "#404040" },
+};
+
+function AegisFindingRow({ f, last }: { f: AegisFinding; last: boolean }) {
+  const [open, setOpen] = useState(false);
+  const sev = SEV_BADGE[f.severity] ?? SEV_BADGE.info;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "60px 48px 1fr", gap: 10, padding: "10px 0", borderBottom: last ? "none" : "1px solid var(--c-border)" }}>
+      <span style={{ alignSelf: "start", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", padding: "2px 6px", borderRadius: 3, background: sev.bg, color: sev.fg, textAlign: "center" }}>{f.severity}</span>
+      <span style={{ alignSelf: "start", fontFamily: "var(--mono)", fontSize: 12, color: "var(--c-ink-4)" }}>{(f.owasp || "").split(":")[0] || "—"}</span>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--c-ink)" }}>{f.title}</div>
+        <div style={{ fontSize: 12, color: "var(--c-ink-3)", lineHeight: 1.5, marginTop: 3 }}>{f.detail}</div>
+        {f.lineRef && (
+          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--c-ink-4)", marginTop: 4 }}>📍 {f.lineRef}</div>
+        )}
+        <button className="bm-ghost" onClick={() => setOpen((o) => !o)} style={{ border: "none", padding: "4px 0", color: "var(--c-ink-3)", fontSize: 12 }}>
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}Remediation
+        </button>
+        {open && (
+          <div style={{ fontSize: 12, color: "var(--c-ink-2)", lineHeight: 1.5, borderLeft: "2px solid var(--c-blue)", paddingLeft: 8, marginTop: 2 }}>{f.remediation || "—"}</div>
+        )}
+        {f.plmTicketKey && (
+          <button
+            onClick={() => f.plmTicketUrl && window.open(f.plmTicketUrl, "_blank")}
+            style={{ background: "none", border: "none", padding: "4px 0 0", color: "var(--c-blue)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 }}
+            title="Open PLM ticket"
+          >
+            {f.plmTicketKey} <ExternalLink size={11} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AegisSection({ run, onScan, scanning }: { run: Run; onScan: () => void; scanning: boolean }) {
+  const status = run.securityScanStatus;
+  const scan = run.securityScan;
+
+  const header = (right?: React.ReactNode) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: status === "done" && scan ? 12 : 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <ShieldAlert size={16} style={{ color: "var(--c-red)" }} />
+        <span style={{ fontSize: "var(--fs-lg)", fontWeight: 600 }}>Aegis · Security</span>
+      </div>
+      {right}
+    </div>
+  );
+
+  // Idle — offer the scan.
+  if (!status) {
+    return (
+      <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-bg)", padding: "10px 14px" }}>
+        {header(
+          <button className="bm-ghost" onClick={onScan} disabled={scanning}>
+            {scanning ? <><Loader2 size={12} className="animate-spin" />Scanning…</> : <><ShieldAlert size={14} />Run Aegis security scan</>}
+          </button>,
+        )}
+      </div>
+    );
+  }
+
+  if (status === "running") {
+    return (
+      <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-bg)", padding: "10px 14px" }}>
+        {header(
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--c-amber)", animation: "bmblink 1.4s infinite" }} />
+            <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)" }}>Aegis scanning for vulnerabilities…</span>
+          </span>,
+        )}
+      </div>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-bg)", padding: "10px 14px" }}>
+        {header(
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-red)" }}>Aegis scan failed.</span>
+            <button className="bm-ghost" onClick={onScan} disabled={scanning}>
+              {scanning ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}Retry
+            </button>
+          </span>,
+        )}
+      </div>
+    );
+  }
+
+  if (status !== "done" || !scan) return null;
+
+  const blocked = scan.gateDecision === "blocked";
+  return (
+    <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-bg)", padding: "10px 14px" }}>
+      {header()}
+
+      {blocked ? (
+        <div style={{ background: "var(--c-red-bg)", border: "2px solid var(--c-red)", padding: "12px 16px", borderRadius: 4, marginBottom: 14, animation: "bmrise 0.3s ease-out both" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ShieldX size={16} style={{ color: "var(--c-red)" }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--c-red)" }}>Security gate blocked</span>
+          </div>
+          <div style={{ fontSize: 13, color: "var(--c-red)", marginTop: 4 }}>{scan.gateReason}</div>
+          <div style={{ fontSize: 12, fontFamily: "var(--mono)", color: "var(--c-red)", marginTop: 6 }}>
+            {scan.criticalCount} critical · {scan.highCount} high · resolve to unblock PR
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: "var(--c-green-bg)", border: "1px solid var(--c-green)", padding: "10px 14px", borderRadius: 4, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+          <ShieldCheck size={14} style={{ color: "var(--c-green)" }} />
+          <span style={{ fontSize: 13, color: "var(--c-green)" }}>Security gate approved · {scan.findings.length} finding(s)</span>
+        </div>
+      )}
+
+      {scan.findings.length > 0 && (
+        <>
+          <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Aegis findings</div>
+          {scan.findings.map((f, i) => (
+            <AegisFindingRow key={f.id} f={f} last={i === scan.findings.length - 1} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
 
 function VeriaReview({ run, onReview, reviewing }: { run: Run; onReview: () => void; reviewing: boolean }) {
   if (run.reviewStatus === "running") {

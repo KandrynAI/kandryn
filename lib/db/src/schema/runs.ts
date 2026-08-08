@@ -35,6 +35,36 @@ export interface PersistedReviewResult {
 }
 
 /**
+ * Aegis security scan result, persisted on the run. Mirrors
+ * shared/types/aegisResult.ts (kept local because lib/db is a composite project
+ * rooted at src/ and cannot import from ../../../../shared).
+ */
+export interface PersistedAegisFinding {
+  id: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  owasp: string;
+  title: string;
+  detail: string;
+  lineRef?: string;
+  remediation: string;
+  cveRef?: string;
+  plmTicketUrl?: string;
+  plmTicketKey?: string;
+}
+export interface PersistedAegisScanResult {
+  summary: string;
+  findings: PersistedAegisFinding[];
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  gateDecision: "approved" | "blocked";
+  gateReason: string;
+  scannedFile: string;
+  generatedAt: string;
+}
+
+/**
  * A durable execution of the agent pipeline against a work item. Every run
  * (manual or scheduled) is a row here so background/scheduled runs have somewhere
  * to persist results (there is no HTTP response to return to).
@@ -75,6 +105,13 @@ export const runsTable = pgTable(
     // the user runs Veria on a committed run.
     review: jsonb("review").$type<PersistedReviewResult | null>().default(null),
     reviewStatus: text("review_status").$type<ReviewStatus | null>().default(null),
+    // Aegis security scan (0014_aegis.sql). All nullable — populated only when
+    // the user runs Aegis on a committed run.
+    securityScan: jsonb("security_scan").$type<PersistedAegisScanResult | null>().default(null),
+    securityScanStatus: text("security_scan_status")
+      .$type<"pending" | "running" | "done" | "failed" | "skipped" | null>()
+      .default(null),
+    securityGate: text("security_gate").$type<"approved" | "blocked" | "pending" | null>().default(null),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
