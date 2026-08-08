@@ -5,7 +5,7 @@ const PLUG_ROWS = [
   ['Azure DevOps', 'The same sync against Azure Boards, with Feature mapped onto epic.'],
   ['GitHub', 'Branch, commit and pull request, with stack detection on connect. The primary provider.'],
   ['Azure Repos', 'Commits and pull requests against an existing file tree.'],
-  ['Raptia · Fovea · Synthesia · Veria', 'Four agents, one pipeline per run'],
+  ['Raptia · Fovea · Synthesia · Veria · Aegis · Narratia', 'Six agents, one pipeline per run'],
 ];
 
 const DONT = [

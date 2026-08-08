@@ -252,9 +252,9 @@ export const DEMO_DASH_STATS = [
 ];
 
 export const DEMO_RECENT_RUNS = [
-  { id: '#1042', item: 'PAY-214 Idempotency keys on the refund endpoint', trigger: 'Manual', result: 'Succeeded · 2 suggestions' },
+  { id: '#1042', item: 'PAY-214 Idempotency keys on the refund endpoint', trigger: 'Manual', result: 'Succeeded · Raptia recommended' },
   { id: '#1041', item: 'PAY-209 Split the settlement worker by provider', trigger: 'Scheduled', result: 'Committed · PR #317' },
-  { id: '#1040', item: 'PAY-221 Webhook retries duplicate the refund event', trigger: 'Scheduled', result: 'Succeeded · 2 suggestions' },
+  { id: '#1040', item: 'PAY-221 Webhook retries duplicate the refund event', trigger: 'Scheduled', result: 'Succeeded · Raptia recommended' },
   { id: '#1039', item: 'PAY-196 Card-network response codes on the receipt', trigger: 'Manual', result: 'Committed · PR #315' },
   { id: '#1038', item: 'PAY-188 Rotate the Stripe webhook secret', trigger: 'Scheduled', result: 'Failed · GitHub token expired' },
 ];
