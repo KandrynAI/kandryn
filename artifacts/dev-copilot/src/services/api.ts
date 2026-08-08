@@ -273,7 +273,30 @@ export interface Run {
   runbookStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
   runbookTarget?: string | null;
   runbookUrl?: string | null;
+  parentRunId?: number | null;
+  triggerContext?: string | null;
   createdAt: string;
+}
+
+export interface RemediateResponse {
+  ticketKey: string;
+  ticketUrl: string;
+  newRunId: number | null;
+  action: 'push' | 'remediate-now';
+  message: string;
+  alreadyPushed?: boolean;
+}
+
+export function remediateAegisFinding(
+  runId: number,
+  findingId: string,
+  action: 'push' | 'remediate-now',
+): Promise<RemediateResponse> {
+  return request<RemediateResponse>(`/api/runs/${runId}/security/remediate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ findingId, action }),
+  });
 }
 
 export type RunbookTarget = 'markdown' | 'confluence' | 'notion';
@@ -302,6 +325,9 @@ export interface AegisFinding {
   cveRef?: string;
   plmTicketUrl?: string;
   plmTicketKey?: string;
+  pushedToBoard?: boolean;
+  remediationRunId?: number;
+  remediationStatus?: 'pending' | 'running' | 'committed' | 'failed';
 }
 
 export interface AegisScanResult {

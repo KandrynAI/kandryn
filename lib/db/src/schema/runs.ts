@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, index, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
@@ -50,6 +50,9 @@ export interface PersistedAegisFinding {
   cveRef?: string;
   plmTicketUrl?: string;
   plmTicketKey?: string;
+  pushedToBoard?: boolean;
+  remediationRunId?: number;
+  remediationStatus?: "pending" | "running" | "committed" | "failed";
 }
 export interface PersistedAegisScanResult {
   summary: string;
@@ -120,6 +123,12 @@ export const runsTable = pgTable(
       .default(null),
     runbookTarget: text("runbook_target"), // 'markdown' | 'confluence' | 'notion'
     runbookUrl: text("runbook_url"), // URL after push (confluence/notion/markdown)
+    // Aegis remediation (0016_aegis_remediation.sql). For a remediation run,
+    // parentRunId points at the run whose Aegis scan produced the finding.
+    parentRunId: integer("parent_run_id").references((): AnyPgColumn => runsTable.id, {
+      onDelete: "set null",
+    }),
+    triggerContext: text("trigger_context"), // manual|scheduled|remediation|breakdown
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

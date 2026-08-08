@@ -314,6 +314,9 @@ function WorkItemCard({
   return (
     <div className="bm-board-card" onClick={onOpen} role="button">
       <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+        {item.title?.startsWith("[SECURITY]") && (
+          <span title="Aegis security finding" style={{ width: 6, height: 6, borderRadius: 1, background: "var(--c-red)", flexShrink: 0 }} />
+        )}
         <span className={typeClass}>{item.itemType.replace("_", " ")}</span>
         {item.externalId && (
           <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>{item.externalId}</span>
