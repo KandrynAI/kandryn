@@ -712,6 +712,23 @@ function ScoreAnalysis({ breakdown }: { breakdown: ScoreBreakdown }) {
             );
           })}
 
+          {(breakdown.ambiguityHandling || breakdown.surgicalPrecision) && (
+            <div style={{ borderTop: "1px dashed var(--c-border)", marginTop: 10, paddingTop: 10 }}>
+              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", marginBottom: 8 }}>Behaviour signals</div>
+              {([
+                ["Ambiguity handling", breakdown.ambiguityHandling],
+                ["Surgical precision", breakdown.surgicalPrecision],
+              ] as const)
+                .filter(([, d]) => d)
+                .map(([label, d]) => (
+                  <div key={label} style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 10, alignItems: "start", padding: "5px 0" }}>
+                    <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)" }}>{label}</span>
+                    <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-2)", lineHeight: 1.5 }}>{d!.reason || "—"}</span>
+                  </div>
+                ))}
+            </div>
+          )}
+
           <p style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 10 }}>
             Weights: Correctness 35% · Readability 20% · Minimal diff 15% · Conventions 15% · AC coverage 15%
           </p>

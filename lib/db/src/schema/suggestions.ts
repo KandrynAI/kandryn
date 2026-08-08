@@ -44,6 +44,9 @@ export interface PersistedScoreBreakdown {
   minimalDiff: PersistedScoreDimension;
   conventions: PersistedScoreDimension;
   acCoverage: PersistedScoreDimension;
+  // Behaviour signals (weight 0 — informational). Optional for older runs.
+  ambiguityHandling?: PersistedScoreDimension;
+  surgicalPrecision?: PersistedScoreDimension;
   overallNarrative: string;
   recommendation: "Recommended" | "Alternative";
   confidence: number;

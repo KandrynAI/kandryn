@@ -223,6 +223,10 @@ const ScoreBreakdownSchema = z.object({
   minimalDiff: ScoreDimensionSchema,
   conventions: ScoreDimensionSchema,
   acCoverage: ScoreDimensionSchema,
+  // Behaviour signals (weight 0 — informational, do not affect the overall
+  // score). Optional so a model omission or an older run still parses.
+  ambiguityHandling: ScoreDimensionSchema.optional(),
+  surgicalPrecision: ScoreDimensionSchema.optional(),
   overallNarrative: z.string().default(""),
   recommendation: z.enum(["Recommended", "Alternative"]).default("Alternative"),
   confidence: z.number().default(50),
@@ -371,6 +375,10 @@ Dimensions and weights:
 - conventions (15%): Does it follow the conventions of a ${describeStack(stack) || "generic"} codebase? Check framework-specific patterns (${stack.backend || "general"} conventions, naming, structure) for the detected stack.
 - acCoverage (15%): How completely does it address the acceptance criteria? Reference which criteria are and are not covered.
 
+Also score two behaviour signals (weight 0 — informational only, they do NOT affect the overall ranking):
+- ambiguityHandling (0%): Did the suggestion acknowledge any ambiguity in the acceptance criteria, or did it silently assume? Score 0-100: 100 = explicitly flagged ambiguity with reasoning; 70 = addressed all criteria without obvious ambiguity; 40 = silently picked one interpretation of an unclear criterion; 10 = ignored criteria that could not be addressed by this change. In the reason, name the ambiguity (or state there was none).
+- surgicalPrecision (0%): Does the suggestion change only what the work item requires, or does it include unrequested additions? Score 0-100: 100 = every changed line maps to a criterion; 70 = minor unrequested additions (a comment, a type tightening); 40 = moderate scope creep (unrequested refactor or abstraction); 10 = significant unrequested changes unrelated to the work item. In the reason, name any unrequested change (or state there was none).
+
 Then write:
 - overallNarrative: 2-3 sentences explaining the ranking decision in plain English, referencing actual code details.
 - recommendation: "Recommended" for the higher-scoring suggestion, "Alternative" for the other.
@@ -385,6 +393,8 @@ Return ONLY a JSON object, no markdown fences, with this exact structure:
     "minimalDiff": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
     "conventions": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
     "acCoverage":  { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "ambiguityHandling": { "score": N, "weight": 0, "verdict": "...", "reason": "..." },
+    "surgicalPrecision": { "score": N, "weight": 0, "verdict": "...", "reason": "..." },
     "overallNarrative": "...",
     "recommendation": "Recommended" | "Alternative",
     "confidence": N,

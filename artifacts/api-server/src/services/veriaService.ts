@@ -63,6 +63,23 @@ Review this code against the acceptance criteria. Be specific — reference actu
 function names, variable names, error types, and line-level observations from the
 code above. Do not write generic praise or generic warnings.
 
+Additionally, check for these specific issues:
+
+SCOPE CREEP: Does the committed code change anything beyond what the acceptance
+criteria required? If yes, list it as a 'risk' finding with title 'Unrequested
+change' and describe what was changed and why it is risky.
+
+SILENT ASSUMPTIONS: Is there any part of the code that clearly implements a
+specific interpretation of an ambiguous criterion without acknowledging the
+ambiguity? If yes, list it as a 'gap' finding with title 'Silent assumption' and
+describe what was assumed.
+
+OVER-ENGINEERING: Does the change introduce abstractions, helpers, or patterns
+that are not needed to satisfy the criteria? If yes, list as a 'gap' finding with
+title 'Unnecessary complexity'.
+
+These findings follow the same ReviewFinding structure: { type, title, detail, severity }.
+
 Return ONLY a JSON object. No preamble, no markdown fences.
 
 {
