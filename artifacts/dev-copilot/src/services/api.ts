@@ -266,7 +266,42 @@ export interface Run {
   stackDesc?: string | null;
   review?: ReviewResult | null;
   reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
+  securityScan?: AegisScanResult | null;
+  securityScanStatus?: 'pending' | 'running' | 'done' | 'failed' | 'skipped' | null;
+  securityGate?: 'approved' | 'blocked' | 'pending' | null;
   createdAt: string;
+}
+
+export type SecuritySeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export interface AegisFinding {
+  id: string;
+  severity: SecuritySeverity;
+  owasp: string;
+  title: string;
+  detail: string;
+  lineRef?: string;
+  remediation: string;
+  cveRef?: string;
+  plmTicketUrl?: string;
+  plmTicketKey?: string;
+}
+
+export interface AegisScanResult {
+  summary: string;
+  findings: AegisFinding[];
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  gateDecision: 'approved' | 'blocked';
+  gateReason: string;
+  scannedFile: string;
+  generatedAt: string;
+}
+
+export function runAegisScan(runId: number): Promise<{ scan: AegisScanResult }> {
+  return request<{ scan: AegisScanResult }>(`/api/runs/${runId}/security`, { method: 'POST' });
 }
 
 export interface ReviewFinding {

@@ -587,3 +587,48 @@ export class GitService {
     return this.repo.defaultBranch;
   }
 }
+
+/**
+ * Post a GitHub commit status check for the Aegis security gate
+ * (context `blue-mantis/security`). Non-fatal — returns without throwing for a
+ * non-GitHub repo, a missing token, or an API/network error, so it never breaks
+ * the scan flow. The token is supplied by the caller (fetched per-user via
+ * getConfigs) — never logged.
+ */
+export async function postSecurityStatus(
+  repoUrl: string,
+  commitHash: string,
+  gate: "approved" | "blocked" | "pending",
+  details: string,
+  githubToken: string | undefined,
+): Promise<void> {
+  const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/);
+  if (!match) return; // not a GitHub URL — skip silently
+  if (!githubToken) return;
+  const [, owner, repo] = match;
+
+  const state = gate === "approved" ? "success" : gate === "blocked" ? "failure" : "pending";
+  const body = {
+    state,
+    context: "blue-mantis/security",
+    description: details.slice(0, 140), // GitHub 140-char limit
+    target_url: `https://getbluemantis.com/app/runs/${commitHash}`,
+  };
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/statuses/${commitHash}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      logger.warn({ status: res.status, owner, repo }, "Aegis GitHub status check failed");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Aegis GitHub status check errored");
+  }
+}
