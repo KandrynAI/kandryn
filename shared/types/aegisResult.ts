@@ -24,6 +24,14 @@ export interface AegisFinding {
   cveRef?: string; // e.g. "CVE-2024-XXXX" if applicable
   plmTicketUrl?: string; // populated after Jira/ADO ticket created
   plmTicketKey?: string; // e.g. "PAY-215"
+  pushedToBoard?: boolean; // true after PLM ticket created + task synced
+  remediationRunId?: number; // run ID if "Remediate Now" was triggered
+  remediationStatus?: 'pending' | 'running' | 'committed' | 'failed';
+}
+
+export interface AegisRemediateRequest {
+  findingId: string; // e.g. "aegis-002"
+  action: 'push' | 'remediate-now';
 }
 
 export interface AegisScanResult {

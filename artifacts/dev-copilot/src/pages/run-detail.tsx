@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, FileCheck, Copy, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, FileCheck, Copy, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network, Upload, Zap } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
@@ -13,6 +14,7 @@ import {
   runReview,
   runAegisScan,
   runNarratia,
+  remediateAegisFinding,
   pushWorkItemToPlm,
   ApiError,
   type RunDetail,
@@ -474,7 +476,7 @@ export default function RunDetailPage() {
 
       {isCommitted && (
         <div style={{ padding: "0 20px 8px", maxWidth: 760 }}>
-          <AegisSection run={run} onScan={onAegis} scanning={aegisLoading} />
+          <AegisSection run={run} runId={runId} onScan={onAegis} scanning={aegisLoading} navigate={navigate} onChanged={() => load(true)} />
         </div>
       )}
 
@@ -689,11 +691,32 @@ const SEV_BADGE: Record<string, { bg: string; fg: string }> = {
   info: { bg: "#e5e5e5", fg: "#404040" },
 };
 
-function AegisFindingRow({ f, last }: { f: AegisFinding; last: boolean }) {
+type FindingLocalState = { pushed?: boolean; runId?: number; status?: string };
+
+function AegisFindingRow({
+  f, last, selectable, selected, onToggle, remediating, state, onPush, onRemediate, navigate,
+}: {
+  f: AegisFinding;
+  last: boolean;
+  selectable: boolean;
+  selected: boolean;
+  onToggle: (v: boolean) => void;
+  remediating: boolean;
+  state?: FindingLocalState;
+  onPush: () => void;
+  onRemediate: () => void;
+  navigate: (to: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const sev = SEV_BADGE[f.severity] ?? SEV_BADGE.info;
+  const isInfo = f.severity === "info";
+  const pushed = Boolean(state?.pushed || f.pushedToBoard || f.plmTicketKey);
+  const runId = state?.runId ?? f.remediationRunId;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "60px 48px 1fr", gap: 10, padding: "10px 0", borderBottom: last ? "none" : "1px solid var(--c-border)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "20px 60px 48px 1fr 150px", gap: 10, padding: "10px 0", borderBottom: last ? "none" : "1px solid var(--c-border)" }}>
+      <span style={{ alignSelf: "start", paddingTop: 2 }}>
+        {!isInfo && <Checkbox checked={selected} onCheckedChange={(v) => onToggle(v === true)} disabled={!selectable} />}
+      </span>
       <span style={{ alignSelf: "start", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", padding: "2px 6px", borderRadius: 3, background: sev.bg, color: sev.fg, textAlign: "center" }}>{f.severity}</span>
       <span style={{ alignSelf: "start", fontFamily: "var(--mono)", fontSize: 12, color: "var(--c-ink-4)" }}>{(f.owasp || "").split(":")[0] || "—"}</span>
       <div>
@@ -708,23 +731,126 @@ function AegisFindingRow({ f, last }: { f: AegisFinding; last: boolean }) {
         {open && (
           <div style={{ fontSize: 12, color: "var(--c-ink-2)", lineHeight: 1.5, borderLeft: "2px solid var(--c-blue)", paddingLeft: 8, marginTop: 2 }}>{f.remediation || "—"}</div>
         )}
-        {f.plmTicketKey && (
-          <button
-            onClick={() => f.plmTicketUrl && window.open(f.plmTicketUrl, "_blank")}
-            style={{ background: "none", border: "none", padding: "4px 0 0", color: "var(--c-blue)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 }}
-            title="Open PLM ticket"
-          >
-            {f.plmTicketKey} <ExternalLink size={11} />
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+          {pushed && f.plmTicketKey && (
+            <button onClick={() => f.plmTicketUrl && window.open(f.plmTicketUrl, "_blank")} style={{ fontSize: "var(--fs-xs)", background: "var(--c-green-bg)", color: "var(--c-green)", border: "1px solid var(--c-green)", padding: "2px 8px", borderRadius: 3, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}>
+              ✓ {f.plmTicketKey} <ExternalLink size={10} />
+            </button>
+          )}
+          {runId && (
+            <button onClick={() => navigate(`/runs/${runId}`)} style={{ fontSize: "var(--fs-xs)", background: "var(--c-blue-bg)", color: "var(--c-blue)", border: "1px solid var(--c-blue)", padding: "2px 8px", borderRadius: 3, cursor: "pointer" }}>
+              ▶ Run #{runId}
+            </button>
+          )}
+        </div>
       </div>
+      {!isInfo && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {pushed ? (
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-green)", textAlign: "center" }}>Pushed ✓</span>
+          ) : (
+            <button className="bm-ghost" onClick={onPush} disabled={remediating} style={{ justifyContent: "center" }}>
+              {remediating ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}{remediating ? "Pushing…" : "Push to PLM"}
+            </button>
+          )}
+          {runId ? (
+            <button className="bm-ghost" onClick={() => navigate(`/runs/${runId}`)} style={{ justifyContent: "center" }}>View fix →</button>
+          ) : (
+            <button
+              onClick={onRemediate}
+              disabled={remediating}
+              style={{ background: "var(--c-blue)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 3, cursor: remediating ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, opacity: remediating ? 0.7 : 1 }}
+            >
+              {remediating ? <><Loader2 size={11} className="animate-spin" />Starting…</> : <><Zap size={11} />Remediate Now</>}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function AegisSection({ run, onScan, scanning }: { run: Run; onScan: () => void; scanning: boolean }) {
+function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
+  run: Run;
+  runId: number;
+  onScan: () => void;
+  scanning: boolean;
+  navigate: (to: string) => void;
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
   const status = run.securityScanStatus;
   const scan = run.securityScan;
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [remediatingId, setRemediatingId] = useState<string | null>(null);
+  const [bulkPushing, setBulkPushing] = useState(false);
+  const [findingStates, setFindingStates] = useState<Record<string, FindingLocalState>>({});
+
+  const findings = scan?.findings ?? [];
+  const selectableIds = findings
+    .filter((f) => f.severity !== "info" && !(f.pushedToBoard || f.plmTicketKey || findingStates[f.id]?.pushed))
+    .map((f) => f.id);
+  const allSelected = selectableIds.length > 0 && selected.size === selectableIds.length;
+  const someSelected = selected.size > 0 && !allSelected;
+
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds));
+  const toggle = (id: string, v: boolean) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (v) n.add(id);
+      else n.delete(id);
+      return n;
+    });
+
+  const remediate = async (id: string, action: "push" | "remediate-now") => {
+    setRemediatingId(id);
+    try {
+      const res = await remediateAegisFinding(runId, id, action);
+      setFindingStates((prev) => ({
+        ...prev,
+        [id]: { pushed: true, runId: res.newRunId ?? prev[id]?.runId, status: action === "remediate-now" ? "running" : undefined },
+      }));
+      setSelected((prev) => {
+        const n = new Set(prev);
+        n.delete(id);
+        return n;
+      });
+      if (action === "remediate-now" && res.newRunId) {
+        toast({ title: `${res.ticketKey} created`, description: `Run #${res.newRunId} started — opening…` });
+        setTimeout(() => navigate(`/runs/${res.newRunId}`), 1200);
+      } else {
+        toast({ title: `${res.ticketKey} created`, description: "Appearing on the board." });
+        onChanged();
+      }
+    } catch (err) {
+      toast({ title: "Remediation failed", description: err instanceof ApiError ? err.message : "Try again.", variant: "destructive" });
+    } finally {
+      setRemediatingId(null);
+    }
+  };
+
+  const onRemediateNow = (f: AegisFinding) => {
+    if (window.confirm(`This will create a tracker ticket for "${f.title}" and immediately start a new run to fix it.\n\nContinue?`)) {
+      void remediate(f.id, "remediate-now");
+    }
+  };
+
+  const pushSelected = async () => {
+    const ids = [...selected];
+    setBulkPushing(true);
+    for (const id of ids) {
+      try {
+        await remediateAegisFinding(runId, id, "push");
+        setFindingStates((prev) => ({ ...prev, [id]: { ...prev[id], pushed: true } }));
+      } catch {
+        /* continue with the rest */
+      }
+    }
+    setSelected(new Set());
+    setBulkPushing(false);
+    toast({ title: `Pushed ${ids.length} finding${ids.length === 1 ? "" : "s"} to the tracker` });
+    onChanged();
+  };
 
   const header = (right?: React.ReactNode) => (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: status === "done" && scan ? 12 : 0 }}>
@@ -802,11 +928,40 @@ function AegisSection({ run, onScan, scanning }: { run: Run; onScan: () => void;
         </div>
       )}
 
-      {scan.findings.length > 0 && (
+      {findings.length > 0 && (
         <>
-          <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Aegis findings</div>
-          {scan.findings.map((f, i) => (
-            <AegisFindingRow key={f.id} f={f} last={i === scan.findings.length - 1} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingBottom: 10, borderBottom: "1px solid var(--c-border)", marginBottom: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: selectableIds.length ? "pointer" : "default" }}>
+              <Checkbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={toggleAll}
+                disabled={selectableIds.length === 0}
+              />
+              <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Aegis findings · {findings.length} finding{findings.length === 1 ? "" : "s"}
+              </span>
+            </label>
+            {selected.size > 0 && (
+              <button className="bm-ghost" onClick={pushSelected} disabled={bulkPushing}>
+                {bulkPushing ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                {bulkPushing ? "Pushing…" : `Push ${selected.size} selected`}
+              </button>
+            )}
+          </div>
+          {findings.map((f, i) => (
+            <AegisFindingRow
+              key={f.id}
+              f={f}
+              last={i === findings.length - 1}
+              selectable={selectableIds.includes(f.id)}
+              selected={selected.has(f.id)}
+              onToggle={(v) => toggle(f.id, v)}
+              remediating={remediatingId === f.id || bulkPushing}
+              state={findingStates[f.id]}
+              onPush={() => remediate(f.id, "push")}
+              onRemediate={() => onRemediateNow(f)}
+              navigate={navigate}
+            />
           ))}
         </>
       )}

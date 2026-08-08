@@ -6,9 +6,11 @@ import { executeRun, commitFromSuggestion, RunError } from "../services/runServi
 import { getConfigs } from "../services/configService.js";
 import { runVeriaReview } from "../services/veriaService.js";
 import { runAegisScan } from "../services/aegisService.js";
-import { createAegisPlmTicket } from "../services/aegisPlmService.js";
+import { createAegisPlmTicket, ensureFindingTask, buildRemediationPrompt } from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
+import { syncProject } from "../services/syncService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
+import type { AegisScanResult } from "../../../../shared/types/aegisResult.js";
 import { runNarratia } from "../services/narratiaService.js";
 import { pushAsMarkdown, pushToConfluence, pushToNotion } from "../services/narratiaPushService.js";
 import type { RunbookTarget } from "../../../../shared/types/narratiaResult.js";
@@ -40,6 +42,8 @@ const ListRunsQuery = z.object({
     .enum(["scheduled", "queued", "running", "succeeded", "failed", "canceled"])
     .optional(),
   limit: z.coerce.number().int().positive().max(50).optional(),
+  trigger: z.string().optional(), // filters runs.trigger_context (e.g. "remediation")
+  parentRunId: z.coerce.number().int().positive().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -154,6 +158,8 @@ router.get("/runs", async (req, res): Promise<void> => {
   if (query.data.projectId != null) conds.push(eq(runsTable.projectId, query.data.projectId));
   if (query.data.workItemId != null) conds.push(eq(runsTable.workItemId, query.data.workItemId));
   if (query.data.status) conds.push(eq(runsTable.status, query.data.status));
+  if (query.data.trigger) conds.push(eq(runsTable.triggerContext, query.data.trigger));
+  if (query.data.parentRunId != null) conds.push(eq(runsTable.parentRunId, query.data.parentRunId));
 
   // An explicit ?limit wins (capped at 50 by the schema); otherwise a per-item
   // lookup wants a short recent history and the broad list keeps 200.
@@ -481,6 +487,9 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
           plmProvider: project.plmProvider as PlmProvider,
           plmProjectKey: project.plmProjectKey,
           userId: req.userId,
+          projectId: project.id,
+          repositoryId: project.repositoryId,
+          parentTaskId: workItem.id,
         });
         if (ticket) {
           finding.plmTicketUrl = ticket.ticketUrl;
@@ -662,6 +671,178 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
     await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
     res.status(502).json({ error: "Narratia could not generate the runbook. Try again." });
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/security/remediate — close the Aegis loop for one finding.
+// action 'push': file the PLM ticket (if not already) + mirror a board task +
+// sync. action 'remediate-now': the same, then start a remediation run (Raptia
+// + Fovea) on the new task with a fix-only refinement prompt.
+// ---------------------------------------------------------------------------
+const RemediateBody = z.object({
+  findingId: z.string().min(1),
+  action: z.enum(["push", "remediate-now"]),
+});
+
+router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const parsed = RemediateBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "findingId and action are required." });
+    return;
+  }
+  const runId = params.data.id;
+  const { findingId, action } = parsed.data;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+  if (!run.securityScan) {
+    res.status(409).json({ error: "No security scan found on this run." });
+    return;
+  }
+  const scan = run.securityScan as AegisScanResult;
+  const finding = scan.findings.find((f) => f.id === findingId);
+  if (!finding) {
+    res.status(404).json({ error: `Finding ${findingId} not found.` });
+    return;
+  }
+
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
+  if (!project) {
+    res.status(409).json({ error: "No project found for this run." });
+    return;
+  }
+  if (project.plmProvider !== "jira" && project.plmProvider !== "azure-devops") {
+    res.status(409).json({ error: "This project's tracker doesn't support ticket creation." });
+    return;
+  }
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+
+  // STEP A: ensure a PLM ticket + mirrored board task exist for this finding.
+  let ticketKey: string;
+  let ticketUrl: string | undefined;
+  let internalTaskId: number;
+  try {
+    if (finding.plmTicketKey) {
+      // Filed already (during the scan, for high/critical). Reuse it; just make
+      // sure the board task exists so we can run against it.
+      ticketKey = finding.plmTicketKey;
+      ticketUrl = finding.plmTicketUrl;
+      internalTaskId = await ensureFindingTask({
+        userId: req.userId,
+        projectId: project.id,
+        repositoryId: project.repositoryId,
+        parentTaskId: workItem?.id ?? null,
+        finding,
+        ticketKey,
+        ticketUrl: ticketUrl ?? "",
+        plmProvider: project.plmProvider as PlmProvider,
+      });
+    } else {
+      const ticket = await createAegisPlmTicket({
+        finding,
+        parentExternalId: workItem?.externalId ?? "",
+        parentTitle: workItem?.title ?? "",
+        plmProvider: project.plmProvider as PlmProvider,
+        plmProjectKey: project.plmProjectKey,
+        userId: req.userId,
+        projectId: project.id,
+        repositoryId: project.repositoryId,
+        parentTaskId: workItem?.id ?? null,
+      });
+      if (!ticket) {
+        res.status(502).json({ error: "Could not create PLM ticket. Check your tracker credentials." });
+        return;
+      }
+      ticketKey = ticket.ticketKey;
+      ticketUrl = ticket.ticketUrl;
+      internalTaskId = ticket.internalTaskId;
+    }
+  } catch (err) {
+    req.log.error({ err, findingId }, "Failed to create PLM ticket for finding");
+    res.status(502).json({ error: "Could not create PLM ticket. Check your tracker credentials." });
+    return;
+  }
+
+  // Reflect the ticket on the stored scan finding.
+  const mark = (patch: Partial<typeof finding>) => {
+    const updated = scan.findings.map((f) => (f.id === findingId ? { ...f, ...patch } : f));
+    return { ...scan, findings: updated };
+  };
+  let updatedScan = mark({ plmTicketKey: ticketKey, plmTicketUrl: ticketUrl, pushedToBoard: true });
+  await db.update(runsTable).set({ securityScan: updatedScan }).where(eq(runsTable.id, runId));
+
+  // STEP B: sync the board so the new ticket appears (non-fatal).
+  try {
+    await syncProject(req.userId, project.id);
+  } catch (syncErr) {
+    req.log.warn({ syncErr }, "Board sync after remediation ticket creation failed");
+  }
+
+  // STEP C: for remediate-now, start a remediation run on the new task.
+  let newRunId: number | null = null;
+  if (action === "remediate-now") {
+    try {
+      const [newRun] = await db
+        .insert(runsTable)
+        .values({
+          userId: req.userId,
+          projectId: project.id,
+          workItemId: internalTaskId,
+          status: "queued",
+          trigger: "manual",
+          triggerContext: "remediation",
+          parentRunId: runId,
+          refinePrompt: buildRemediationPrompt(finding),
+          autoCommit: false,
+        })
+        .returning();
+      newRunId = newRun.id;
+
+      updatedScan = mark({
+        plmTicketKey: ticketKey,
+        plmTicketUrl: ticketUrl,
+        pushedToBoard: true,
+        remediationRunId: newRun.id,
+        remediationStatus: "pending",
+      });
+      await db.update(runsTable).set({ securityScan: updatedScan }).where(eq(runsTable.id, runId));
+
+      // executeRun(runId) loads everything by id (scoped to run.userId) and never
+      // throws — kick it off in the background so the response returns immediately.
+      void executeRun(newRun.id).catch((err) => req.log.error({ err, newRunId }, "Remediation run failed"));
+    } catch (runErr) {
+      req.log.error({ runErr, findingId }, "Failed to create remediation run");
+      // Non-fatal — ticket exists; the run can be started from the board.
+    }
+  }
+
+  res.status(200).json({
+    ticketKey,
+    ticketUrl,
+    newRunId,
+    action,
+    message:
+      action === "remediate-now"
+        ? `Ticket ${ticketKey} created and remediation run ${newRunId ? `#${newRunId} started` : "queued"}.`
+        : `Ticket ${ticketKey} created and synced to board.`,
+  });
 });
 
 export default router;
