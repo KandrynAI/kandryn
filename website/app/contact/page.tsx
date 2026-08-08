@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 const FACTS: [string, string][] = [
   ['Typical reply', 'Within one business day, with a time and a short checklist.'],
   ["You'll need", 'A tracker project, a repository, and one model key.'],
+  ['Optional for the full pipeline', 'Confluence or Notion credentials, for Narratia runbook push to your docs.'],
   ['Prefer to talk first?', 'Book a walkthrough and we’ll screen-share the loop on a real ticket.'],
 ];
 
@@ -24,8 +25,8 @@ export default function ContactPage() {
           We&apos;ll wire it up with you.
         </h1>
         <p style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 22, maxWidth: 560 }}>
-          Onboarding is a shared call: we connect your tracker and repository, run one real work item end to end, and
-          you keep whatever it produces.
+          Onboarding is a shared call: we connect your tracker and repository, run one real work item through the full
+          pipeline — code generation, security scan, and runbook — and you keep whatever it produces.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 36 }}>
           {FACTS.map(([lead, body]) => (
