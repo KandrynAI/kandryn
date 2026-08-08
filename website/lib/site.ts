@@ -20,9 +20,10 @@ export const NAV_ITEMS = [
 
 export const HERO_STATS = [
   { value: 'Epic → PR', body: 'One thread from the work item to the branch, the commit and the review.' },
-  { value: '4 agents', body: 'Raptia and Fovea generate in parallel. Synthesia ranks. Veria reviews after commit.' },
+  { value: '6 agents', body: 'Raptia and Fovea generate. Synthesia ranks. Veria reviews. Aegis secures. Narratia documents. One pipeline, end to end.' },
   { value: 'Every 5 min', body: 'The dispatcher claims scheduled runs around the clock, then emails you the result.' },
-  { value: 'Tests too', body: 'Given/When/Then cases pushed back to the tracker, the script stacked on the same PR.' },
+  { value: 'Tests too', body: 'Given/When/Then cases generated, committed to the PR, and pushed back to your tracker. Selected cases become tracker test items in one click.' },
+  { value: 'Security too', body: 'Aegis scans every committed change for OWASP Top 10 vulnerabilities. High findings block the PR. Remediate Now fixes them in the same session.' },
 ];
 
 export const STEPS = [
@@ -30,10 +31,12 @@ export const STEPS = [
   { n: '02', title: 'Bind a project', body: 'A three-step wizard ties one tracker project to one repository, validating both live.' },
   { n: '03', title: 'Sync', body: 'The epic→story→task tree lands on a board, parents resolved, closed items cleaned up.' },
   { n: '04', title: 'Author', body: 'Write items locally or push them upstream, or have an epic broken down into children you approve.' },
-  { n: '05', title: 'Run', body: 'Now, or scheduled up to thirty days out. Raptia and Fovea generate in parallel; Synthesia produces a ranked shortlist.' },
+  { n: '05', title: 'Run', body: 'Now, or scheduled up to thirty days out. Raptia and Fovea generate in parallel — using your detected stack profile to write idiomatic code for React, Node.js, .NET, Java, Python, or Go. Synthesia produces a ranked shortlist with a confidence score and per-dimension breakdown.' },
   { n: '06', title: 'Commit', body: 'The chosen suggestion becomes a branch, a commit and a pull request; the item moves to review.' },
-  { n: '07', title: 'Test', body: 'Given/When/Then cases and a runnable script, stacked onto the same pull request.' },
-  { n: '08', title: 'Repeat', body: 'The dispatcher sweeps every five minutes and emails you when a scheduled run lands.' },
+  { n: '07', title: 'Test', body: 'Given/When/Then cases specific to your acceptance criteria — not generic templates. The test script stacks onto the same PR. Selected cases push back to your tracker as test items.' },
+  { n: '08', title: 'Secure', body: 'Aegis scans the committed change for OWASP Top 10 vulnerabilities using a frontier security model. High and Critical findings block the PR via a GitHub status check. Medium and Low findings create tracker tickets. Remediate Now starts a new run to fix the issue immediately.', time: 'Post-commit' },
+  { n: '09', title: 'Document', body: 'Narratia generates an operational runbook: what changed, deployment steps, rollback procedure, validation commands, and known risks from Veria and Aegis. Pushed to Confluence, Notion, or committed as Markdown to the same PR branch.', time: 'Post-commit' },
+  { n: '10', title: 'Repeat', body: 'The dispatcher sweeps every five minutes and emails you when a scheduled run lands.' },
 ];
 
 export const HOW_SECTIONS = [
@@ -47,13 +50,13 @@ export const HOW_SECTIONS = [
     n: 'STAGE 02', title: 'Two answers',
     body: 'Raptia and Fovea run in parallel against the same case file. They reason differently by design — when one misreads the acceptance criteria, the other usually does not.',
     detailLabel: 'WHY PARALLEL',
-    details: ['One shared context, two independent reasoning paths', 'No sequential prompting, so no shared blind spot', 'Either answer is committable — Synthesia tells you which', 'Both are kept on the run for later comparison'],
+    details: ['One shared context, two independent reasoning paths', 'No sequential prompting, so no shared blind spot', 'Either answer is committable — Synthesia tells you which, with a confidence score from 0 to 100', 'Both are kept on the run for later comparison'],
   },
   {
     n: 'STAGE 03', title: 'Synthesia ranks',
-    body: 'Synthesia scores each suggestion on stack fit, blast radius, and how much of the acceptance criteria it actually covers, then flags the leader as Recommended. The score is visible; you are free to disagree with it.',
+    body: 'Synthesia scores each suggestion on five dimensions — correctness (35%), readability (20%), diff size (15%), convention adherence (15%), and AC coverage (15%) — then flags the leader as Recommended with a confidence score and a plain-English explanation of its reasoning. Two additional behaviour signals track ambiguity handling and surgical precision.',
     detailLabel: 'SCORED ON',
-    details: ["Fit with the repository's existing patterns", 'Size and reach of the change', 'Coverage of the stated acceptance criteria', 'Whether it invents APIs that do not exist'],
+    details: ['Correctness — does it solve the stated problem? (35%)', 'Readability — is it clear and maintainable? (20%)', 'Minimal diff — does it change only what is needed? (15%)', 'Convention adherence — does it match existing patterns? (15%)', 'AC coverage — how many criteria does it address? (15%)', 'Confidence score 0–100 and a plain-English explanation'],
   },
   {
     n: 'STAGE 04', title: 'Commit',
@@ -73,6 +76,18 @@ export const HOW_SECTIONS = [
     detailLabel: 'WHAT VERIA CHECKS',
     details: ['Which acceptance criteria are fully covered', 'Which are partially addressed or missing', 'Specific strengths in the committed code', 'Risks or gaps to watch in code review'],
   },
+  {
+    n: 'STAGE 07', title: 'Aegis secures',
+    body: 'After commit, Aegis scans the change for security vulnerabilities — injection flaws, hardcoded secrets, authentication bypasses, OWASP Top 10. High and Critical findings block the PR via a GitHub commit status check. Medium and Low findings create sub-tasks in your tracker. Remediate Now creates the ticket, syncs it to the board, and starts a new run with the remediation brief pre-filled — closing the security loop without leaving Blue Mantis.',
+    detailLabel: 'WHAT AEGIS CHECKS',
+    details: ['OWASP Top 10 (2021) — all ten categories', 'Injection: SQL, NoSQL, command, LDAP', 'Hardcoded secrets, API keys, and credentials', 'Authentication and authorisation flaws', 'Missing input validation on sensitive endpoints', 'High/Critical → PR blocked · Medium/Low → tracker ticket'],
+  },
+  {
+    n: 'STAGE 08', title: 'Narratia documents',
+    body: 'Narratia generates an operational runbook from the completed run: what changed and why, deployment steps specific to this change, rollback procedure, validation commands, and a summary of Veria and Aegis findings. Pushed to Confluence via REST API, Notion via the Notion API, or committed as docs/runbooks/ITEM-KEY.md to the same PR branch — zero extra credentials for the Markdown option.',
+    detailLabel: 'RUNBOOK SECTIONS',
+    details: ['Summary — what changed and why', 'Deployment steps — specific to this change', 'Rollback procedure — referencing the branch and PR', 'Validation — how to verify it is working in production', 'Test cases — from the generated test suite', 'Security notes — Aegis gate status and findings'],
+  },
 ];
 
 export const ATTENTION = [
@@ -86,10 +101,12 @@ export const INTEGRATIONS = [
   { name: 'Azure DevOps', tag: 'TRACKER', body: 'The same sync against Azure Boards, with Feature mapped onto epic so the hierarchy lines up with Jira projects.', creds: 'AZURE_DEVOPS_ORG · AZURE_DEVOPS_PROJECT · AZURE_DEVOPS_PAT', note: 'Work-item creation and test-case push both supported.' },
   { name: 'GitHub', tag: 'PRIMARY REPO', body: 'Branch, commit and pull request. Stack detection reads the repository on connect, and the test-script commit stacks onto the existing PR rather than overwriting it.', creds: 'GITHUB_TOKEN (PAT) or the OAuth token from sign-in', note: 'The primary provider, and the one we test first on every release.' },
   { name: 'Azure Repos', tag: 'REPO', body: 'Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.', creds: 'AZURE_REPOS_ORG · AZURE_REPOS_TOKEN', note: 'Edits to existing files are reliable; brand-new file adds can fail.' },
-  { name: 'Raptia', tag: 'AGENT', body: 'The first of two generation agents that runs on every Blue Mantis pipeline. Raptia is optimised for precision — it reads the work item, the acceptance criteria, and the repository context, then commits to a single well-reasoned answer.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'Raptia and Fovea always run together in parallel.' },
-  { name: 'Fovea', tag: 'AGENT', body: 'The second generation agent. Fovea takes a wider view of the same context — it considers more of the repository before settling on an approach, which means it often catches what Raptia misses.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'The Synthesia agent scores both and flags the stronger answer.' },
-  { name: 'Synthesia', tag: 'AGENT', body: 'The ranking agent. After Raptia and Fovea complete, Synthesia scores both suggestions on correctness, readability, diff size, convention adherence, and acceptance-criteria coverage — then recommends the better one with a confidence score.', creds: 'Runs automatically after every generation — no configuration needed', note: 'Synthesia\'s verdict is visible on every run. You can always override it.' },
-  { name: 'Veria', tag: 'AGENT', body: 'The review agent. After you commit a suggestion, Veria reads the committed code against the work item\'s acceptance criteria and produces a structured review: strengths, gaps, risks, and a one-sentence focus note for the human reviewer.', creds: 'User-triggered post-commit — runs on demand, not automatically', note: 'Veria only activates after a suggestion is committed to a branch.' },
+  { name: 'Raptia', tag: 'AGENT', body: 'The first of two generation agents that runs on every Blue Mantis pipeline. Raptia is optimised for precision — it reads the work item, the acceptance criteria, and the repository context, then commits to a single well-reasoned answer. Stack-aware: detects React, Angular, Vue, Node.js, .NET, Java Spring Boot, Python, and Go — and writes idiomatic code for each without being told.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'Raptia and Fovea always run together in parallel.' },
+  { name: 'Fovea', tag: 'AGENT', body: 'The second generation agent. Fovea takes a wider view of the same context — it considers more of the repository before settling on an approach, which means it often catches what Raptia misses. Also stack-aware — uses the same detected profile to ensure both suggestions follow the same framework conventions.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'The Synthesia agent scores both and flags the stronger answer.' },
+  { name: 'Synthesia', tag: 'AGENT', body: 'The ranking agent. After Raptia and Fovea complete, Synthesia scores both suggestions on correctness, readability, diff size, convention adherence, and acceptance-criteria coverage — then recommends the better one with a confidence score. Two behaviour signals — ambiguity handling and surgical precision — flag whether an agent silently assumed something or changed more than the work item required.', creds: 'Runs automatically after every generation — no configuration needed', note: 'Synthesia\'s verdict is visible on every run. You can always override it.' },
+  { name: 'Veria', tag: 'AGENT', body: 'The review agent. After you commit a suggestion, Veria reads the committed code against the work item\'s acceptance criteria and produces a structured review: strengths, gaps, risks, and a one-sentence focus note for the human reviewer.', creds: 'User-triggered post-commit — runs on demand, not automatically', note: 'Veria only activates after a suggestion is committed to a branch. Veria explicitly checks for scope creep, silent assumptions, and over-engineering in the committed code.' },
+  { name: 'Aegis', tag: 'AGENT', body: 'The security agent. Runs after commit using a frontier security model. Scans the committed change for OWASP Top 10 vulnerabilities, hardcoded secrets, injection flaws, and authentication bypasses. Outputs structured findings with severity, OWASP category, line reference, and remediation steps. High and Critical findings block the PR via a GitHub status check. Remediate Now creates a tracker ticket, syncs the board, and starts a new run to fix the issue — without leaving Blue Mantis.', creds: 'Configured automatically — no separate credential required', note: 'Aegis uses claude-fable-5, the safeguarded frontier model. Configure GitHub branch protection once to enforce the stop gate.' },
+  { name: 'Narratia', tag: 'AGENT', body: 'The documentation agent. After a run completes, Narratia generates an operational runbook: a summary of what changed, deployment steps specific to this change, rollback procedure, validation commands, test cases from the generated suite, and security findings from Aegis. Pushed to Confluence, Notion, or committed as Markdown to the PR branch.', creds: 'Confluence: CONFLUENCE_DOMAIN · CONFLUENCE_EMAIL · CONFLUENCE_API_TOKEN · CONFLUENCE_SPACE_KEY\nNotion: NOTION_API_TOKEN · NOTION_PARENT_PAGE\nMarkdown: no credentials required', note: 'The Markdown option commits docs/runbooks/ITEM-KEY.md directly to the PR branch — visible in the PR with no extra setup.' },
 ];
 
 export const CAPABILITY_MATRIX = [
@@ -100,7 +117,15 @@ export const CAPABILITY_MATRIX = [
   { cap: 'Branch and commit', jira: '—', ado: '—', gh: 'Yes', ar: 'Existing files' },
   { cap: 'Open pull request', jira: '—', ado: '—', gh: 'Yes', ar: 'Yes' },
   { cap: 'Stack detection', jira: '—', ado: '—', gh: 'Yes', ar: 'Yes' },
+  { cap: 'Security gate (stop gate)', jira: '—', ado: '—', gh: 'Yes', ar: '—' },
+  { cap: 'Runbook push', jira: '—', ado: '—', gh: 'Markdown to PR', ar: 'Markdown to PR' },
 ];
+
+export const CAPABILITY_FOOTNOTE =
+  'Security gate: requires one-time GitHub branch protection rule ' +
+  'on main (Settings → Branches → Require status checks → ' +
+  'blue-mantis/security). Runbook push to Confluence and Notion ' +
+  'requires separate credentials in Settings.';
 
 export const RESOURCES = [
   { kind: 'GUIDE', cat: 'Guides', meta: '9 min', title: 'Connecting Jira without over-scoping the token', body: 'The three Jira permissions Blue Mantis needs, and the four it will never ask for.', cta: 'Read' },
@@ -112,17 +137,25 @@ export const RESOURCES = [
   { kind: 'TEMPLATE', cat: 'Templates', meta: 'Download', title: 'Acceptance-criteria template for agent runs', body: 'A Given/When/Then skeleton that maps cleanly onto generated tests.', cta: 'Get it' },
   { kind: 'TEMPLATE', cat: 'Templates', meta: 'Download', title: 'Pilot checklist for the first two weeks', body: 'What to instrument, which items to point it at, and how to tell whether it is working.', cta: 'Get it' },
   { kind: 'POSTMORTEM', cat: 'Engineering', meta: '10 min', title: 'Runs that failed, and why', body: 'Expired tokens, ambiguous tickets, a rebase that ate a commit. What we changed after each.', cta: 'Read' },
+  { kind: 'GUIDE', cat: 'Guides', meta: '8 min', title: 'Setting up Aegis stop gates on GitHub', body: 'One branch protection rule on main. How to configure it, what Aegis posts, and what happens when a High finding lands.', cta: 'Read' },
+  { kind: 'PATTERN', cat: 'Patterns', meta: '6 min', title: 'Remediate Now: closing the security loop', body: 'From Aegis finding to remediation run in one click. When to use it, when to push to the tracker instead, and how the refinement prompt is pre-filled.', cta: 'Read' },
+  { kind: 'GUIDE', cat: 'Guides', meta: '7 min', title: 'Generating runbooks with Narratia', body: 'What goes into a Narratia runbook, how to configure the Confluence and Notion push, and why Markdown to the PR branch is the best starting point.', cta: 'Read' },
 ];
 
 export const QUICKSTART = [
-  { n: '01', title: 'Connect your credentials', body: 'Tracker and repository credentials, tested as you save them. Agent infrastructure needs no separate key.', time: '5 min' },
+  { n: '01', title: 'Connect your credentials', body: 'Tracker and repository credentials, tested as you save them. Agent infrastructure needs no separate key. Optional: Confluence or Notion credentials for Narratia runbook push.', time: '5 min' },
   { n: '02', title: 'Bind your first project', body: 'One tracker project to one repository, validated live.', time: '2 min' },
   { n: '03', title: 'Sync and read the board', body: 'The hierarchy arrives; check the parents look right.', time: '1 min' },
   { n: '04', title: 'Run one small item', body: 'Pick something mechanical for the first run, not the payments rewrite.', time: '4 min' },
   { n: '05', title: 'Review the pull request', body: 'Normal review, normal CI. Nothing merges itself.', time: 'Your call' },
+  { n: '06', title: 'Run Aegis after commit', body: 'Click Run Aegis on the committed run. Review findings, push Medium/Low to your tracker, or hit Remediate Now for High findings — the loop closes in the same session.', time: '2 min' },
 ];
 
 export const CHANGELOG = [
+  { date: '2026-08-07', title: 'Aegis remediation loop — Remediate Now', body: 'Security findings can now be pushed to your tracker or fixed immediately with Remediate Now — one click creates the ticket, syncs the board, and starts a new run.' },
+  { date: '2026-08-05', title: 'Narratia runbook generation', body: 'After every committed run, Narratia generates an operational runbook and pushes it to Confluence, Notion, or the PR branch as Markdown.' },
+  { date: '2026-08-03', title: 'Aegis security agent with stop gate', body: 'Aegis scans committed code for OWASP Top 10 vulnerabilities. High findings block the PR via a GitHub status check until resolved.' },
+  { date: '2026-08-01', title: 'Stack-aware generation for all major frameworks', body: 'Raptia and Fovea now detect your stack — React, Node, .NET, Java Spring Boot, Python, Go — and write idiomatic code for each without being told.' },
   { date: '2026-07-24', title: 'Test scripts stack on the open PR', body: 'The generated script now commits onto the branch head instead of the default branch.' },
   { date: '2026-07-11', title: 'Scheduled runs email on failure', body: 'Failures carry the reason and a link straight to the run.' },
   { date: '2026-06-29', title: 'Epic breakdown is editable before it saves', body: 'Proposals arrive as rows you can rewrite, retype or delete.' },
@@ -135,13 +168,15 @@ export const SECURITY_PRINCIPLES = [
   { title: 'Write access is narrow', body: 'Blue Mantis creates branches, commits and pull requests. It does not merge, force-push, or touch your default branch.' },
   { title: 'The tracker stays yours', body: 'Items and test cases are pushed only when you ask. The single automatic write-back is a status change when an item closes.' },
   { title: 'Agents see a case file, not a repository', body: 'Only the files selected as relevant to the work item, plus the detected stack profile, are passed to the agent pipeline — scoped to what the keyword extractor judges relevant.' },
-  { title: 'Failures are contained', body: 'A run that fails records the error and stops. Nothing half-written reaches your repository, and stuck runs are swept after twenty minutes.' },
+  { title: 'Failures are contained', body: 'A run that fails records the error and stops. Nothing half-written reaches your repository, and stuck runs are swept after twenty minutes. A blocked Aegis gate records every finding and stops without writing anything to main. Nothing with a High or Critical finding can be promoted until it is resolved and the gate clears.' },
+  { title: 'High findings never reach main', body: 'Aegis posts a blue-mantis/security status check to every PR. Configure one branch protection rule on main and GitHub enforces it — no High or Critical security finding can be merged until it is resolved. Blue Mantis never merges anything itself.' },
 ];
 
 export const PROCESSORS = [
   { name: 'Supabase (Postgres)', purpose: 'Application database', sees: 'Work items, runs, suggestions, your encrypted-at-rest config' },
   { name: 'Clerk', purpose: 'Authentication', sees: 'Email, session, OAuth identity' },
-  { name: 'Blue Mantis agent pipeline', purpose: 'Code generation and review', sees: 'The case file for a run — work item, acceptance criteria, and selected repository files' },
+  { name: 'Generation pipeline', purpose: 'Code generation, ranking, and review', sees: 'Case file per run: work item, acceptance criteria, selected repository files. Agents: Raptia, Fovea, Synthesia, Veria.' },
+  { name: 'Aegis (security pipeline)', purpose: 'Security vulnerability scanning', sees: 'The committed code change only — same file the developer committed. No other repository files.' },
   { name: 'Resend', purpose: 'Transactional email', sees: 'Your address and the run outcome' },
 ];
 
@@ -152,7 +187,10 @@ export const FAQS = [
   { q: 'What happens if a scheduled run fails?', a: 'The run row records the error, the item is left untouched, and the owner gets an email. Runs stuck longer than twenty minutes are swept to failed by the dispatcher.' },
   { q: 'Can it write to my tracker?', a: 'Only where you ask it to: new items and test cases you explicitly push, and a status change when an item closes. Nothing else propagates upstream.' },
   { q: 'Which providers work best?', a: 'GitHub is the primary, auto-synced provider. Azure Repos works for edits to existing files; adding a brand-new file can fail there.' },
-  { q: 'Four agents — why so many?', a: 'Each agent has a distinct role. Raptia and Fovea generate competing suggestions in parallel — they reason differently by design, so when one misreads the ticket, the other usually does not. Synthesia scores both and recommends the stronger answer. Veria reviews the committed code against the acceptance criteria after you commit. Together they cover the full delivery loop from generation to review.' },
+  { q: 'Six agents — why so many?', a: 'Each agent has a distinct role. Raptia and Fovea generate competing suggestions in parallel — they reason differently by design, so when one misreads the ticket, the other usually does not. Synthesia scores both on five dimensions and recommends the stronger answer with a confidence score. Veria reviews the committed code against the acceptance criteria after commit. Aegis scans for security vulnerabilities and blocks High findings from reaching main. Narratia writes the operational runbook. Together they cover the full delivery loop from generation to documentation.' },
+  { q: 'What does Aegis scan for?', a: 'Aegis checks for OWASP Top 10 (2021) vulnerabilities: injection flaws (SQL, NoSQL, command), broken access control, cryptographic failures, hardcoded secrets, insecure design, authentication bypasses, and SSRF. Each finding has a severity (Critical, High, Medium, Low, Info), an OWASP category, a line reference, and a remediation step. High and Critical findings block the PR. Medium and Low findings create tracker tickets.' },
+  { q: 'Can Blue Mantis fix its own security findings?', a: 'Yes — that is what Remediate Now is for. Click it on any Aegis finding and Blue Mantis creates the tracker ticket, syncs it to the board, and immediately starts a new run with the security finding and its remediation as the brief for Raptia and Fovea. The loop closes in the same session without switching tools.' },
+  { q: 'What does Narratia put in the runbook?', a: 'Seven sections: a summary of what changed and why, deployment steps specific to this change, a rollback procedure referencing the branch and PR, validation commands to confirm it is working in production, the generated test cases, security findings from Aegis, and a references section with the work item key, branch, commit hash, and PR link. Pushed to Confluence, Notion, or committed as Markdown to the same PR branch.' },
   { q: 'Can I try it on one project?', a: 'That is how every pilot starts: one tracker project, one repository, one real work item run end to end on a shared call.' },
 ];
 
