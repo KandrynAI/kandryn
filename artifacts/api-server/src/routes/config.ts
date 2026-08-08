@@ -242,6 +242,39 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
         break;
       }
 
+      case "confluence": {
+        const domain = (await resolve(body, "CONFLUENCE_DOMAIN", uid, "CONFLUENCE_DOMAIN")).trim();
+        const email = (await resolve(body, "CONFLUENCE_EMAIL", uid, "CONFLUENCE_EMAIL")).trim();
+        const token = await resolve(body, "CONFLUENCE_API_TOKEN", uid, "CONFLUENCE_API_TOKEN");
+        if (!domain || !email || !token) {
+          res.status(400).json({ ok: false, message: "Domain, email, and API token are required" });
+          return;
+        }
+        const auth = Buffer.from(`${email}:${token}`).toString("base64");
+        const r = await fetch(`https://${domain}/wiki/rest/api/space?limit=1`, {
+          headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+        });
+        if (r.status === 401) throw new Error("Invalid email or API token");
+        if (!r.ok) throw new Error(`Confluence returned ${r.status} — check your domain and credentials`);
+        res.json({ ok: true, message: `Connected to ${domain}` });
+        break;
+      }
+
+      case "notion": {
+        const token = await resolve(body, "NOTION_API_TOKEN", uid, "NOTION_API_TOKEN");
+        if (!token) {
+          res.status(400).json({ ok: false, message: "Notion API token is required" });
+          return;
+        }
+        const r = await fetch("https://api.notion.com/v1/users/me", {
+          headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" },
+        });
+        if (r.status === 401) throw new Error("Invalid Notion token");
+        if (!r.ok) throw new Error(`Notion returned ${r.status}`);
+        res.json({ ok: true, message: "Notion integration connected" });
+        break;
+      }
+
       default:
         res.status(404).json({ ok: false, message: "Unknown integration" });
     }

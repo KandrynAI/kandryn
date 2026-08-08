@@ -112,6 +112,14 @@ export const runsTable = pgTable(
       .$type<"pending" | "running" | "done" | "failed" | "skipped" | null>()
       .default(null),
     securityGate: text("security_gate").$type<"approved" | "blocked" | "pending" | null>().default(null),
+    // Narratia runbook (0015_narratia.sql). Populated only when the user
+    // generates a runbook for a committed run.
+    runbook: text("runbook"),
+    runbookStatus: text("runbook_status")
+      .$type<"pending" | "running" | "done" | "failed" | null>()
+      .default(null),
+    runbookTarget: text("runbook_target"), // 'markdown' | 'confluence' | 'notion'
+    runbookUrl: text("runbook_url"), // URL after push (confluence/notion/markdown)
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

@@ -269,7 +269,24 @@ export interface Run {
   securityScan?: AegisScanResult | null;
   securityScanStatus?: 'pending' | 'running' | 'done' | 'failed' | 'skipped' | null;
   securityGate?: 'approved' | 'blocked' | 'pending' | null;
+  runbook?: string | null;
+  runbookStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
+  runbookTarget?: string | null;
+  runbookUrl?: string | null;
   createdAt: string;
+}
+
+export type RunbookTarget = 'markdown' | 'confluence' | 'notion';
+
+export function runNarratia(
+  runId: number,
+  target: RunbookTarget,
+): Promise<{ runbook: string; url: string | null; target: string; sections?: string[] }> {
+  return request(`/api/runs/${runId}/runbook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target }),
+  });
 }
 
 export type SecuritySeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';

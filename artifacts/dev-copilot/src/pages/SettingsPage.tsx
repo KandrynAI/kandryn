@@ -124,6 +124,40 @@ const INTEGRATIONS: Integration[] = [
       { label: "Fill in your organisation, project name (optional), and paste the token below" },
     ],
   },
+  {
+    id: "confluence",
+    title: "Confluence",
+    subtitle: "Publish Narratia runbooks to a Confluence space",
+    icon: <ConfluenceIcon />,
+    testKey: "confluence",
+    fields: [
+      { key: "CONFLUENCE_DOMAIN", label: "Domain", placeholder: "yoursite.atlassian.net", hint: "Just the domain, no https://" },
+      { key: "CONFLUENCE_EMAIL", label: "Account email", placeholder: "you@company.com" },
+      { key: "CONFLUENCE_API_TOKEN", label: "API Token", placeholder: "ATATT3xFfGF…" },
+      { key: "CONFLUENCE_SPACE_KEY", label: "Space key", placeholder: "ENG", hint: "The space to publish to" },
+    ],
+    steps: [
+      { label: "Create an API token at id.atlassian.com", link: { text: "Create token", url: "https://id.atlassian.com/manage-profile/security/api-tokens" } },
+      { label: "Find your space key in the space settings (e.g. ENG)" },
+      { label: "Fill in your domain, email, token, and space key below" },
+    ],
+  },
+  {
+    id: "notion",
+    title: "Notion",
+    subtitle: "Publish Narratia runbooks as Notion pages",
+    icon: <NotionIcon />,
+    testKey: "notion",
+    fields: [
+      { key: "NOTION_API_TOKEN", label: "Integration token", placeholder: "secret_…", hint: "From notion.so/my-integrations" },
+      { key: "NOTION_PARENT_PAGE", label: "Parent page ID", placeholder: "32-char page ID", hint: "From the parent page URL" },
+    ],
+    steps: [
+      { label: "Create an integration at notion.so/my-integrations", link: { text: "Open Notion", url: "https://www.notion.so/my-integrations" } },
+      { label: "Share the parent page with your integration so it can post there" },
+      { label: "Paste the integration token and the parent page ID (from the URL) below" },
+    ],
+  },
 ];
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -145,6 +179,12 @@ function AzureIcon() {
 }
 function AzureReposIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#0078D4" /><path d="M17 7H13L7 12L13 17H17L11 12L17 7Z" fill="white" /><rect x="7" y="11" width="2" height="2" rx="1" fill="white" /></svg>);
+}
+function ConfluenceIcon() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1868DB" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="10" fontWeight="700">C</text></svg>);
+}
+function NotionIcon() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#111" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="10" fontWeight="700">N</text></svg>);
 }
 
 // ─── Tone helpers (success/error using brand tokens) ────────────────────────────
@@ -400,6 +440,7 @@ const GROUPS: { label: string; ids: string[] }[] = [
   { label: "Trackers", ids: ["jira", "azuredevops"] },
   { label: "Repositories", ids: ["github", "azurerepos"] },
   { label: "Agents", ids: ["anthropic", "openai"] },
+  { label: "Documentation", ids: ["confluence", "notion"] },
 ];
 
 export default function SettingsPage() {

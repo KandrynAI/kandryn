@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, FileCheck, Copy, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
@@ -12,6 +12,7 @@ import {
   reRunItem,
   runReview,
   runAegisScan,
+  runNarratia,
   pushWorkItemToPlm,
   ApiError,
   type RunDetail,
@@ -21,6 +22,7 @@ import {
   type Run,
   type ReviewFinding,
   type AegisFinding,
+  type RunbookTarget,
 } from "@/services/api";
 
 /** Extract "123" from a PR URL (GitHub /pull/123 or ADO /pullrequest/123). */
@@ -76,6 +78,8 @@ export default function RunDetailPage() {
   const [rerunning, setRerunning] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [aegisLoading, setAegisLoading] = useState(false);
+  const [narratiaLoading, setNarratiaLoading] = useState(false);
+  const [runbookTarget, setRunbookTarget] = useState<RunbookTarget>("markdown");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
@@ -106,7 +110,8 @@ export default function RunDetailPage() {
     const active =
       IN_PROGRESS.includes(data.run.status) ||
       data.run.reviewStatus === "running" ||
-      data.run.securityScanStatus === "running";
+      data.run.securityScanStatus === "running" ||
+      data.run.runbookStatus === "running";
     if (!active) return;
     timer.current = setTimeout(() => load(true), 4000);
     return () => {
@@ -210,6 +215,27 @@ export default function RunDetailPage() {
       }
     } finally {
       setAegisLoading(false);
+    }
+  };
+
+  const onNarratia = async (target: RunbookTarget) => {
+    setNarratiaLoading(true);
+    try {
+      await runNarratia(runId, target);
+      toast({ title: "Runbook generated." });
+      await load(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 202) {
+        toast({ title: "Narratia is already generating." });
+      } else if (err instanceof ApiError && err.status === 409) {
+        toast({ title: "Commit a suggestion before running Narratia.", variant: "destructive" });
+      } else if (err instanceof ApiError && err.status === 424) {
+        toast({ title: "Add your Anthropic API key in Settings to run Narratia.", variant: "destructive" });
+      } else {
+        toast({ title: "Generation failed. Try again.", variant: "destructive" });
+      }
+    } finally {
+      setNarratiaLoading(false);
     }
   };
 
@@ -452,6 +478,12 @@ export default function RunDetailPage() {
         </div>
       )}
 
+      {isCommitted && (
+        <div style={{ padding: "0 20px 8px", maxWidth: 760 }}>
+          <NarratiaSection run={run} onGenerate={onNarratia} loading={narratiaLoading} target={runbookTarget} setTarget={setRunbookTarget} />
+        </div>
+      )}
+
       {run.status === "succeeded" && run.commitHash && (
         <div style={{ padding: "0 20px 24px", maxWidth: 760 }}>
           <TestStage
@@ -481,6 +513,173 @@ const SEVERITY_STYLE: Record<string, { bg: string; fg: string }> = {
   medium: { bg: "var(--c-amber-bg)", fg: "var(--c-amber)" },
   low: { bg: "var(--c-raised)", fg: "var(--c-ink-4)" },
 };
+
+// Minimal Markdown → HTML for the runbook preview (no external library).
+// Handles ## / ### headings, **bold**, `inline code`, ```code blocks```, and
+// -/1. list items. Escapes HTML in text and code.
+function mdToHtml(md: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const blocks: string[] = [];
+  const src = md.replace(/```(\w+)?\n([\s\S]*?)```/g, (_m, _lang, code) => {
+    blocks.push(`<pre><code>${esc(code)}</code></pre>`);
+    return ` BLOCK${blocks.length - 1} `;
+  });
+  const out: string[] = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+  for (const raw of src.split("\n")) {
+    const bm = raw.match(/^ BLOCK(\d+) $/);
+    if (bm) { closeList(); out.push(blocks[Number(bm[1])]); continue; }
+    const inline = esc(raw.trimEnd())
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+    if (/^## /.test(raw)) { closeList(); out.push(`<h2>${inline.replace(/^## /, "")}</h2>`); }
+    else if (/^### /.test(raw)) { closeList(); out.push(`<h3>${inline.replace(/^### /, "")}</h3>`); }
+    else if (/^\s*[-*] /.test(raw)) { if (!inList) { out.push("<ul>"); inList = true; } out.push(`<li>${inline.replace(/^\s*[-*] /, "")}</li>`); }
+    else if (/^\s*\d+\. /.test(raw)) { if (!inList) { out.push("<ul>"); inList = true; } out.push(`<li>${inline.replace(/^\s*\d+\.\s/, "")}</li>`); }
+    else if (raw.trim() === "") { closeList(); }
+    else { closeList(); out.push(`<p>${inline}</p>`); }
+  }
+  closeList();
+  return out.join("\n");
+}
+
+function NarratiaSection({
+  run,
+  onGenerate,
+  loading,
+  target,
+  setTarget,
+}: {
+  run: Run;
+  onGenerate: (t: RunbookTarget) => void;
+  loading: boolean;
+  target: RunbookTarget;
+  setTarget: (t: RunbookTarget) => void;
+}) {
+  const [showRunbook, setShowRunbook] = useState(false);
+  const { toast } = useToast();
+  const status = run.runbookStatus;
+
+  const header = (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <FileText size={16} style={{ color: "#0F6E56" }} />
+      <span style={{ fontSize: "var(--fs-lg)", fontWeight: 600 }}>Narratia · Runbook</span>
+    </div>
+  );
+
+  const card = (children: React.ReactNode) => (
+    <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-bg)", padding: "10px 14px" }}>
+      <style>{`
+        .nar-md h2 { font-size: 14px; font-weight: 600; margin-top: 16px; border-bottom: 1px solid var(--c-border); padding-bottom: 3px; }
+        .nar-md h3 { font-size: 13px; font-weight: 600; margin-top: 12px; }
+        .nar-md p { font-size: 13px; line-height: 1.55; color: var(--c-ink-2); margin: 6px 0; }
+        .nar-md li { font-size: 13px; line-height: 1.55; color: var(--c-ink-2); margin-left: 16px; }
+        .nar-md pre { background: var(--c-raised); padding: 8px; border-radius: 3px; overflow-x: auto; }
+        .nar-md code { font-family: var(--mono); font-size: 11px; }
+      `}</style>
+      {header}
+      {children}
+    </div>
+  );
+
+  if (status === "running") {
+    return card(
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#0F6E56", animation: "bmblink 1.4s infinite" }} />
+        <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)" }}>Narratia generating runbook…</span>
+      </span>,
+    );
+  }
+
+  if (status === "failed") {
+    return card(
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-red)" }}>Narratia could not generate the runbook.</span>
+        <button className="bm-ghost" onClick={() => onGenerate(target)} disabled={loading}>
+          {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}Retry
+        </button>
+      </span>,
+    );
+  }
+
+  if (status === "done" && run.runbook) {
+    const doneTarget = run.runbookTarget ?? target;
+    return card(
+      <>
+        <div style={{ background: "var(--c-blue-bg)", border: "1px solid var(--c-blue)", padding: "10px 14px", borderRadius: 4, marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <FileCheck size={14} style={{ color: "var(--c-blue)" }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--c-blue)" }}>Runbook generated</span>
+          {run.runbookUrl && (
+            <button onClick={() => run.runbookUrl && window.open(run.runbookUrl, "_blank")} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--c-blue)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+              View in {doneTarget} <ExternalLink size={11} />
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <button className="bm-ghost" onClick={() => setShowRunbook((s) => !s)}>
+            {showRunbook ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{showRunbook ? "Hide runbook" : "Show runbook"}
+          </button>
+          <button
+            className="bm-ghost"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(run.runbook ?? "");
+                toast({ title: "Runbook copied" });
+              } catch {
+                toast({ title: "Copy failed", variant: "destructive" });
+              }
+            }}
+          >
+            <Copy size={12} />Copy runbook
+          </button>
+          <button className="bm-ghost" onClick={() => onGenerate(doneTarget as RunbookTarget)} disabled={loading}>
+            {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}Regenerate
+          </button>
+        </div>
+
+        {showRunbook && (
+          <div className="nar-md" style={{ borderTop: "1px solid var(--c-border)", paddingTop: 8 }} dangerouslySetInnerHTML={{ __html: mdToHtml(run.runbook) }} />
+        )}
+      </>,
+    );
+  }
+
+  // Idle — target selector + generate.
+  const TARGETS: { key: RunbookTarget; label: string }[] = [
+    { key: "markdown", label: "Markdown (PR)" },
+    { key: "confluence", label: "Confluence" },
+    { key: "notion", label: "Notion" },
+  ];
+  return card(
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        {TARGETS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTarget(t.key)}
+            style={{
+              fontSize: "var(--fs-sm)",
+              fontWeight: 500,
+              padding: "3px 10px",
+              borderRadius: 3,
+              cursor: "pointer",
+              border: `1px solid ${target === t.key ? "var(--c-blue)" : "var(--c-border)"}`,
+              background: target === t.key ? "var(--c-blue)" : "transparent",
+              color: target === t.key ? "#fff" : "var(--c-ink-3)",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <button className="bm-primary" onClick={() => onGenerate(target)} disabled={loading}>
+        {loading ? <><Loader2 size={12} className="animate-spin" />Narratia generating…</> : <><FileText size={12} />Generate runbook</>}
+      </button>
+    </div>,
+  );
+}
 
 const SEV_BADGE: Record<string, { bg: string; fg: string }> = {
   critical: { bg: "#7f1d1d", fg: "#fee2e2" },
