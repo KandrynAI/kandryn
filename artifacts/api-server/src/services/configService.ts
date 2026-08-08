@@ -19,6 +19,12 @@ export const CONFIG_KEYS = [
   "JIRA_DOMAIN",
   "JIRA_EMAIL",
   "JIRA_API_TOKEN",
+  "CONFLUENCE_DOMAIN",
+  "CONFLUENCE_EMAIL",
+  "CONFLUENCE_API_TOKEN",
+  "CONFLUENCE_SPACE_KEY",
+  "NOTION_API_TOKEN",
+  "NOTION_PARENT_PAGE",
 ] as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];

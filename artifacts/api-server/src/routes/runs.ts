@@ -9,6 +9,9 @@ import { runAegisScan } from "../services/aegisService.js";
 import { createAegisPlmTicket } from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
+import { runNarratia } from "../services/narratiaService.js";
+import { pushAsMarkdown, pushToConfluence, pushToNotion } from "../services/narratiaPushService.js";
+import type { RunbookTarget } from "../../../../shared/types/narratiaResult.js";
 
 const router: IRouter = Router();
 
@@ -506,6 +509,158 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     req.log.error({ err }, "Aegis scan failed");
     await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
     res.status(502).json({ error: "Aegis could not complete the scan. Try again." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/runbook — Narratia generates an operational runbook from the
+// committed run and pushes it to the chosen target (markdown → PR branch /
+// confluence / notion). Committed run signalled by committedSuggestionId.
+// ---------------------------------------------------------------------------
+const RunbookBody = z.object({
+  target: z.enum(["markdown", "confluence", "notion"]).default("markdown"),
+});
+
+router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const parsedBody = RunbookBody.safeParse(req.body ?? {});
+  if (!parsedBody.success) {
+    res.status(400).json({ error: "target must be markdown, confluence, or notion" });
+    return;
+  }
+  const runId = params.data.id;
+  const target: RunbookTarget = parsedBody.data.target;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+  if (run.committedSuggestionId == null) {
+    res.status(409).json({ error: "Narratia requires a committed run." });
+    return;
+  }
+  if (run.runbookStatus === "done" && run.runbook && run.runbookTarget === target) {
+    res.status(200).json({ runbook: run.runbook, url: run.runbookUrl, target });
+    return;
+  }
+  if (run.runbookStatus === "running") {
+    res.status(202).json({ message: "Narratia is already generating." });
+    return;
+  }
+
+  await db.update(runsTable).set({ runbookStatus: "running", runbookTarget: target }).where(eq(runsTable.id, runId));
+
+  const [suggestion] = await db
+    .select()
+    .from(suggestionsTable)
+    .where(eq(suggestionsTable.id, run.committedSuggestionId));
+  if (!suggestion) {
+    await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(404).json({ error: "Committed suggestion record not found." });
+    return;
+  }
+
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+  const acceptanceCriteria = workItem?.acceptanceCriteria
+    ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
+  const repo = project?.repositoryId
+    ? (await db.select().from(repositoriesTable).where(eq(repositoriesTable.id, project.repositoryId)))[0]
+    : undefined;
+
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  if (!creds.ANTHROPIC_API_KEY) {
+    await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Narratia." });
+    return;
+  }
+
+  // Enrichment from the other agents.
+  const veriaFindings: string[] = [];
+  run.review?.findings?.forEach((f) => {
+    if (f.type === "gap" || f.type === "risk") veriaFindings.push(`${f.type.toUpperCase()}: ${f.title} — ${f.detail}`);
+  });
+  const aegisFindings: string[] =
+    run.securityScan?.findings?.map((f) => `${f.severity.toUpperCase()} (${f.owasp}): ${f.title}${f.plmTicketKey ? ` → ${f.plmTicketKey}` : ""}`) ?? [];
+  const testCases = (suggestion.testCases ?? []).map((t) => ({
+    title: t.title,
+    given: t.given,
+    when: t.when,
+    then: t.then,
+    assertion: t.assertion,
+  }));
+
+  const itemKey = workItem?.externalId ?? `RUN-${runId}`;
+  const branchName = `task/${run.workItemId}`;
+
+  try {
+    const result = await runNarratia(
+      {
+        itemKey,
+        itemTitle: workItem?.title ?? "Untitled work item",
+        itemType: workItem?.itemType ?? workItem?.type ?? "task",
+        itemDescription: workItem?.description ?? undefined,
+        acceptanceCriteria,
+        filePath: suggestion.filePath,
+        code: suggestion.code,
+        language: suggestion.language ?? undefined,
+        stackDesc: run.stackDesc ?? undefined,
+        branchName,
+        prUrl: run.prUrl ?? undefined,
+        commitHash: run.commitHash ?? undefined,
+        veriaFindings: veriaFindings.length ? veriaFindings : undefined,
+        aegisFindings: aegisFindings.length ? aegisFindings : undefined,
+        aegisGate: run.securityScan?.gateDecision ?? undefined,
+        testCases: testCases.length ? testCases : undefined,
+        target,
+      },
+      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+    );
+
+    let pushedUrl: string | null = null;
+    if (target === "markdown" && repo) {
+      const push = await pushAsMarkdown({
+        markdown: result.markdown,
+        filePath: `docs/runbooks/${itemKey.toLowerCase()}.md`,
+        branchName,
+        repoId: repo.id,
+        repoUrl: repo.url,
+        creds: { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN },
+      });
+      pushedUrl = push?.url ?? null;
+    } else if (target === "confluence") {
+      pushedUrl = (await pushToConfluence(req.userId, result))?.url ?? null;
+    } else if (target === "notion") {
+      pushedUrl = (await pushToNotion(req.userId, result))?.url ?? null;
+    }
+
+    await db
+      .update(runsTable)
+      .set({ runbook: result.markdown, runbookStatus: "done", runbookTarget: target, runbookUrl: pushedUrl })
+      .where(eq(runsTable.id, runId));
+
+    req.log.info({ runId, target, pushed: pushedUrl != null }, "Narratia runbook generated");
+    res.status(200).json({ runbook: result.markdown, url: pushedUrl, target, sections: result.sections.map((s) => s.title) });
+  } catch (err) {
+    req.log.error({ err }, "Narratia generation failed");
+    await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(502).json({ error: "Narratia could not generate the runbook. Try again." });
   }
 });
 
