@@ -286,3 +286,152 @@ These are the natural next tasks; none are blocking today:
 - **`website/` is outside the pnpm workspace** — build/test with npm inside `website/`; metadata routes need `dynamic='force-static'` under static export.
 - **No live external services in the sandbox** — smoke-test real flows on the Vercel deploy.
 - **Model IDs:** Claude `claude-sonnet-4-5`, OpenAI `gpt-4o`.
+
+---
+
+## Developer behaviour guidelines (Karpathy principles)
+
+These rules govern how Claude Code should behave when working on
+Blue Mantis. They apply to every task regardless of size.
+Derived from Andrej Karpathy's observations on LLM coding pitfalls.
+
+---
+
+### 1. Think before coding
+
+Before writing any code, state:
+- What you understand the task to be
+- Any assumptions you are making
+- Any ambiguity you have found
+
+If the request could be interpreted in more than one way, present
+the interpretations and ask which one to proceed with.
+Do not silently pick one and run with it.
+
+If a simpler approach exists than what was asked for, say so before
+implementing the asked-for approach.
+
+Stop and ask rather than guess. A wrong assumption discovered after
+300 lines of code costs far more than a one-line clarification question.
+
+Specific to Blue Mantis:
+- If a prompt says "update the runs table", state which columns you
+  plan to add/change and wait for confirmation before writing SQL
+- If a prompt references a component that has two possible locations
+  (e.g. run-detail.tsx vs RunDetail.tsx), name both and ask
+- If a DB migration might destroy data, say so explicitly before
+  writing the migration
+
+---
+
+### 2. Simplicity first
+
+Write the minimum code that solves the stated problem. Nothing else.
+
+- No abstractions for code that is only used once
+- No configurability that was not requested
+- No error handling for scenarios not mentioned in the task
+- No "while I'm here" refactors
+- No helper utilities that the task does not require
+- If 50 lines solves it, do not write 200
+
+The test: would a senior engineer reading this PR say "why is
+all this extra code here"? If yes, remove it.
+
+Specific to Blue Mantis:
+- Do not add Zod schemas for endpoints that do not validate input today
+  unless the task says to add validation
+- Do not extract a shared utility function unless it is called in
+  3+ places
+- Do not add loading/error/empty states to a component unless the
+  task explicitly covers UI states
+- never add console.log — use req.log on the server
+
+---
+
+### 3. Surgical changes
+
+Touch only what the task requires. Leave everything else exactly
+as it is.
+
+When editing existing code:
+- Do not rename variables or functions that are not part of the task
+- Do not reformat or re-indent adjacent code
+- Do not change comments you were not asked to change
+- Do not fix other bugs you notice — mention them in your report,
+  do not fix them silently
+- Match the existing code style even if you would do it differently
+
+When your changes create orphans:
+- Remove imports YOUR changes made unused
+- Remove variables YOUR changes made unused
+- Do not remove pre-existing dead code unless the task says to
+
+Every changed line must trace directly to the task. If you cannot
+explain why a line changed, revert it.
+
+Specific to Blue Mantis:
+- Never touch integration_configs, waitlist, or auth middleware
+  unless the task explicitly covers those
+- Never change vercel.json
+- Never change pnpm-workspace.yaml
+- If a task says "update the board page", do not touch the
+  dashboard, runs list, or settings page as a side effect
+- Schema changes must match: Drizzle schema file + SQL migration file.
+  Never update one without the other.
+
+---
+
+### 4. Goal-driven execution
+
+Before starting a multi-step task, write a brief plan:
+
+  1. [What you will do] → verify: [how you will check it worked]
+  2. [What you will do] → verify: [how you will check it worked]
+  3. [What you will do] → verify: [how you will check it worked]
+
+Then execute step by step, verifying each step before proceeding.
+
+For every task that touches the API server, the final verify step
+must include:
+  pnpm --filter @workspace/api-server run typecheck
+
+For every task that touches the frontend, the final verify step
+must include:
+  pnpm --filter @workspace/dev-copilot run typecheck
+
+For tasks that touch both:
+  pnpm run typecheck
+
+Do not report "done" until typecheck passes. A task is not complete
+if it breaks the type system.
+
+For every DB change:
+  Verify that both the Drizzle schema and the SQL migration file
+  have been updated. Verify that the SQL is idempotent
+  (uses IF NOT EXISTS / ON CONFLICT DO NOTHING).
+
+Specific to Blue Mantis success criteria that must always be met:
+- Unique constraint violations: err.cause.code === '23505' → 409
+  (never leak raw SQL error messages to the client)
+- Every new DB query must filter by userId
+  (no query returns data across users)
+- Credentials (integration_configs) are never logged
+  (not in req.log, not in error messages, not in responses)
+- Import from 'zod/v4' not 'zod'
+- All new PKs are serial integers, never uuid
+
+---
+
+### How to know it is working
+
+These guidelines are working if you see:
+- Clarifying questions before implementation, not after mistakes
+- Diffs that contain only what the task required
+- Typecheck passing on the first attempt more often
+- No surprise refactors or renames in PRs
+- Plan listed before execution on multi-step tasks
+
+---
+
+## END OF KARPATHY GUIDELINES SECTION
