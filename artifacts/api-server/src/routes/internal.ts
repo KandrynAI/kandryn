@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { sql, eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
+import { runRetentionCleanup } from "../services/auditService.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -85,6 +86,25 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
 // triggering. Both still require the CRON_SECRET bearer (checked in-handler).
 router.get("/internal/dispatch-runs", dispatchHandler);
 router.post("/internal/dispatch-runs", dispatchHandler);
+
+/**
+ * Nightly audit-log retention cleanup. Not behind requireAuth — mounted before
+ * it and guarded by the same CRON_SECRET bearer as the dispatcher. Deletes rows
+ * older than each team's plan retention window (and orphan rows > 30 days).
+ * Intended to be invoked by a Vercel cron; can also be triggered manually.
+ */
+async function auditCleanupHandler(req: Request, res: Response): Promise<void> {
+  if (!authorized(req.header("authorization"))) {
+    res.sendStatus(401);
+    return;
+  }
+  const result = await runRetentionCleanup();
+  logger.info({ deleted: result.deleted }, "Audit log retention cleanup complete");
+  res.json({ deleted: result.deleted });
+}
+
+router.get("/internal/audit-cleanup", auditCleanupHandler);
+router.post("/internal/audit-cleanup", auditCleanupHandler);
 
 /**
  * Graphify microservice callback (spec Phase 2). Not behind requireAuth —

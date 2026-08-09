@@ -15,6 +15,7 @@ import { generateTests, AIFormatError } from "../services/aiService.js";
 import { createPlmTestCase } from "../services/plmWrite.js";
 import { PlmError } from "../services/plmProjects.js";
 import type { StackProfile } from "../stack/detector.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -215,6 +216,16 @@ router.post("/work-items/:id/tests/commit-script", async (req, res): Promise<voi
   });
 
   req.log.info({ workItemId: workItem.id, commitHash }, "Test script committed to branch");
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "tests.committed",
+    entityType: "run",
+    entityId: committed.run.id,
+    metadata: { workItemId: workItem.id, commitHash },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.json({ commitHash, prUrl: committed.run.prUrl });
 });
 
@@ -329,6 +340,16 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
 
   await persistPushStatus(pushed);
   req.log.info({ workItemId: workItem.id, count: pushed.length }, "Test cases pushed to PLM");
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "tests.pushed_to_plm",
+    entityType: "run",
+    entityId: committed?.run.id,
+    metadata: { workItemId: workItem.id, count: pushed.length },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.json({ pushed });
 });
 

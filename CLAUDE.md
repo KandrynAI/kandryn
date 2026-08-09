@@ -93,7 +93,7 @@ Standalone **Clerk development instance** (`pk_test_…`), not Replit-managed.
 
 PostgreSQL on **Supabase**. Schema in `lib/db/src/schema/`. **All PKs are `serial` integers** (a uuid FK can't reference a serial PK). **Every query scoped to `userId`** — no global data.
 
-`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`. Later additive migrations to apply in Supabase before deploy: `0007_test_cases.sql`, `0008_score_breakdown.sql`, `0009_veria_review.sql`, `0010_graphify_graph.sql`, `0011_run_graph_context.sql`, `0012_test_script.sql`, `0013_run_stack.sql`, `0014_aegis.sql`, `0015_narratia.sql`, `0016_aegis_remediation.sql`, `0017_multitenancy.sql`.
+`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`. Later additive migrations to apply in Supabase before deploy: `0007_test_cases.sql`, `0008_score_breakdown.sql`, `0009_veria_review.sql`, `0010_graphify_graph.sql`, `0011_run_graph_context.sql`, `0012_test_script.sql`, `0013_run_stack.sql`, `0014_aegis.sql`, `0015_narratia.sql`, `0016_aegis_remediation.sql`, `0017_multitenancy.sql`, `0018_audit_log.sql`.
 
 | Table | Key columns |
 |---|---|

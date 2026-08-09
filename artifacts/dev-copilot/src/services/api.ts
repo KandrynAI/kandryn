@@ -656,6 +656,51 @@ export function fetchReportSummary(days: number, projectId?: number): Promise<Re
   return request<ReportData>(`/api/reports/summary?${q.toString()}`);
 }
 
+/* ---- Audit log (admin only) ---- */
+
+export interface AuditLogItem {
+  id: number;
+  teamId: number | null;
+  userId: string;
+  action: string;
+  entityType: string | null;
+  entityId: number | null;
+  metadata: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export interface AuditLogResponse {
+  items: AuditLogItem[];
+  hasMore: boolean;
+  nextBefore: string | null;
+}
+
+export function fetchAuditLog(params: {
+  days?: number;
+  action?: string;
+  userId?: string;
+  before?: string;
+  limit?: number;
+}): Promise<AuditLogResponse> {
+  const p = new URLSearchParams();
+  if (params.days) p.set('days', String(params.days));
+  if (params.action) p.set('action', params.action);
+  if (params.userId) p.set('userId', params.userId);
+  if (params.before) p.set('before', params.before);
+  if (params.limit) p.set('limit', String(params.limit));
+  return request<AuditLogResponse>(`/api/audit?${p}`);
+}
+
+export function fetchAuditActions(): Promise<{ actions: string[] }> {
+  return request<{ actions: string[] }>('/api/audit/actions');
+}
+
+export function auditLogCsvUrl(days: number): string {
+  return `/api/audit/export.csv?days=${days}`;
+}
+
 /* ---- Teams / multi-tenancy (Phase 1) ---- */
 
 export interface TeamInfo {

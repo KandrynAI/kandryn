@@ -5,6 +5,7 @@ import tasksRouter from "./tasks.js";
 import taskActionsRouter from "./taskActions.js";
 import statsRouter from "./stats.js";
 import reportsRouter from "./reports.js";
+import auditRouter from "./audit.js";
 import configRouter from "./config.js";
 import projectsRouter from "./projects.js";
 import runsRouter from "./runs.js";
@@ -44,6 +45,7 @@ router.use(tasksRouter);
 router.use(taskActionsRouter);
 router.use(statsRouter);
 router.use(reportsRouter);
+router.use(auditRouter);
 router.use(configRouter);
 
 export default router;
