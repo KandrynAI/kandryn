@@ -68,7 +68,7 @@ export default function SiteFooter() {
         }}
       >
         <span>{SITE.domain}</span>
-        <span>Privacy · Terms · Security · Contact</span>
+        <span>Privacy · Terms · Security · Trust · Contact</span>
       </div>
     </footer>
   );
