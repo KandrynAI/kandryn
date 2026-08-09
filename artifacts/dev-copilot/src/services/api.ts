@@ -608,6 +608,54 @@ export function pushTestCases(
   );
 }
 
+/* ---- Reporting dashboard (Phase 3) ---- */
+
+export interface ChartSeries {
+  labels: string[];
+  data: (number | null)[];
+}
+
+export interface StackedSeries {
+  labels: string[];
+  datasets: { label: string; data: number[] }[];
+}
+
+export interface BacklogSeries {
+  labels: string[];
+  created: number[];
+  completed: number[];
+}
+
+export interface ReportData {
+  range: { days: number; since: string; until: string };
+  scope: 'team' | 'personal';
+  kpis: {
+    totalRuns: number;
+    successRate: number;
+    prsOpened: number;
+    committedRuns: number;
+    avgTimeToPrHours: number | null;
+    securityFindings: number;
+  };
+  charts: {
+    runVolumeByWeek: ChartSeries;
+    outcomes: ChartSeries;
+    timeToPrDaily: ChartSeries;
+    agentWinRate: ChartSeries;
+    scoreTrend: ChartSeries;
+    securityByOwasp: StackedSeries;
+    workItemsByType: ChartSeries;
+    backlogBurn: BacklogSeries;
+  };
+}
+
+export function fetchReportSummary(days: number, projectId?: number): Promise<ReportData> {
+  const q = new URLSearchParams();
+  q.set('days', String(days));
+  if (projectId != null) q.set('projectId', String(projectId));
+  return request<ReportData>(`/api/reports/summary?${q.toString()}`);
+}
+
 /* ---- Teams / multi-tenancy (Phase 1) ---- */
 
 export interface TeamInfo {

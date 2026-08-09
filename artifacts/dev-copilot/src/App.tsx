@@ -33,6 +33,7 @@ import ProjectBoard from "@/pages/project-board";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
 import RunReportPage from "@/pages/run-report";
+import ReportsPage from "@/pages/ReportsPage";
 import AcceptInvitePage from "@/pages/AcceptInvitePage";
 import TeamSetupPage from "@/pages/TeamSetupPage";
 import { fetchMyTeam } from "@/services/api";
@@ -287,6 +288,7 @@ function ProtectedApp() {
           <Route path="/tasks/new" component={NewTask} />
           <Route path="/tasks/:id" component={TaskDetail} />
           <Route path="/history" component={HistoryPage} />
+          <Route path="/reports" component={ReportsPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>

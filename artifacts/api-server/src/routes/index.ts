@@ -4,6 +4,7 @@ import repositoriesRouter from "./repositories.js";
 import tasksRouter from "./tasks.js";
 import taskActionsRouter from "./taskActions.js";
 import statsRouter from "./stats.js";
+import reportsRouter from "./reports.js";
 import configRouter from "./config.js";
 import projectsRouter from "./projects.js";
 import runsRouter from "./runs.js";
@@ -42,6 +43,7 @@ router.use(testsRouter);
 router.use(tasksRouter);
 router.use(taskActionsRouter);
 router.use(statsRouter);
+router.use(reportsRouter);
 router.use(configRouter);
 
 export default router;
