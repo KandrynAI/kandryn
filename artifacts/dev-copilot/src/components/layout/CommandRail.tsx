@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useUser } from "@clerk/react";
 import { LayoutDashboard, Kanban, Play, GitBranch, History, Settings } from "lucide-react";
 import { fetchProjects, type Project } from "@/services/api";
+import { useTeam } from "@/context/TeamContext";
 
 /** The Blue Mantis mark — a simple geometric "claw" V, no wordmark. */
 function MantisMark() {
@@ -30,6 +31,7 @@ interface RailIcon {
 export function CommandRail() {
   const [location, navigate] = useLocation();
   const { user } = useUser();
+  const { team } = useTeam();
   const [projects, setProjects] = useState<Project[]>([]);
 
   useEffect(() => {
@@ -114,7 +116,14 @@ export function CommandRail() {
         >
           <Settings size={16} strokeWidth={1.5} />
         </button>
-        <div className="cr-avatar" title={email || "Account"}>{initial}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div className="cr-avatar" title={email || "Account"}>{initial}</div>
+          {team && (
+            <div style={{ fontSize: 8, fontWeight: 700, color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>
+              {team.plan}
+            </div>
+          )}
+        </div>
       </nav>
     </>
   );

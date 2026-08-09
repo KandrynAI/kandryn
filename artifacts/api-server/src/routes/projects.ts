@@ -322,15 +322,20 @@ router.delete("/projects/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid project id" });
     return;
   }
-  // FK cascades delete the project's work items and runs; never touches the PLM.
-  const [proj] = await db
-    .delete(projectsTable)
-    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.userId)))
-    .returning();
-  if (!proj) {
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, params.data.id));
+  if (!project) {
     res.status(404).json({ error: "Project not found" });
     return;
   }
+  // The creator, or a team admin of the project's team, may delete it (0017).
+  const isOwner = project.userId === req.userId;
+  const isTeamAdmin = req.teamRole === "admin" && project.teamId != null && project.teamId === req.teamId;
+  if (!isOwner && !isTeamAdmin) {
+    res.status(403).json({ error: "Only the project owner or a team admin can delete this project." });
+    return;
+  }
+  // FK cascades delete the project's work items and runs; never touches the PLM.
+  await db.delete(projectsTable).where(eq(projectsTable.id, project.id));
   res.sendStatus(204);
 });
 

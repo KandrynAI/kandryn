@@ -112,6 +112,7 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
         refinePrompt: refinePrompt ?? null,
         autoCommit,
         scheduledAt: when,
+        runByUserId: req.userId,
       })
       .returning();
     req.log.info({ runId: run.id, workItemId: workItem.id, scheduledAt }, "Run scheduled");
@@ -130,6 +131,7 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
       trigger: "manual",
       refinePrompt: refinePrompt ?? null,
       autoCommit,
+      runByUserId: req.userId,
     })
     .returning();
 
@@ -182,13 +184,21 @@ router.get("/runs/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid run id" });
     return;
   }
-  const [run] = await db
-    .select()
-    .from(runsTable)
-    .where(and(eq(runsTable.id, params.data.id), eq(runsTable.userId, req.userId)));
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, params.data.id));
   if (!run) {
     res.status(404).json({ error: "Run not found" });
     return;
+  }
+  // Owner sees their own run; any team member sees runs on a team project (0017).
+  if (run.userId !== req.userId) {
+    const [project] = run.projectId
+      ? await db.select({ teamId: projectsTable.teamId }).from(projectsTable).where(eq(projectsTable.id, run.projectId))
+      : [undefined];
+    const isTeamProject = req.teamId != null && project?.teamId === req.teamId;
+    if (!isTeamProject) {
+      res.status(403).json({ error: "Access denied." });
+      return;
+    }
   }
   const suggestions = await db
     .select()
