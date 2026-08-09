@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useUser } from "@clerk/react";
-import { LayoutDashboard, Kanban, Play, GitBranch, History, Settings } from "lucide-react";
+import { LayoutDashboard, Kanban, Play, GitBranch, History, BarChart2, Settings } from "lucide-react";
 import { fetchProjects, type Project } from "@/services/api";
 import { useTeam } from "@/context/TeamContext";
 
@@ -51,6 +51,7 @@ export function CommandRail() {
     { key: "runs", title: "Runs", href: runsHref, Icon: Play, active: location.includes("/runs") },
     { key: "repositories", title: "Repositories", href: "/repositories", Icon: GitBranch, active: location.startsWith("/repositories") },
     { key: "history", title: "History", href: "/history", Icon: History, active: location === "/history" },
+    { key: "reports", title: "Reports", href: "/reports", Icon: BarChart2, active: location === "/reports" },
   ];
 
   const email = user?.primaryEmailAddress?.emailAddress ?? "";

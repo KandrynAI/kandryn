@@ -395,6 +395,9 @@ a:hover { text-decoration: underline; }
    (Adapted from the spec's body>*:not(.report-root): the report renders
    inside AppShell, so we hide the rail/panel/topbar by data-testid instead.)
    ========================================================================= */
+/* Shown only in the printed/PDF output (see @media print below). */
+.print-only { display: none; }
+
 @media print {
   [data-testid="command-rail"],
   [data-testid="context-panel"],
@@ -412,6 +415,8 @@ a:hover { text-decoration: underline; }
 
   body { font-size: 11px; }
   .report-content { max-width: none !important; padding: 0 !important; }
+
+  .print-only { display: block !important; }
 
   .report-section,
   .code-block,
