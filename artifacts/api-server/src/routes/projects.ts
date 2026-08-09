@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, isNull, inArray, sql } from "drizzle-orm";
+import { and, eq, isNull, inArray, or, sql } from "drizzle-orm";
 import { db, projectsTable, repositoriesTable, tasksTable, runsTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { listPlmProjects, validatePlmProject, PlmError } from "../services/plmProjects.js";
@@ -102,10 +102,16 @@ async function backfillUserProjects(userId: string) {
 
 // --- List with counts -------------------------------------------------------
 router.get("/projects", async (req, res): Promise<void> => {
+  // Own projects plus any team-visible project of the caller's team (0017).
   const projects = await db
     .select()
     .from(projectsTable)
-    .where(eq(projectsTable.userId, req.userId))
+    .where(
+      or(
+        eq(projectsTable.userId, req.userId),
+        and(eq(projectsTable.teamId, req.teamId ?? -1), eq(projectsTable.visibility, "team")),
+      ),
+    )
     .orderBy(projectsTable.createdAt);
 
   const itemCounts = await db
@@ -215,7 +221,18 @@ router.post("/projects", async (req, res): Promise<void> => {
   try {
     const [proj] = await db
       .insert(projectsTable)
-      .values({ userId: req.userId, name, plmProvider, plmProjectKey, plmProjectName: plmName ?? null, repositoryId })
+      .values({
+        userId: req.userId,
+        name,
+        plmProvider,
+        plmProjectKey,
+        plmProjectName: plmName ?? null,
+        repositoryId,
+        // Team context (0017): a new project created by a team member is
+        // team-visible; a user with no team keeps it personal.
+        teamId: req.teamId ?? null,
+        visibility: req.teamId ? "team" : "personal",
+      })
       .returning();
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
     res.status(201).json(proj);

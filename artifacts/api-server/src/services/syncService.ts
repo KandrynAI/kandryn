@@ -258,15 +258,17 @@ export async function syncProject(userId: string, projectId: number): Promise<Sy
   if (!project.plmProjectKey) throw new PlmError("This project has no PLM project bound.", "not_connected");
 
   // Fetch the PLM tree (project-scoped).
+  // Resolve PLM creds team-first (0017): the project may belong to a team whose
+  // shared Jira/ADO credentials any member can sync with.
   let items: SyncedItem[];
   if (project.plmProvider === "jira") {
-    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"]);
+    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"], project.teamId);
     if (!c.JIRA_DOMAIN || !c.JIRA_EMAIL || !c.JIRA_API_TOKEN) {
       throw new PlmError("Jira is not connected. Add your Jira credentials in Integrations.", "not_connected");
     }
     items = await fetchJiraItems({ domain: c.JIRA_DOMAIN, email: c.JIRA_EMAIL, token: c.JIRA_API_TOKEN }, project.plmProjectKey);
   } else {
-    const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"]);
+    const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"], project.teamId);
     if (!c.AZURE_DEVOPS_ORG || !c.AZURE_DEVOPS_PAT) {
       throw new PlmError("Azure DevOps is not connected. Add your Azure DevOps credentials in Integrations.", "not_connected");
     }

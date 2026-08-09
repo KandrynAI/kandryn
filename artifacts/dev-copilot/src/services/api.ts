@@ -607,3 +607,52 @@ export function pushTestCases(
     },
   );
 }
+
+/* ---- Teams / multi-tenancy (Phase 1) ---- */
+
+export interface TeamInfo {
+  id: number;
+  name: string;
+  slug: string | null;
+  ownerUserId: string;
+  plan: string;
+  createdAt: string;
+}
+
+export interface TeamMe {
+  team: TeamInfo | null;
+  role?: 'admin' | 'member';
+  memberCount?: number;
+}
+
+export function fetchMyTeam(): Promise<TeamMe> {
+  return request<TeamMe>('/api/teams/me');
+}
+
+export function bootstrapTeam(name?: string): Promise<{ team: TeamInfo }> {
+  return request<{ team: TeamInfo }>('/api/teams/bootstrap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(name ? { name } : {}),
+  });
+}
+
+export function acceptTeamInvite(token: string): Promise<{ teamId: number; role: string }> {
+  return request<{ teamId: number; role: string }>('/api/invites/accept', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function createTeamInvite(
+  teamId: number,
+  email: string,
+  role: 'admin' | 'member',
+): Promise<{ invite: { id: number; email: string; role: string } }> {
+  return request(`/api/teams/${teamId}/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, role }),
+  });
+}

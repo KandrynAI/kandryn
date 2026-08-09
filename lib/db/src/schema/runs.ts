@@ -129,6 +129,9 @@ export const runsTable = pgTable(
       onDelete: "set null",
     }),
     triggerContext: text("trigger_context"), // manual|scheduled|remediation|breakdown
+    // The team member who triggered this run (0017); may differ from userId
+    // (project owner) in team context.
+    runByUserId: text("run_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
