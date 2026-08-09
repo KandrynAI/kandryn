@@ -53,6 +53,22 @@ async function sendViaResend(payload: ResendPayload): Promise<boolean> {
   return true;
 }
 
+/** Send a team invite email with the accept link (0017 multi-tenancy). */
+export async function sendTeamInvite(to: string, teamName: string, inviteUrl: string): Promise<void> {
+  const text = [
+    `You've been invited to join ${teamName} on Blue Mantis.`,
+    "",
+    `Accept the invite: ${inviteUrl}`,
+    "",
+    "This link expires in 7 days.",
+  ].join("\n");
+  await sendViaResend({
+    to: [to],
+    subject: `You've been invited to join ${teamName} on Blue Mantis`,
+    text,
+  });
+}
+
 /** Internal notification to the team about a new signup. */
 export async function sendWaitlistNotification(entry: WaitlistEntry): Promise<void> {
   const text = [

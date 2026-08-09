@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import {
@@ -32,6 +32,9 @@ import ProjectBoard from "@/pages/project-board";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
 import RunReportPage from "@/pages/run-report";
+import AcceptInvitePage from "@/pages/AcceptInvitePage";
+import TeamSetupPage from "@/pages/TeamSetupPage";
+import { fetchMyTeam } from "@/services/api";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -240,8 +243,31 @@ function useGitHubSync() {
   }, [isLoaded, isSignedIn, refreshConfig]);
 }
 
+/**
+ * After sign-in, if the user has no team yet, send them to the workspace-setup
+ * onboarding. /setup and /invite are matched as separate routes above, so this
+ * only runs on in-shell pages.
+ */
+function useEnsureTeam() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const [, navigate] = useLocation();
+  const checked = useRef(false);
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || checked.current) return;
+    checked.current = true;
+    fetchMyTeam()
+      .then((r) => {
+        if (r.team === null) navigate("/setup");
+      })
+      .catch(() => {
+        // Non-fatal — teams API not reachable; stay on the current page.
+      });
+  }, [isLoaded, isSignedIn, navigate]);
+}
+
 function ProtectedApp() {
   useGitHubSync();
+  useEnsureTeam();
   return (
     <RequireAuth>
       <AppShell>
@@ -279,6 +305,9 @@ function Router() {
         <Route path="/sign-in/:rest*" component={() => <AuthPage mode="sign-in" />} />
         <Route path="/sign-up" component={() => <AuthPage mode="sign-up" />} />
         <Route path="/sign-up/:rest*" component={() => <AuthPage mode="sign-up" />} />
+        {/* Team onboarding + invite — signed-in but rendered OUTSIDE the AppShell. */}
+        <Route path="/setup" component={() => <RequireAuth><TeamSetupPage /></RequireAuth>} />
+        <Route path="/invite" component={() => <RequireAuth><AcceptInvitePage /></RequireAuth>} />
         <Route component={ProtectedApp} />
       </Switch>
     </>

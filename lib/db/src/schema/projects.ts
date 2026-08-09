@@ -26,6 +26,10 @@ export const projectsTable = pgTable(
       .notNull()
       .references(() => repositoriesTable.id, { onDelete: "restrict" }),
     defaultTarget: text("default_target").$type<"story" | "task">().notNull().default("task"),
+    // Multi-tenancy (0017). teamId is a plain int (no Drizzle .references() to
+    // avoid a schema import cycle; the FK lives in the SQL migration).
+    teamId: integer("team_id"),
+    visibility: text("visibility").$type<"personal" | "team">().notNull().default("personal"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

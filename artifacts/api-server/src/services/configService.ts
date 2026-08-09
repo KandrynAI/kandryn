@@ -3,7 +3,7 @@
  * All operations are scoped by userId (Clerk user ID) for multi-tenant isolation.
  */
 import { and, eq } from "drizzle-orm";
-import { db, integrationConfigsTable } from "@workspace/db";
+import { db, integrationConfigsTable, teamIntegrationsTable } from "@workspace/db";
 
 export const CONFIG_KEYS = [
   "ANTHROPIC_API_KEY",
@@ -51,8 +51,23 @@ export async function getAllConfigs(
   return result;
 }
 
-/** Get a single config value for a user (returns empty string if not set) */
-export async function getConfig(userId: string, key: ConfigKey): Promise<string> {
+/**
+ * Get a single config value for a user (returns empty string if not set). When
+ * `teamId` is provided, a team-level credential (team_integrations) wins over the
+ * personal one — the multi-tenancy credential-resolution rule (0017).
+ */
+export async function getConfig(
+  userId: string,
+  key: ConfigKey,
+  teamId?: number | null,
+): Promise<string> {
+  if (teamId != null) {
+    const [t] = await db
+      .select()
+      .from(teamIntegrationsTable)
+      .where(and(eq(teamIntegrationsTable.teamId, teamId), eq(teamIntegrationsTable.key, key)));
+    if (t?.value) return t.value;
+  }
   const [row] = await db
     .select()
     .from(integrationConfigsTable)
@@ -65,20 +80,34 @@ export async function getConfig(userId: string, key: ConfigKey): Promise<string>
   return row?.value ?? "";
 }
 
-/** Get multiple config values for a user as a key→value map */
+/**
+ * Get multiple config values for a user as a key→value map. When `teamId` is
+ * provided, each key resolves team-first then personal (0017). Omitting `teamId`
+ * preserves the original personal-only behaviour.
+ */
 export async function getConfigs(
   userId: string,
   keys: ConfigKey[],
+  teamId?: number | null,
 ): Promise<Partial<Record<ConfigKey, string>>> {
   const rows = await db
     .select()
     .from(integrationConfigsTable)
     .where(eq(integrationConfigsTable.userId, userId));
+  const personal = new Map(rows.map((r) => [r.key as ConfigKey, r.value]));
 
-  const dbMap = new Map(rows.map((r) => [r.key as ConfigKey, r.value]));
+  const team = new Map<ConfigKey, string>();
+  if (teamId != null) {
+    const trows = await db
+      .select()
+      .from(teamIntegrationsTable)
+      .where(eq(teamIntegrationsTable.teamId, teamId));
+    for (const r of trows) team.set(r.key as ConfigKey, r.value);
+  }
+
   const result: Partial<Record<ConfigKey, string>> = {};
   for (const key of keys) {
-    const val = dbMap.get(key);
+    const val = team.get(key) ?? personal.get(key);
     if (val) result[key] = val;
   }
   return result;
