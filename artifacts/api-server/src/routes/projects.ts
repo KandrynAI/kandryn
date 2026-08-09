@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { listPlmProjects, validatePlmProject, PlmError } from "../services/plmProjects.js";
 import { syncProject } from "../services/syncService.js";
 import { createPlmWorkItem } from "../services/plmWrite.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -235,6 +236,16 @@ router.post("/projects", async (req, res): Promise<void> => {
       })
       .returning();
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "project.created",
+      entityType: "project",
+      entityId: proj.id,
+      metadata: { name: proj.name, plmProvider: proj.plmProvider },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.status(201).json(proj);
   } catch (err) {
     // Lost a race with a concurrent create. Drizzle wraps the pg error, so the
@@ -336,6 +347,16 @@ router.delete("/projects/:id", async (req, res): Promise<void> => {
   }
   // FK cascades delete the project's work items and runs; never touches the PLM.
   await db.delete(projectsTable).where(eq(projectsTable.id, project.id));
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "project.deleted",
+    entityType: "project",
+    entityId: project.id,
+    metadata: { name: project.name },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.sendStatus(204);
 });
 
@@ -356,6 +377,16 @@ router.post("/projects/:id/sync", async (req, res): Promise<void> => {
   }
   try {
     const summary = await syncProject(req.userId, params.data.id);
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "project.synced",
+      entityType: "project",
+      entityId: params.data.id,
+      metadata: { itemsSynced: summary.created + summary.updated, ...summary },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.json(summary);
   } catch (err) {
     if (err instanceof PlmError) {

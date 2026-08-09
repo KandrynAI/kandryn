@@ -10,6 +10,7 @@ import {
   type ConfigKey,
 } from "../services/configService.js";
 import { logger } from "../lib/logger.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -35,6 +36,19 @@ async function handleSaveConfig(req: Request, res: Response): Promise<void> {
   }
   await saveConfigs(req.userId, parsed.data as Partial<Record<ConfigKey, string>>);
   req.log.info("Integration config updated");
+  // Audit each key saved — the KEY only, never the value.
+  for (const key of Object.keys(parsed.data) as ConfigKey[]) {
+    if (parsed.data[key] != null) {
+      audit.log({
+        userId: req.userId,
+        teamId: req.teamId ?? null,
+        action: "credential.set",
+        metadata: { key },
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
+    }
+  }
   res.json({ ok: true });
 }
 
@@ -49,6 +63,14 @@ router.delete("/config/:key", async (req, res): Promise<void> => {
     return;
   }
   await deleteConfig(req.userId, key);
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "credential.deleted",
+    metadata: { key },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.json({ ok: true });
 });
 

@@ -14,6 +14,7 @@ import type { AegisScanResult } from "../../../../shared/types/aegisResult.js";
 import { runNarratia } from "../services/narratiaService.js";
 import { pushAsMarkdown, pushToConfluence, pushToNotion } from "../services/narratiaPushService.js";
 import type { RunbookTarget } from "../../../../shared/types/narratiaResult.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -116,6 +117,21 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
       })
       .returning();
     req.log.info({ runId: run.id, workItemId: workItem.id, scheduledAt }, "Run scheduled");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "run.scheduled",
+      entityType: "run",
+      entityId: run.id,
+      metadata: {
+        workItemId: workItem.id,
+        trigger: "manual",
+        scheduledAt: when.toISOString(),
+        hasRefinePrompt: Boolean(refinePrompt),
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.status(202).json(run);
     return;
   }
@@ -136,6 +152,21 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
     .returning();
 
   req.log.info({ runId: run.id, workItemId: workItem.id, autoCommit }, "Run started inline");
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "run.triggered",
+    entityType: "run",
+    entityId: run.id,
+    metadata: {
+      workItemId: workItem.id,
+      trigger: "manual",
+      scheduledAt: null,
+      hasRefinePrompt: Boolean(refinePrompt),
+    },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   await executeRun(run.id);
 
   const [finished] = await db.select().from(runsTable).where(eq(runsTable.id, run.id));
@@ -249,6 +280,15 @@ router.post("/runs/:id/cancel", async (req, res): Promise<void> => {
     return;
   }
   req.log.info({ runId: run.id }, "Run canceled");
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "run.canceled",
+    entityType: "run",
+    entityId: run.id,
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.json(updated);
 });
 
@@ -295,6 +335,25 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
       parsed.data.commitMessage,
     );
     req.log.info({ runId: params.data.id, ...result }, "Run suggestion committed");
+    const [committedSuggestion] = await db
+      .select({ agent: suggestionsTable.agent, score: suggestionsTable.score, filePath: suggestionsTable.filePath })
+      .from(suggestionsTable)
+      .where(eq(suggestionsTable.id, parsed.data.suggestionId));
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "run.committed",
+      entityType: "run",
+      entityId: params.data.id,
+      metadata: {
+        agent: committedSuggestion?.agent,
+        score: committedSuggestion?.score,
+        filePath: committedSuggestion?.filePath,
+        prUrl: result.prUrl,
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.json(result);
   } catch (err) {
     if (err instanceof RunError) {
@@ -523,6 +582,20 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     }
 
     req.log.info({ runId, gate: scan.gateDecision, findings: scan.findings.length }, "Aegis scan completed");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "aegis.scan_run",
+      entityType: "run",
+      entityId: run.id,
+      metadata: {
+        gateDecision: scan.gateDecision,
+        criticalCount: scan.criticalCount,
+        highCount: scan.highCount,
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.status(200).json({ scan });
   } catch (err) {
     req.log.error({ err }, "Aegis scan failed");
@@ -675,6 +748,16 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
       .where(eq(runsTable.id, runId));
 
     req.log.info({ runId, target, pushed: pushedUrl != null }, "Narratia runbook generated");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "narratia.runbook_generated",
+      entityType: "run",
+      entityId: run.id,
+      metadata: { target, pushedUrl },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.status(200).json({ runbook: result.markdown, url: pushedUrl, target, sections: result.sections.map((s) => s.title) });
   } catch (err) {
     req.log.error({ err }, "Narratia generation failed");
@@ -798,6 +881,17 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
   let updatedScan = mark({ plmTicketKey: ticketKey, plmTicketUrl: ticketUrl, pushedToBoard: true });
   await db.update(runsTable).set({ securityScan: updatedScan }).where(eq(runsTable.id, runId));
 
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "aegis.finding_pushed",
+    entityType: "run",
+    entityId: runId,
+    metadata: { findingId, ticketKey, severity: finding.severity, internalTaskId },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
+
   // STEP B: sync the board so the new ticket appears (non-fatal).
   try {
     await syncProject(req.userId, project.id);
@@ -833,6 +927,17 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
         remediationStatus: "pending",
       });
       await db.update(runsTable).set({ securityScan: updatedScan }).where(eq(runsTable.id, runId));
+
+      audit.log({
+        userId: req.userId,
+        teamId: req.teamId ?? null,
+        action: "aegis.remediation_started",
+        entityType: "run",
+        entityId: newRun.id,
+        metadata: { findingId, ticketKey, parentRunId: runId },
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
 
       // executeRun(runId) loads everything by id (scoped to run.userId) and never
       // throws — kick it off in the background so the response returns immediately.

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useConfig, type ConfigMap } from "@/context/ConfigContext";
 import { useTeam } from "@/context/TeamContext";
 import TeamTab from "@/components/settings/TeamTab";
+import AuditTab from "@/components/settings/AuditTab";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
@@ -447,9 +448,11 @@ const PERSONAL_GROUPS: { label: string; ids: string[] }[] = [
 
 export default function SettingsPage() {
   const { configMap, loading, error, refreshConfig } = useConfig();
-  const { team } = useTeam();
-  const initialTab = new URLSearchParams(window.location.search).get("tab") === "team" ? "team" : "personal";
-  const [tab, setTab] = useState<"personal" | "team">(initialTab);
+  const { team, isAdmin } = useTeam();
+  const tabParam = new URLSearchParams(window.location.search).get("tab");
+  const initialTab: "personal" | "team" | "audit" =
+    tabParam === "team" ? "team" : tabParam === "audit" ? "audit" : "personal";
+  const [tab, setTab] = useState<"personal" | "team" | "audit">(initialTab);
 
   const personalIntegrations = INTEGRATIONS.filter((i) =>
     PERSONAL_GROUPS.some((g) => g.ids.includes(i.id)),
@@ -457,7 +460,7 @@ export default function SettingsPage() {
   const configuredCount = personalIntegrations.filter((integ) => integ.fields.every((f) => configMap[f.key]?.set)).length;
   const byId = new Map(INTEGRATIONS.map((i) => [i.id, i]));
 
-  const tabBtn = (key: "personal" | "team", label: string): React.CSSProperties => ({
+  const tabBtn = (key: "personal" | "team" | "audit", label: string): React.CSSProperties => ({
     fontSize: 13,
     fontWeight: tab === key ? 600 : 500,
     padding: "8px 2px",
@@ -480,9 +483,14 @@ export default function SettingsPage() {
         {team && (
           <button style={tabBtn("team", "Team")} onClick={() => setTab("team")}>Team</button>
         )}
+        {team && isAdmin && (
+          <button style={tabBtn("audit", "Audit log")} onClick={() => setTab("audit")}>Audit log</button>
+        )}
       </div>
 
-      {tab === "team" && team ? (
+      {tab === "audit" && team && isAdmin ? (
+        <AuditTab />
+      ) : tab === "team" && team ? (
         <TeamTab />
       ) : loading ? (
         <div className="flex flex-col gap-2.5">

@@ -19,6 +19,7 @@ import { fetchFilePaths } from "../adapters/gitService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
 import { isGraphUsable, isGraphifyConfigured, triggerRepoIndex } from "../services/graphifyService.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -141,6 +142,16 @@ router.post("/repositories", async (req, res): Promise<void> => {
     triggerRepoIndex({ repoUrl: updated.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: updated.id, log: req.log });
   }
 
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "repository.connected",
+    entityType: "repository",
+    entityId: updated.id,
+    metadata: { name: updated.name, provider: updated.provider },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.status(201).json(GetRepositoryResponse.parse(updated));
 });
 
@@ -303,6 +314,16 @@ router.delete("/repositories/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Repository not found" });
     return;
   }
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "repository.deleted",
+    entityType: "repository",
+    entityId: repo.id,
+    metadata: { name: repo.name },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.sendStatus(204);
 });
 

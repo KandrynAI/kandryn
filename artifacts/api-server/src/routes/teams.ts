@@ -17,6 +17,7 @@ import {
 } from "../services/teamService.js";
 import { requireAdmin } from "../middlewares/team.js";
 import { sendTeamInvite } from "../services/emailService.js";
+import * as audit from "../services/auditService.js";
 import { db, teamsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -78,6 +79,16 @@ router.post("/teams", async (req, res): Promise<void> => {
   }
   const team = await createTeam(req.userId, parsed.data.name);
   req.log.info({ teamId: team.id }, "Team created");
+  audit.log({
+    userId: req.userId,
+    teamId: team.id,
+    action: "team.created",
+    entityType: "team",
+    entityId: team.id,
+    metadata: { name: team.name },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.status(201).json({ team });
 });
 
@@ -90,6 +101,16 @@ router.post("/teams/bootstrap", async (req, res): Promise<void> => {
   const name = typeof req.body?.name === "string" && req.body.name.trim() ? req.body.name.trim().slice(0, 80) : undefined;
   const team = await ensureUserHasTeam(req.userId, name);
   req.log.info({ teamId: team.id }, "Team bootstrapped");
+  audit.log({
+    userId: req.userId,
+    teamId: team.id,
+    action: "team.created",
+    entityType: "team",
+    entityId: team.id,
+    metadata: { name: team.name, bootstrap: true },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.status(201).json({ team });
 });
 
@@ -103,6 +124,14 @@ router.post("/invites/accept", async (req, res): Promise<void> => {
   try {
     const invite = await acceptInvite(parsed.data.token, req.userId);
     req.log.info({ teamId: invite.teamId }, "Invite accepted");
+    audit.log({
+      userId: req.userId,
+      teamId: invite.teamId,
+      action: "member.joined",
+      metadata: { role: invite.role },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.json({ teamId: invite.teamId, role: invite.role });
   } catch (err) {
     if (toTeamErr(res, err)) return;
@@ -143,6 +172,14 @@ router.post("/teams/:teamId/invites", requireAdmin, async (req, res): Promise<vo
     await sendTeamInvite(body.data.email, team?.name ?? "your team", `${base}/app/invite?token=${invite.token}`).catch(
       (e) => req.log.warn({ err: e }, "Invite email failed"),
     );
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "member.invited",
+      metadata: { email: body.data.email, role: body.data.role },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.status(201).json({ invite });
   } catch (err) {
     if (toTeamErr(res, err)) return;
@@ -191,6 +228,14 @@ router.delete("/teams/:teamId/members/:userId", requireAdmin, async (req, res): 
     return;
   }
   await removeMember(params.data.teamId, targetUserId);
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "member.removed",
+    metadata: { removedUserId: targetUserId },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.sendStatus(204);
 });
 
@@ -209,6 +254,14 @@ router.patch("/teams/:teamId/members/:userId", requireAdmin, async (req, res): P
     return;
   }
   await setMemberRole(params.data.teamId, targetUserId, body.data.role);
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "member.role_changed",
+    metadata: { targetUserId, newRole: body.data.role },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.json({ userId: targetUserId, role: body.data.role });
 });
 
@@ -237,6 +290,14 @@ router.post("/teams/:teamId/integrations", requireAdmin, async (req, res): Promi
   }
   await setTeamIntegration(params.data.teamId, body.data.key, body.data.value, req.userId);
   req.log.info({ teamId: params.data.teamId, key: body.data.key }, "Team integration set");
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "team_credential.set",
+    metadata: { key: body.data.key }, // NEVER the value
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.status(201).json({ key: body.data.key, setAt: new Date().toISOString() });
 });
 

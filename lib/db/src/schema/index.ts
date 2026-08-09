@@ -6,3 +6,4 @@ export * from "./suggestions";
 export * from "./integrationConfigs";
 export * from "./waitlist";
 export * from "./teams";
+export * from "./auditLog";
