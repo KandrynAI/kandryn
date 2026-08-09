@@ -51,6 +51,16 @@ export default function SecurityPage() {
             </tbody>
           </table>
         </div>
+
+        <div style={{ marginTop: 32, padding: '16px 20px', borderLeft: '2px solid var(--color-accent)', background: 'var(--color-accent-100)' }}>
+          <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-text)', margin: 0, maxWidth: 760 }}>
+            For a complete security overview including sub-processor list, compliance status, AI model disclosure, and
+            audit log details —
+          </p>
+          <a href="/trust/" style={{ fontSize: 14, color: 'var(--color-accent)', fontWeight: 700, display: 'inline-block', marginTop: 6 }}>
+            View our Trust and Security page →
+          </a>
+        </div>
       </section>
     </>
   );

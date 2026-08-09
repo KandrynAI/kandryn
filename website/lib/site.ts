@@ -195,9 +195,9 @@ export const FAQS = [
 ];
 
 export const FOOTER_COLS = [
-  { title: 'PRODUCT', links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Integrations', href: '/integrations' }, { label: 'Security', href: '/security' }, { label: 'FAQ', href: '/faq' }] },
+  { title: 'PRODUCT', links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Integrations', href: '/integrations' }, { label: 'Security', href: '/security' }, { label: 'Trust', href: '/trust/' }, { label: 'FAQ', href: '/faq' }] },
   { title: 'RESOURCES', links: [{ label: 'Guides', href: '/resources' }, { label: 'Patterns', href: '/resources' }, { label: 'Changelog', href: '/resources' }, { label: 'Templates', href: '/resources' }] },
-  { title: 'COMPANY', links: [{ label: 'Request access', href: '/contact' }, { label: 'Book a walkthrough', href: '/contact' }, { label: 'Contact', href: '/contact' }, { label: 'Home', href: '/' }] },
+  { title: 'COMPANY', links: [{ label: 'Request access', href: '/contact' }, { label: 'Book a walkthrough', href: '/contact' }, { label: 'Trust & Security', href: '/trust/' }, { label: 'Contact', href: '/contact' }, { label: 'Home', href: '/' }] },
 ];
 
 // Demo mock data — used only in DemoSection (client component, no API calls)
