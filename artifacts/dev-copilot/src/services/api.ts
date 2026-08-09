@@ -656,3 +656,69 @@ export function createTeamInvite(
     body: JSON.stringify({ email, role }),
   });
 }
+
+export interface TeamMemberRow {
+  id: number;
+  userId: string;
+  role: 'admin' | 'member';
+  joinedAt: string;
+}
+
+export interface TeamInviteRow {
+  id: number;
+  email: string;
+  role: 'admin' | 'member';
+  expiresAt: string;
+  acceptedAt: string | null;
+}
+
+export interface TeamIntegrationRow {
+  key: string;
+  setBy: string;
+  setAt: string;
+  masked: string;
+}
+
+export function fetchTeamMembers(teamId: number): Promise<TeamMemberRow[]> {
+  return request<TeamMemberRow[]>(`/api/teams/${teamId}/members`);
+}
+
+export function fetchInvites(teamId: number): Promise<TeamInviteRow[]> {
+  return request<TeamInviteRow[]>(`/api/teams/${teamId}/invites`);
+}
+
+export function cancelInvite(teamId: number, inviteId: number): Promise<void> {
+  return request(`/api/teams/${teamId}/invites/${inviteId}`, { method: 'DELETE' });
+}
+
+export function removeTeamMember(teamId: number, userId: string): Promise<void> {
+  return request(`/api/teams/${teamId}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+}
+
+export function updateMemberRole(
+  teamId: number,
+  userId: string,
+  role: 'admin' | 'member',
+): Promise<{ userId: string; role: string }> {
+  return request(`/api/teams/${teamId}/members/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function fetchTeamIntegrations(teamId: number): Promise<TeamIntegrationRow[]> {
+  return request<TeamIntegrationRow[]>(`/api/teams/${teamId}/integrations`);
+}
+
+export function setTeamIntegration(
+  teamId: number,
+  key: string,
+  value: string,
+): Promise<{ key: string; setAt: string }> {
+  return request(`/api/teams/${teamId}/integrations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value }),
+  });
+}

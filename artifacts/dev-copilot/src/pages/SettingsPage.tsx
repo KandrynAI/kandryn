@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useConfig, type ConfigMap } from "@/context/ConfigContext";
+import { useTeam } from "@/context/TeamContext";
+import TeamTab from "@/components/settings/TeamTab";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
@@ -436,26 +438,53 @@ function ProgressBar({ configured, total }: { configured: number; total: number 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const GROUPS: { label: string; ids: string[] }[] = [
-  { label: "Trackers", ids: ["jira", "azuredevops"] },
+// Trackers (Jira/ADO) and Documentation (Confluence/Notion) moved to the Team
+// tab — they're shared at the team level. Personal keeps repo + agent creds.
+const PERSONAL_GROUPS: { label: string; ids: string[] }[] = [
   { label: "Repositories", ids: ["github", "azurerepos"] },
   { label: "Agents", ids: ["anthropic", "openai"] },
-  { label: "Documentation", ids: ["confluence", "notion"] },
 ];
 
 export default function SettingsPage() {
   const { configMap, loading, error, refreshConfig } = useConfig();
+  const { team } = useTeam();
+  const initialTab = new URLSearchParams(window.location.search).get("tab") === "team" ? "team" : "personal";
+  const [tab, setTab] = useState<"personal" | "team">(initialTab);
 
-  const configuredCount = INTEGRATIONS.filter((integ) => integ.fields.every((f) => configMap[f.key]?.set)).length;
+  const personalIntegrations = INTEGRATIONS.filter((i) =>
+    PERSONAL_GROUPS.some((g) => g.ids.includes(i.id)),
+  );
+  const configuredCount = personalIntegrations.filter((integ) => integ.fields.every((f) => configMap[f.key]?.set)).length;
   const byId = new Map(INTEGRATIONS.map((i) => [i.id, i]));
+
+  const tabBtn = (key: "personal" | "team", label: string): React.CSSProperties => ({
+    fontSize: 13,
+    fontWeight: tab === key ? 600 : 500,
+    padding: "8px 2px",
+    background: "none",
+    border: "none",
+    borderBottom: tab === key ? "2px solid var(--c-blue)" : "2px solid transparent",
+    color: tab === key ? "var(--c-blue)" : "var(--c-ink-3)",
+    cursor: "pointer",
+  });
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-6">
-      <p className="mb-6 text-xs text-muted-foreground">
+      <p className="mb-4 text-xs text-muted-foreground">
         Connect your tools. Credentials are stored securely in the database and loaded automatically on startup.
       </p>
 
-      {loading ? (
+      {/* Tab switcher */}
+      <div style={{ display: "flex", gap: 16, borderBottom: "1px solid var(--c-border)", marginBottom: 20 }}>
+        <button style={tabBtn("personal", "Personal")} onClick={() => setTab("personal")}>Personal</button>
+        {team && (
+          <button style={tabBtn("team", "Team")} onClick={() => setTab("team")}>Team</button>
+        )}
+      </div>
+
+      {tab === "team" && team ? (
+        <TeamTab />
+      ) : loading ? (
         <div className="flex flex-col gap-2.5">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-14 rounded-md border bg-card" style={{ animation: "dc-pulse 1.5s ease-in-out infinite" }} />
@@ -465,8 +494,14 @@ export default function SettingsPage() {
         <div className="rounded-md border px-4 py-3 text-[13px]" style={tone(RED)}>{error}</div>
       ) : (
         <>
-          <ProgressBar configured={configuredCount} total={INTEGRATIONS.length} />
-          {GROUPS.map((group) => (
+          <ProgressBar configured={configuredCount} total={personalIntegrations.length} />
+          {team && (
+            <div className="mb-5 rounded-md border px-3.5 py-2.5 text-[13px] text-muted-foreground">
+              Tracker credentials (Jira, Azure DevOps) and documentation targets (Confluence, Notion) are managed at the
+              team level. Open the <button onClick={() => setTab("team")} className="font-medium text-[var(--c-blue)]">Team</button> tab to configure them.
+            </div>
+          )}
+          {PERSONAL_GROUPS.map((group) => (
             <div key={group.label} style={{ marginBottom: 24 }}>
               <div
                 style={{

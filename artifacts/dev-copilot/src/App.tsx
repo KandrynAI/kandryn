@@ -17,6 +17,7 @@ import { HideClerkDevBadge } from "@/components/HideClerkDevBadge";
 import { AppShell } from "@/components/layout/AppShell";
 import { RepoProvider } from "@/context/RepoContext";
 import { ConfigProvider, useConfig } from "@/context/ConfigContext";
+import { TeamProvider } from "@/context/TeamContext";
 import WorkspacePage from "@/pages/WorkspacePage";
 import Dashboard from "@/pages/dashboard";
 import Repositories from "@/pages/repositories";
@@ -270,6 +271,7 @@ function ProtectedApp() {
   useEnsureTeam();
   return (
     <RequireAuth>
+      <TeamProvider>
       <AppShell>
         <Switch>
           <Route path="/projects/new" component={NewProject} />
@@ -289,6 +291,7 @@ function ProtectedApp() {
           <Route component={NotFound} />
         </Switch>
       </AppShell>
+      </TeamProvider>
     </RequireAuth>
   );
 }
