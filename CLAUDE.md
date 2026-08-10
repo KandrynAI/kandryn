@@ -83,7 +83,7 @@ scripts/            @workspace/scripts
 Standalone **Clerk development instance** (`pk_test_…`), not Replit-managed.
 - **Backend:** `@clerk/express` — `clerkMiddleware` in `app.ts`; `requireAuth` gates all authenticated `/api` routes and sets `req.userId`.
 - **Frontend:** `@clerk/react` — `ClerkProvider` wraps the app; unauthenticated → `/app/sign-in`.
-- **Sign-in is intentionally simplified** (`App.tsx` + `HideClerkDevBadge`): Clerk "Development mode" badge hidden, GitHub/Google social logins hidden, "Sign up" replaced by **"Request Your Access"** → marketing Request-Access modal (`/?request-access=1`). Clerk sign-up still exists at `/app/sign-up`.
+- **Sign-in is intentionally simplified** (`App.tsx` + `HideClerkDevBadge`): Clerk "Development mode" badge hidden, GitHub/Google social logins hidden, "Sign up" replaced by **"Request Your Access"** → a full-page link to the marketing **`/contact/`** page. Clerk sign-up still exists at `/app/sign-up`.
 - **GitHub OAuth auto-sync:** `POST /api/auth/github-sync` upserts the Clerk-held token as `GITHUB_TOKEN` (via `useGitHubSync`). Since GitHub login is hidden, in practice users paste a `GITHUB_TOKEN` PAT in **Settings**.
 - Env: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`.
 
@@ -223,7 +223,7 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 
 ## 11. UI/UX — the marketing website (`/`, Next.js)
 
-`website/` — Next.js 15 **static export** (`output:'export'` → `out/`, `trailingSlash:true`), app router. Serif-forward design; fonts **Newsreader / Space Grotesk / IBM Plex Mono**. Layout wraps: `AnnouncementBar`, `Nav`, `Footer`, `ModalProvider` (Request-Access modal opened via `/?request-access=1`), plus JSON-LD (`organizationLd` + `softwareApplicationLd`). Pages: home (`app/page.tsx`), `how-it-works`, `faq`, `security`, `contact`, `privacy`, `terms`; metadata routes `sitemap.ts` / `robots.ts` / `opengraph-image.tsx` (both metadata routes need `export const dynamic = 'force-static'` under static export). Central copy is **final** in `lib/site.ts` (`SITE`, nav, FAQ, steps, benefits, security rows). Contact/Request-Access + Book-a-Walkthrough → `POST /api/contact` → `emailService` (Resend) → `arvind.kandula@venakaninfo.com` + `accounts@venakaninfo.com`. Waitlist → `POST /api/waitlist`. **Marketing copy must avoid fabricated metrics/traction** — product-fact/directional framing only. Build: `cd website && npm install && npm run build`.
+`website/` — Next.js 15 **static export** (`output:'export'` → `out/`, `trailingSlash:true`), app router. Sans-serif design; fonts **Archivo** (display/body) + **JetBrains Mono** (mono). Layout wraps: `SiteHeader`, `CtaBanner`, `SiteFooter`, plus JSON-LD (`organizationLd` + `softwareApplicationLd`). Pages: home (`app/page.tsx`), `how-it-works`, `faq`, `security`, `contact`, `privacy`, `terms`; metadata routes `sitemap.ts` / `robots.ts` / `opengraph-image.tsx` (both metadata routes need `export const dynamic = 'force-static'` under static export). Central copy is **final** in `lib/site.ts` (`SITE`, nav, FAQ, steps, benefits, security rows). Contact/Request-Access + Book-a-Walkthrough → `POST /api/contact` → `emailService` (Resend) → `arvind.kandula@venakaninfo.com` + `accounts@venakaninfo.com`. Waitlist → `POST /api/waitlist`. **Marketing copy must avoid fabricated metrics/traction** — product-fact/directional framing only. Build: `cd website && npm install && npm run build`.
 
 ---
 
