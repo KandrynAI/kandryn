@@ -192,8 +192,8 @@ function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
               }}
             >
               Don't have an account?{" "}
-              {/* Full-page navigation to the marketing site, which opens the Request Access modal. */}
-              <a href="/?request-access=1" style={{ color: "#1a4fd6", fontWeight: 700, textDecoration: "none" }}>
+              {/* Full-page navigation to the marketing contact page. */}
+              <a href="/contact/" style={{ color: "#1a4fd6", fontWeight: 700, textDecoration: "none" }}>
                 Request access →
               </a>
             </p>
