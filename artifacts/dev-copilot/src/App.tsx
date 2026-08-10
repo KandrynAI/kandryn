@@ -15,6 +15,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { HideClerkDevBadge } from "@/components/HideClerkDevBadge";
 import { AppShell } from "@/components/layout/AppShell";
+import { Logo } from "@/components/Logo";
 import { RepoProvider } from "@/context/RepoContext";
 import { ConfigProvider, useConfig } from "@/context/ConfigContext";
 import { TeamProvider } from "@/context/TeamContext";
@@ -149,14 +150,7 @@ function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
             borderBottom: "2px solid color-mix(in srgb, #161b24 38%, transparent)",
           }}
         >
-          <img
-            src={`${basePath}/bluemantis-mark.png`}
-            alt=""
-            style={{ height: 24, width: "auto", objectFit: "contain" }}
-          />
-          <span style={{ color: "#161b24", fontSize: 16, fontWeight: 800, letterSpacing: "-0.01em" }}>
-            Blue Mantis
-          </span>
+          <Logo context="signin" height={24} />
         </div>
 
         <div style={{ padding: "28px 28px 32px" }}>
