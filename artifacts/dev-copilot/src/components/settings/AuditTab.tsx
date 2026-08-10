@@ -192,7 +192,7 @@ export default function AuditTab() {
           style={{ background: "var(--c-blue-bg)", border: "1px solid var(--c-blue)", padding: "8px 12px", fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}
         >
           <span>Free plan retains 30 days of audit history. Upgrade to Pro for 90 days, or Enterprise for 1 year.</span>
-          <a href="/?request-access=1" className="al-pill" style={{ whiteSpace: "nowrap" }}>Upgrade →</a>
+          <a href="/contact/" className="al-pill" style={{ whiteSpace: "nowrap" }}>Upgrade →</a>
         </div>
       )}
 
