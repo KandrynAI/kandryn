@@ -10,6 +10,7 @@ import {
   type ConfigKey,
 } from "../services/configService.js";
 import { logger } from "../lib/logger.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -35,6 +36,19 @@ async function handleSaveConfig(req: Request, res: Response): Promise<void> {
   }
   await saveConfigs(req.userId, parsed.data as Partial<Record<ConfigKey, string>>);
   req.log.info("Integration config updated");
+  // Audit each key saved — the KEY only, never the value.
+  for (const key of Object.keys(parsed.data) as ConfigKey[]) {
+    if (parsed.data[key] != null) {
+      audit.log({
+        userId: req.userId,
+        teamId: req.teamId ?? null,
+        action: "credential.set",
+        metadata: { key },
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
+    }
+  }
   res.json({ ok: true });
 }
 
@@ -49,6 +63,14 @@ router.delete("/config/:key", async (req, res): Promise<void> => {
     return;
   }
   await deleteConfig(req.userId, key);
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "credential.deleted",
+    metadata: { key },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.json({ ok: true });
 });
 
@@ -239,6 +261,39 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
         const data = (await r.json()) as { value?: { name: string }[] };
         const count = Array.isArray(data.value) ? data.value.length : 0;
         res.json({ ok: true, message: `Connected to ${org} — ${count} repositor${count === 1 ? "y" : "ies"} found` });
+        break;
+      }
+
+      case "confluence": {
+        const domain = (await resolve(body, "CONFLUENCE_DOMAIN", uid, "CONFLUENCE_DOMAIN")).trim();
+        const email = (await resolve(body, "CONFLUENCE_EMAIL", uid, "CONFLUENCE_EMAIL")).trim();
+        const token = await resolve(body, "CONFLUENCE_API_TOKEN", uid, "CONFLUENCE_API_TOKEN");
+        if (!domain || !email || !token) {
+          res.status(400).json({ ok: false, message: "Domain, email, and API token are required" });
+          return;
+        }
+        const auth = Buffer.from(`${email}:${token}`).toString("base64");
+        const r = await fetch(`https://${domain}/wiki/rest/api/space?limit=1`, {
+          headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+        });
+        if (r.status === 401) throw new Error("Invalid email or API token");
+        if (!r.ok) throw new Error(`Confluence returned ${r.status} — check your domain and credentials`);
+        res.json({ ok: true, message: `Connected to ${domain}` });
+        break;
+      }
+
+      case "notion": {
+        const token = await resolve(body, "NOTION_API_TOKEN", uid, "NOTION_API_TOKEN");
+        if (!token) {
+          res.status(400).json({ ok: false, message: "Notion API token is required" });
+          return;
+        }
+        const r = await fetch("https://api.notion.com/v1/users/me", {
+          headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" },
+        });
+        if (r.status === 401) throw new Error("Invalid Notion token");
+        if (!r.ok) throw new Error(`Notion returned ${r.status}`);
+        res.json({ ok: true, message: "Notion integration connected" });
         break;
       }
 

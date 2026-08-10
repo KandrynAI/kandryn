@@ -5,7 +5,11 @@ import { z } from "zod/v4";
 import { getConfigs } from "../services/configService.js";
 import { PLMService } from "../services/plmService.js";
 import { generateBreakdown, AIFormatError } from "../services/aiService.js";
+import { createPlmWorkItem, type CreatableType, type PlmProvider } from "../services/plmWrite.js";
+import { PlmError } from "../services/plmProjects.js";
 import type { StackProfile } from "../stack/detector.js";
+
+const CREATABLE_TYPES = new Set<CreatableType>(["epic", "story", "task", "bug"]);
 
 const router: IRouter = Router();
 
@@ -160,6 +164,103 @@ router.post("/work-items/:id/breakdown", async (req, res): Promise<void> => {
     }
     throw err;
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /work-items/:id/push-to-plm — promote a local-only work item into the
+// project's bound PLM (Jira/ADO). Creates the story upstream, then records the
+// returned key/URL locally so it becomes a first-class PLM-linked item (e.g.
+// test cases can then be pushed under it). Idempotent-ish: an already-linked
+// item returns 409 with its existing linkage.
+// ---------------------------------------------------------------------------
+router.post("/work-items/:id/push-to-plm", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid work item id" });
+    return;
+  }
+
+  const [item] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, params.data.id), eq(tasksTable.userId, req.userId)));
+  if (!item) {
+    res.status(404).json({ error: "Work item not found" });
+    return;
+  }
+
+  // Already linked — nothing to do.
+  if (item.externalId && (item.source === "jira" || item.source === "azure-devops")) {
+    res.status(409).json({
+      error: "This work item is already linked to a PLM story.",
+      externalId: item.externalId,
+      plmUrl: item.plmUrl,
+    });
+    return;
+  }
+  if (!CREATABLE_TYPES.has(item.itemType as CreatableType)) {
+    res.status(422).json({ error: `A ${item.itemType} can't be pushed to the PLM as a standalone story.` });
+    return;
+  }
+  if (item.projectId == null) {
+    res.status(422).json({ error: "Work item is not attached to a project." });
+    return;
+  }
+
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(eq(projectsTable.id, item.projectId));
+  if (!project) {
+    res.status(404).json({ error: "Project not found." });
+    return;
+  }
+
+  // Resolve the parent's PLM key for hierarchy linkage (best-effort — only if
+  // the parent itself is already PLM-linked).
+  let parentExternalId: string | null = null;
+  if (item.parentId != null) {
+    const [parent] = await db
+      .select({ externalId: tasksTable.externalId })
+      .from(tasksTable)
+      .where(and(eq(tasksTable.id, item.parentId), eq(tasksTable.userId, req.userId)));
+    parentExternalId = parent?.externalId ?? null;
+  }
+
+  let result;
+  try {
+    result = await createPlmWorkItem(
+      req.userId,
+      { plmProvider: project.plmProvider as PlmProvider, plmProjectKey: project.plmProjectKey },
+      {
+        itemType: item.itemType as CreatableType,
+        title: item.title,
+        description: item.description,
+        acceptanceCriteria: item.acceptanceCriteria,
+        parentExternalId,
+      },
+    );
+  } catch (err) {
+    if (err instanceof PlmError) {
+      res.status(err.code === "not_connected" ? 424 : 502).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
+  const [updated] = await db
+    .update(tasksTable)
+    .set({
+      externalId: result.externalId,
+      source: project.plmProvider,
+      plmUrl: result.plmUrl,
+      plmStatus: result.plmStatus,
+    })
+    .where(and(eq(tasksTable.id, item.id), eq(tasksTable.userId, req.userId)))
+    .returning();
+
+  req.log.info({ workItemId: item.id, externalId: result.externalId }, "Work item pushed to PLM");
+  res.json(updated);
 });
 
 export default router;

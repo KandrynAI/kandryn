@@ -13,12 +13,45 @@ import {
   GetRepositoryResponse,
   UpdateRepositoryResponse,
 } from "@workspace/api-zod";
+import { z } from "zod/v4";
 import { detectStack } from "../stack/detector.js";
 import { fetchFilePaths } from "../adapters/gitService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
+import { isGraphUsable, isGraphifyConfigured, triggerRepoIndex } from "../services/graphifyService.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
+
+const RepoIdParam = z.object({ repoId: z.coerce.number().int().positive() });
+
+// Graphify graph.json upload (developer runs Graphify locally, uploads here).
+const GraphUploadBody = z.object({
+  graph: z.object({
+    nodes: z.array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        sourceFile: z.string().optional(),
+        sourceLocation: z.string().optional(),
+        fileType: z.string().optional(),
+        degree: z.number().optional(),
+        community: z.number().optional(),
+      }),
+    ),
+    edges: z.array(
+      z.object({
+        source: z.string(),
+        target: z.string(),
+        relation: z.string(),
+        confidence: z.string(),
+      }),
+    ),
+    metadata: z
+      .object({ files: z.number(), nodes: z.number(), edges: z.number() })
+      .passthrough(),
+  }),
+});
 
 router.get("/repositories/:repoId/stack", async (req, res): Promise<void> => {
   const params = DetectRepositoryStackParams.safeParse(req.params);
@@ -102,6 +135,23 @@ router.post("/repositories", async (req, res): Promise<void> => {
     .from(repositoriesTable)
     .where(eq(repositoriesTable.id, repo.id));
 
+  // Trigger async Graphify indexing if the microservice is configured
+  // (Phase 2). Fire-and-forget — never blocks the response.
+  if (isGraphifyConfigured()) {
+    const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
+    triggerRepoIndex({ repoUrl: updated.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: updated.id, log: req.log });
+  }
+
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "repository.connected",
+    entityType: "repository",
+    entityId: updated.id,
+    metadata: { name: updated.name, provider: updated.provider },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.status(201).json(GetRepositoryResponse.parse(updated));
 });
 
@@ -149,6 +199,105 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
   res.json(UpdateRepositoryResponse.parse(repo));
 });
 
+// ---------------------------------------------------------------------------
+// GET /repositories/:repoId/graph — Graphify graph status (meta only).
+// ---------------------------------------------------------------------------
+router.get("/repositories/:repoId/graph", async (req, res): Promise<void> => {
+  const params = RepoIdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid repository id" });
+    return;
+  }
+  const [repo] = await db
+    .select()
+    .from(repositoriesTable)
+    .where(and(eq(repositoriesTable.id, params.data.repoId), eq(repositoriesTable.userId, req.userId)));
+  if (!repo) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+  res.json({
+    built: repo.graphBuiltAt != null,
+    builtAt: repo.graphBuiltAt,
+    nodeCount: repo.graphNodeCount,
+    stale: repo.graphBuiltAt != null && !isGraphUsable(repo.graphBuiltAt),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /repositories/:repoId/graph — store an uploaded graph.json.
+// ---------------------------------------------------------------------------
+router.post("/repositories/:repoId/graph", async (req, res): Promise<void> => {
+  const params = RepoIdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid repository id" });
+    return;
+  }
+  const parsed = GraphUploadBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid graph payload" });
+    return;
+  }
+  const graph = parsed.data.graph;
+  if (graph.nodes.length === 0) {
+    res.status(400).json({ error: "Graph is empty." });
+    return;
+  }
+
+  const [updated] = await db
+    .update(repositoriesTable)
+    .set({
+      graphJson: graph as typeof repositoriesTable.$inferInsert.graphJson,
+      graphBuiltAt: new Date(),
+      graphNodeCount: graph.nodes.length,
+    })
+    .where(and(eq(repositoriesTable.id, params.data.repoId), eq(repositoriesTable.userId, req.userId)))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+
+  req.log.info({ repoId: updated.id, nodes: graph.nodes.length }, "Graphify graph stored");
+  res.json({
+    nodeCount: graph.nodes.length,
+    edgeCount: graph.edges.length,
+    message: `Graph loaded: ${graph.nodes.length} nodes, ${graph.edges.length} edges.`,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /repositories/:repoId/graph/rebuild — ask the microservice to re-index
+// this repo (Phase 3). 202 accepted; the graph updates via the callback. 503
+// when the microservice isn't configured for this deployment.
+// ---------------------------------------------------------------------------
+router.post("/repositories/:repoId/graph/rebuild", async (req, res): Promise<void> => {
+  const params = RepoIdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid repository id" });
+    return;
+  }
+  const [repo] = await db
+    .select()
+    .from(repositoriesTable)
+    .where(and(eq(repositoriesTable.id, params.data.repoId), eq(repositoriesTable.userId, req.userId)));
+  if (!repo) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+  if (!isGraphifyConfigured()) {
+    res.status(503).json({
+      error: "Graphify service is not configured. Upload a graph.json manually, or set GRAPHIFY_SERVICE_URL.",
+    });
+    return;
+  }
+
+  const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
+  triggerRepoIndex({ repoUrl: repo.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: repo.id, log: req.log });
+  req.log.info({ repoId: repo.id }, "Graphify rebuild triggered");
+  res.status(202).json({ status: "indexing", message: "Rebuild started — the graph will update shortly." });
+});
+
 router.delete("/repositories/:id", async (req, res): Promise<void> => {
   const params = DeleteRepositoryParams.safeParse(req.params);
   if (!params.success) {
@@ -165,6 +314,16 @@ router.delete("/repositories/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Repository not found" });
     return;
   }
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "repository.deleted",
+    entityType: "repository",
+    entityId: repo.id,
+    metadata: { name: repo.name },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.sendStatus(204);
 });
 

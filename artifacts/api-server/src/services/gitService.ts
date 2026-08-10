@@ -4,6 +4,8 @@ import { db, repositoriesTable } from "@workspace/db";
 import type { Repository } from "@workspace/db";
 import { detectStack, type StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
+import { queryGraph } from "./graphifyService.js";
+import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
 // ---------------------------------------------------------------------------
 // Stack → file extension mapping
@@ -137,12 +139,23 @@ class GitHubClient implements GitProviderClient {
   }
 
   async createBranch(branchName: string, fromRef: string): Promise<void> {
-    await this.octokit.git.createRef({
-      owner: this.owner,
-      repo: this.repo,
-      ref: `refs/heads/${branchName}`,
-      sha: fromRef,
-    });
+    try {
+      await this.octokit.git.createRef({
+        owner: this.owner,
+        repo: this.repo,
+        ref: `refs/heads/${branchName}`,
+        sha: fromRef,
+      });
+    } catch (err) {
+      // 422 "Reference already exists" — the deterministic branch task/<id> is
+      // left from an earlier commit or a retry. Reuse it; commitChanges will
+      // move it to the new commit.
+      if ((err as { status?: number }).status === 422) {
+        logger.info({ branchName }, "Branch already exists — reusing");
+        return;
+      }
+      throw err;
+    }
   }
 
   async getBranchSha(branchName: string): Promise<string> {
@@ -194,26 +207,48 @@ class GitHubClient implements GitProviderClient {
       parents: [baseRef],
     });
 
+    // force so a reused branch (task/<id> from a prior commit) can be moved to
+    // the new commit even when it isn't a fast-forward. When baseSha is the
+    // branch's own HEAD (test-script stacking) this is a fast-forward anyway.
     await this.octokit.git.updateRef({
       owner: this.owner,
       repo: this.repo,
       ref: `heads/${params.branchName}`,
       sha: commit.sha,
+      force: true,
     });
 
     return commit.sha;
   }
 
   async createPullRequest(params: PullRequestParams): Promise<string> {
-    const { data } = await this.octokit.pulls.create({
-      owner: this.owner,
-      repo: this.repo,
-      title: params.title,
-      body: params.body,
-      head: params.head,
-      base: params.base,
-    });
-    return data.html_url;
+    try {
+      const { data } = await this.octokit.pulls.create({
+        owner: this.owner,
+        repo: this.repo,
+        title: params.title,
+        body: params.body,
+        head: params.head,
+        base: params.base,
+      });
+      return data.html_url;
+    } catch (err) {
+      // 422 when an open PR already exists for this head branch — reuse it
+      // rather than failing the commit.
+      if ((err as { status?: number }).status === 422) {
+        const { data: existing } = await this.octokit.pulls.list({
+          owner: this.owner,
+          repo: this.repo,
+          head: `${this.owner}:${params.head}`,
+          state: "open",
+        });
+        if (existing.length > 0) {
+          logger.info({ head: params.head, url: existing[0].html_url }, "PR already exists — reusing");
+          return existing[0].html_url;
+        }
+      }
+      throw err;
+    }
   }
 }
 
@@ -288,6 +323,14 @@ class AzureReposClient implements GitProviderClient {
   }
 
   async createBranch(branchName: string, fromRef: string): Promise<void> {
+    // Reuse the deterministic branch if it already exists (prior commit/retry).
+    const existing = await this.request<{ value: Array<{ objectId: string }> }>(
+      `/refs?filter=heads/${branchName}&api-version=7.1`,
+    ).catch(() => ({ value: [] as Array<{ objectId: string }> }));
+    if (existing.value?.length) {
+      logger.info({ branchName }, "Azure Repos branch already exists — reusing");
+      return;
+    }
     const OLD_ZERO = "0000000000000000000000000000000000000000";
     await this.request(`/refs?api-version=7.1`, {
       method: "POST",
@@ -449,6 +492,69 @@ export class GitService {
     return output.trim();
   }
 
+  /**
+   * Graph-aware file context (Graphify). When a usable graph is provided, query
+   * it for the most relevant nodes and fetch only those file sections — far
+   * fewer tokens than keyword-guessing whole files. Falls back to the keyword
+   * method (fetchFileContext) when there's no graph or the query is empty.
+   */
+  async fetchFileContextWithGraph(
+    taskId: string,
+    keywords: string[],
+    stack: StackProfile,
+    graph: GraphifyGraph | null,
+  ): Promise<{ context: string; usedGraph: boolean }> {
+    if (!graph || !graph.nodes?.length) {
+      return { context: await this.fetchFileContext(taskId, keywords, stack), usedGraph: false };
+    }
+
+    const results = queryGraph(graph, keywords, 8);
+    if (results.length === 0) {
+      return { context: await this.fetchFileContext(taskId, keywords, stack), usedGraph: false };
+    }
+
+    const sections: string[] = [];
+    let totalChars = 0;
+    const MAX_CHARS = 6000; // tighter budget — graph context is more precise
+
+    for (const result of results) {
+      if (totalChars >= MAX_CHARS) break;
+      try {
+        const content = await this.fetchFileSection(result.filePath, result.lineStart, result.lineEnd);
+        if (content) {
+          const header =
+            `// ${result.filePath}` +
+            (result.lineStart ? ` (lines ${result.lineStart}-${result.lineEnd ?? "+"})` : "") +
+            ` [${result.relation}, confidence: ${(result.confidence * 100).toFixed(0)}%]\n`;
+          sections.push(header + content);
+          totalChars += header.length + content.length;
+        }
+      } catch {
+        // Skip files that can't be fetched — don't fail the run.
+      }
+    }
+
+    if (sections.length === 0) {
+      return { context: await this.fetchFileContext(taskId, keywords, stack), usedGraph: false };
+    }
+    return { context: sections.join("\n\n---\n\n"), usedGraph: true };
+  }
+
+  private async getFileContent(filePath: string): Promise<string> {
+    return this.client.fetchFileContent(filePath);
+  }
+
+  private async fetchFileSection(filePath: string, lineStart?: number, lineEnd?: number): Promise<string> {
+    const content = await this.getFileContent(filePath);
+    if (!content) return "";
+    if (!lineStart) return content.slice(0, 2000);
+
+    const lines = content.split("\n");
+    const start = Math.max(0, lineStart - 5); // 5 lines before
+    const end = Math.min(lines.length, (lineEnd ?? lineStart + 40) + 5); // 5 lines after
+    return lines.slice(start, end).join("\n");
+  }
+
   async createBranch(taskId: string): Promise<void> {
     const branchName = `task/${taskId}`;
     const sha = await this.client.getDefaultBranchSha();
@@ -479,5 +585,50 @@ export class GitService {
 
   get defaultBranch(): string {
     return this.repo.defaultBranch;
+  }
+}
+
+/**
+ * Post a GitHub commit status check for the Aegis security gate
+ * (context `blue-mantis/security`). Non-fatal — returns without throwing for a
+ * non-GitHub repo, a missing token, or an API/network error, so it never breaks
+ * the scan flow. The token is supplied by the caller (fetched per-user via
+ * getConfigs) — never logged.
+ */
+export async function postSecurityStatus(
+  repoUrl: string,
+  commitHash: string,
+  gate: "approved" | "blocked" | "pending",
+  details: string,
+  githubToken: string | undefined,
+): Promise<void> {
+  const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/);
+  if (!match) return; // not a GitHub URL — skip silently
+  if (!githubToken) return;
+  const [, owner, repo] = match;
+
+  const state = gate === "approved" ? "success" : gate === "blocked" ? "failure" : "pending";
+  const body = {
+    state,
+    context: "blue-mantis/security",
+    description: details.slice(0, 140), // GitHub 140-char limit
+    target_url: `https://getbluemantis.com/app/runs/${commitHash}`,
+  };
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/statuses/${commitHash}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      logger.warn({ status: res.status, owner, repo }, "Aegis GitHub status check failed");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Aegis GitHub status check errored");
   }
 }

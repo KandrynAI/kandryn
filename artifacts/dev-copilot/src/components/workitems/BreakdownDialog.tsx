@@ -119,7 +119,7 @@ export function BreakdownDialog({
             Break down “{parent?.title}”
           </DialogTitle>
           <DialogDescription>
-            Claude proposed these child items. Edit, deselect, and create the ones you want.
+            Raptia proposed these child items. Edit, deselect, and create the ones you want.
           </DialogDescription>
         </DialogHeader>
 
@@ -131,7 +131,7 @@ export function BreakdownDialog({
             </div>
           )}
           {error && !loading && (
-            <div className="rounded-md border border-red-400/30 bg-red-400/5 p-4 text-center text-sm text-red-400">
+            <div className="rounded-md border border-red-600/30 bg-red-50 p-4 text-center text-sm text-red-700">
               {error}
             </div>
           )}

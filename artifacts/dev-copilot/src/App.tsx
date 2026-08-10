@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import {
@@ -10,7 +10,6 @@ import {
   useAuth,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
-import { dark } from "@clerk/themes";
 import { useTheme } from "next-themes";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -18,6 +17,7 @@ import { HideClerkDevBadge } from "@/components/HideClerkDevBadge";
 import { AppShell } from "@/components/layout/AppShell";
 import { RepoProvider } from "@/context/RepoContext";
 import { ConfigProvider, useConfig } from "@/context/ConfigContext";
+import { TeamProvider } from "@/context/TeamContext";
 import WorkspacePage from "@/pages/WorkspacePage";
 import Dashboard from "@/pages/dashboard";
 import Repositories from "@/pages/repositories";
@@ -32,6 +32,11 @@ import NewProject from "@/pages/new-project";
 import ProjectBoard from "@/pages/project-board";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
+import RunReportPage from "@/pages/run-report";
+import ReportsPage from "@/pages/ReportsPage";
+import AcceptInvitePage from "@/pages/AcceptInvitePage";
+import TeamSetupPage from "@/pages/TeamSetupPage";
+import { fetchMyTeam } from "@/services/api";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,21 +56,40 @@ const clerkPubKey =
 // In dev this is empty; in prod Replit sets it automatically
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL as string | undefined;
 
-function getClerkAppearance(isDark: boolean) {
+function getClerkAppearance(_isDark: boolean) {
+  // App is light-only (Modernist). Ignore the theme flag and force the light palette.
+  // Element styles are passed as CSSProperties objects (Clerk applies them as
+  // inline styles) so they take effect regardless of the CDN clerk-js version —
+  // raw CSS-declaration strings would be treated as class names and not apply.
   return {
-    baseTheme: isDark ? dark : undefined,
+    baseTheme: undefined,
     variables: {
-      colorPrimary: "#4d9cff",
-      colorBackground: isDark ? "#161a1f" : "#ffffff",
-      colorInputBackground: isDark ? "#1e2329" : "#f5f7fa",
-      colorText: isDark ? "#e8eaf0" : "#0d1117",
-      colorTextSecondary: isDark ? "#8b92a5" : "#4a5673",
-      colorNeutral: isDark ? "#8b92a5" : "#4a5673",
-      borderRadius: "6px",
-      fontFamily: "'Inter', sans-serif",
+      colorBackground: "#ffffff",
+      colorText: "#141618",
+      colorTextSecondary: "#4a5568",
+      colorInputBackground: "#ffffff",
+      colorInputText: "#141618",
+      colorPrimary: "#1a56db",
+      colorNeutral: "#141618",
+      colorDanger: "#c0392b",
+      borderRadius: "4px",
+      fontFamily: "Archivo, Inter, sans-serif",
+      fontSize: "15px",
     },
     elements: {
-      card: "shadow-xl",
+      card: { background: "#ffffff", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", border: "1px solid #e2e5e9" },
+      headerTitle: { color: "#141618", fontSize: "22px", fontWeight: 700 },
+      headerSubtitle: { color: "#4a5568", fontSize: "14px" },
+      formFieldLabel: { color: "#141618", fontSize: "13px", fontWeight: 500 },
+      formFieldInput: { color: "#141618", background: "#ffffff", border: "1px solid #c8cdd4", borderRadius: "4px", fontSize: "14px" },
+      formButtonPrimary: { background: "#1a56db", color: "#ffffff", fontWeight: 600, fontSize: "14px", borderRadius: "4px" },
+      socialButtonsBlockButton: { border: "1px solid #e2e5e9", color: "#141618", background: "#ffffff", borderRadius: "4px", fontSize: "14px", fontWeight: 500 },
+      socialButtonsBlockButtonText: { color: "#141618", fontWeight: 500 },
+      footerActionLink: { color: "#1a56db", fontWeight: 500 },
+      dividerLine: { background: "#e2e5e9" },
+      dividerText: { color: "#8a9ab0", fontSize: "12px" },
+      identityPreviewText: { color: "#141618" },
+      formFieldInputShowPasswordButton: { color: "#4a5568" },
     },
   };
 }
@@ -92,53 +116,96 @@ function LoadingScreen() {
 }
 
 function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
-  const { resolvedTheme } = useTheme();
-  const clerkAppearance = getClerkAppearance(resolvedTheme !== "light");
+  const clerkAppearance = getClerkAppearance(false);
   return (
     <div
       style={{
         minHeight: "100vh",
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "var(--bg-base)",
-        gap: 24,
+        background: "#eceff4",
+        padding: 24,
+        fontFamily: "'Archivo', system-ui, sans-serif",
       }}
     >
       <HideClerkDevBadge />
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <img src={`${basePath}/logo.png`} alt="Blue Mantis" style={{ width: 32, height: 32, objectFit: "contain" }} />
-        <span style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 700, fontFamily: "var(--font-sans)" }}>
-          Blue Mantis
-        </span>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          background: "#ffffff",
+          border: "2px solid color-mix(in srgb, #161b24 38%, transparent)",
+          boxShadow: "0 1px 2px rgba(22,27,36,0.04), 0 8px 24px rgba(22,27,36,0.08)",
+        }}
+      >
+        {/* Brand bar */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "18px 28px",
+            borderBottom: "2px solid color-mix(in srgb, #161b24 38%, transparent)",
+          }}
+        >
+          <img
+            src={`${basePath}/bluemantis-mark.png`}
+            alt=""
+            style={{ height: 24, width: "auto", objectFit: "contain" }}
+          />
+          <span style={{ color: "#161b24", fontSize: 16, fontWeight: 800, letterSpacing: "-0.01em" }}>
+            Blue Mantis
+          </span>
+        </div>
+
+        <div style={{ padding: "28px 28px 32px" }}>
+          <h1 style={{ color: "#161b24", fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>
+            {mode === "sign-in" ? "Sign in" : "Create your account"}
+          </h1>
+          <p style={{ color: "#3c4553", fontSize: 14, lineHeight: 1.5, margin: "8px 0 22px" }}>
+            {mode === "sign-in"
+              ? "Access your AI delivery workspace."
+              : "Set up your Blue Mantis workspace."}
+          </p>
+
+          {mode === "sign-in" ? (
+            <SignIn
+              routing="path"
+              path={`${basePath}/sign-in`}
+              appearance={clerkAppearance}
+              signUpUrl={`${basePath}/sign-up`}
+              forceRedirectUrl={`${basePath}/dashboard`}
+            />
+          ) : (
+            <SignUp
+              routing="path"
+              path={`${basePath}/sign-up`}
+              appearance={clerkAppearance}
+              signInUrl={`${basePath}/sign-in`}
+              forceRedirectUrl={`${basePath}/dashboard`}
+            />
+          )}
+
+          {mode === "sign-in" && (
+            <p
+              style={{
+                color: "#74808f",
+                fontSize: 13,
+                marginTop: 20,
+                paddingTop: 18,
+                borderTop: "1px solid #d4dbe5",
+              }}
+            >
+              Don't have an account?{" "}
+              {/* Full-page navigation to the marketing site, which opens the Request Access modal. */}
+              <a href="/?request-access=1" style={{ color: "#1a4fd6", fontWeight: 700, textDecoration: "none" }}>
+                Request access →
+              </a>
+            </p>
+          )}
+        </div>
       </div>
-      {mode === "sign-in" ? (
-        <SignIn
-          routing="path"
-          path={`${basePath}/sign-in`}
-          appearance={clerkAppearance}
-          signUpUrl={`${basePath}/sign-up`}
-          forceRedirectUrl={`${basePath}/dashboard`}
-        />
-      ) : (
-        <SignUp
-          routing="path"
-          path={`${basePath}/sign-up`}
-          appearance={clerkAppearance}
-          signInUrl={`${basePath}/sign-in`}
-          forceRedirectUrl={`${basePath}/dashboard`}
-        />
-      )}
-      {mode === "sign-in" && (
-        <p style={{ color: "#8b92a5", fontSize: 14, fontFamily: "'Inter', sans-serif", marginTop: 4, textAlign: "center" }}>
-          Don't have account?{" "}
-          {/* Full-page navigation to the marketing site, which opens the Request Access modal. */}
-          <a href="/?request-access=1" style={{ color: "#4d9cff", fontWeight: 600, textDecoration: "none" }}>
-            Request Your Access
-          </a>
-        </p>
-      )}
     </div>
   );
 }
@@ -192,15 +259,40 @@ function useGitHubSync() {
   }, [isLoaded, isSignedIn, refreshConfig]);
 }
 
+/**
+ * After sign-in, if the user has no team yet, send them to the workspace-setup
+ * onboarding. /setup and /invite are matched as separate routes above, so this
+ * only runs on in-shell pages.
+ */
+function useEnsureTeam() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const [, navigate] = useLocation();
+  const checked = useRef(false);
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || checked.current) return;
+    checked.current = true;
+    fetchMyTeam()
+      .then((r) => {
+        if (r.team === null) navigate("/setup");
+      })
+      .catch(() => {
+        // Non-fatal — teams API not reachable; stay on the current page.
+      });
+  }, [isLoaded, isSignedIn, navigate]);
+}
+
 function ProtectedApp() {
   useGitHubSync();
+  useEnsureTeam();
   return (
     <RequireAuth>
+      <TeamProvider>
       <AppShell>
         <Switch>
           <Route path="/projects/new" component={NewProject} />
           <Route path="/p/:projectId/board" component={ProjectBoard} />
           <Route path="/p/:projectId/runs" component={RunsPage} />
+          <Route path="/runs/:runId/report" component={RunReportPage} />
           <Route path="/runs/:runId" component={RunDetailPage} />
           <Route path="/workspace/:taskId" component={WorkspacePage} />
           <Route path="/dashboard" component={Dashboard} />
@@ -210,10 +302,12 @@ function ProtectedApp() {
           <Route path="/tasks/new" component={NewTask} />
           <Route path="/tasks/:id" component={TaskDetail} />
           <Route path="/history" component={HistoryPage} />
+          <Route path="/reports" component={ReportsPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>
       </AppShell>
+      </TeamProvider>
     </RequireAuth>
   );
 }
@@ -230,6 +324,9 @@ function Router() {
         <Route path="/sign-in/:rest*" component={() => <AuthPage mode="sign-in" />} />
         <Route path="/sign-up" component={() => <AuthPage mode="sign-up" />} />
         <Route path="/sign-up/:rest*" component={() => <AuthPage mode="sign-up" />} />
+        {/* Team onboarding + invite — signed-in but rendered OUTSIDE the AppShell. */}
+        <Route path="/setup" component={() => <RequireAuth><TeamSetupPage /></RequireAuth>} />
+        <Route path="/invite" component={() => <RequireAuth><AcceptInvitePage /></RequireAuth>} />
         <Route component={ProtectedApp} />
       </Switch>
     </>

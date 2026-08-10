@@ -10,6 +10,9 @@ import {
 } from "@workspace/db";
 import { GitService } from "./gitService.js";
 import { AIOrchestrator, SynthesisEngine } from "./aiService.js";
+import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
+import { describeStack } from "./stackPromptBuilder.js";
+import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import { getConfigs } from "./configService.js";
 import { sendRunCompleted, sendRunFailed } from "./emailService.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
@@ -64,6 +67,12 @@ export async function executeRun(runId: number): Promise<void> {
     if (!repo) throw new Error("Repository not found");
 
     const stack = repo.stackProfile as StackProfile;
+    // Record the stack this run targets (surfaced in the run info strip) and log
+    // it. Persisted early so even a later failure shows which stack was used.
+    const stackDesc = describeStack(stack);
+    logger.info({ runId, workItemId: workItem.id, stackDesc }, "Running agents with stack-aware prompt");
+    await db.update(runsTable).set({ stackDesc }).where(eq(runsTable.id, runId));
+
     const creds = await getConfigs(userId, [
       "ANTHROPIC_API_KEY",
       "OPENAI_API_KEY",
@@ -77,12 +86,21 @@ export async function executeRun(runId: number): Promise<void> {
     const keywords = extractKeywords(workItem.title, effectiveDescription);
 
     let codeContext = "";
+    let usedGraphContext = false;
     try {
       const git = await GitService.forRepo(repo.id, {
         githubToken: creds.GITHUB_TOKEN,
         azureReposToken: creds.AZURE_REPOS_TOKEN,
       });
-      codeContext = await git.fetchFileContext(String(workItem.id), keywords, stack);
+      // Use the Graphify graph for precise, low-token context when one is loaded
+      // and fresh; otherwise fetchFileContextWithGraph falls back to keywords.
+      const graph =
+        repo.graphJson && isGraphUsable(repo.graphBuiltAt)
+          ? (repo.graphJson as unknown as GraphifyGraph)
+          : null;
+      const ctx = await git.fetchFileContextWithGraph(String(workItem.id), keywords, stack, graph);
+      codeContext = ctx.context;
+      usedGraphContext = ctx.usedGraph;
     } catch (e) {
       logger.warn({ runId, err: e }, "Run: git file context unavailable — proceeding without it");
     }
@@ -94,7 +112,10 @@ export async function executeRun(runId: number): Promise<void> {
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
     const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack);
-    const ranked = await synth.synthesize(raw, stack);
+    const ranked = await synth.synthesize(raw, stack, {
+      title: devTask.title,
+      acceptanceCriteria: devTask.acceptanceCriteria,
+    });
 
     // Persist suggestions and keep the inserted rows so we can record which one
     // gets committed (index-aligned with `ranked`).
@@ -112,6 +133,8 @@ export async function executeRun(runId: number): Promise<void> {
             language: s.language,
             score: s.score != null ? Math.round(s.score) : null,
             recommendation: s.recommendation ?? null,
+            scoreBreakdown: s.scoreBreakdown ?? null,
+            scoreNarrative: s.scoreNarrative ?? null,
           })),
         )
         .returning();
@@ -144,12 +167,15 @@ export async function executeRun(runId: number): Promise<void> {
         });
         committedSuggestionId = inserted[idx]?.id ?? null;
         await db.update(tasksTable).set({ status: "review", linkedCommit: commitHash }).where(eq(tasksTable.id, workItem.id));
+        // The repo changed — schedule a Graphify re-index so future runs use a
+        // fresh graph (Phase 3). Fire-and-forget; no-op if unconfigured.
+        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
       }
     }
 
     await db
       .update(runsTable)
-      .set({ status: "succeeded", finishedAt: new Date(), prUrl, commitHash, committedSuggestionId })
+      .set({ status: "succeeded", finishedAt: new Date(), prUrl, commitHash, committedSuggestionId, usedGraphContext })
       .where(eq(runsTable.id, runId));
 
     if (run.trigger === "scheduled") {
@@ -237,5 +263,7 @@ export async function commitFromSuggestion(
     .update(runsTable)
     .set({ prUrl, commitHash, committedSuggestionId: sug.id })
     .where(eq(runsTable.id, runId));
+  // The repo changed — schedule a Graphify re-index (Phase 3). Fire-and-forget.
+  triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
   return { commitHash, prUrl };
 }

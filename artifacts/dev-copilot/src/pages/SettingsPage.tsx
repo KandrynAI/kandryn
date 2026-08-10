@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import { useConfig, type ConfigMap } from "@/context/ConfigContext";
+import { useTeam } from "@/context/TeamContext";
+import TeamTab from "@/components/settings/TeamTab";
+import AuditTab from "@/components/settings/AuditTab";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
@@ -28,12 +31,12 @@ interface Integration {
 const INTEGRATIONS: Integration[] = [
   {
     id: "anthropic",
-    title: "Anthropic (Claude)",
-    subtitle: "AI code suggestions via Claude Sonnet",
+    title: "Agent A credentials",
+    subtitle: "Used by Raptia",
     icon: <AnthropicIcon />,
     testKey: "anthropic",
     fields: [
-      { key: "ANTHROPIC_API_KEY", label: "API Key", placeholder: "sk-ant-api03-…", hint: "Starts with sk-ant-" },
+      { key: "ANTHROPIC_API_KEY", label: "API key", placeholder: "sk-ant-api03-…", hint: "Starts with sk-ant-" },
     ],
     steps: [
       { label: "Go to console.anthropic.com and sign in" },
@@ -43,47 +46,17 @@ const INTEGRATIONS: Integration[] = [
   },
   {
     id: "openai",
-    title: "OpenAI (GPT-4o)",
-    subtitle: "Alternative AI suggestions via GPT-4o",
+    title: "Agent B credentials",
+    subtitle: "Used by Fovea",
     icon: <OpenAIIcon />,
     testKey: "openai",
     fields: [
-      { key: "OPENAI_API_KEY", label: "API Key", placeholder: "sk-proj-…", hint: "Starts with sk-" },
+      { key: "OPENAI_API_KEY", label: "API key", placeholder: "sk-proj-…", hint: "Starts with sk-" },
     ],
     steps: [
       { label: "Go to platform.openai.com and sign in" },
       { label: "Open API Keys page", link: { text: "Open platform", url: "https://platform.openai.com/api-keys" } },
       { label: "Click Create new secret key, copy the value, paste it below" },
-    ],
-  },
-  {
-    id: "gemini",
-    title: "Google Gemini",
-    subtitle: "AI code suggestions via Gemini 1.5 Pro / 2.0 Flash",
-    icon: <GeminiIcon />,
-    testKey: "gemini",
-    fields: [
-      { key: "GOOGLE_GEMINI_API_KEY", label: "API Key", placeholder: "AIza…", hint: "Starts with AIza — from Google AI Studio" },
-    ],
-    steps: [
-      { label: "Go to Google AI Studio and sign in", link: { text: "Open AI Studio", url: "https://aistudio.google.com/app/apikey" } },
-      { label: "Click Get API key → Create API key in new project (or an existing project)" },
-      { label: "Copy the key and paste it below — it starts with AIza" },
-    ],
-  },
-  {
-    id: "copilot",
-    title: "GitHub Copilot",
-    subtitle: "AI completions via GitHub Copilot (token stored for future use)",
-    icon: <CopilotIcon />,
-    testKey: "copilot",
-    fields: [
-      { key: "GITHUB_COPILOT_TOKEN", label: "Copilot Token", placeholder: "ghu_… or ghp_…", hint: "GitHub does not yet offer a public Copilot generation API" },
-    ],
-    steps: [
-      { label: "GitHub Copilot's code-generation API is not publicly available — only IDE plugins can use it" },
-      { label: "Save your token here now so the app is ready when GitHub opens up access", link: { text: "Check Copilot docs", url: "https://docs.github.com/en/copilot" } },
-      { label: "When a public API ships, no Settings change will be needed — just re-save the token" },
     ],
   },
   {
@@ -154,15 +127,49 @@ const INTEGRATIONS: Integration[] = [
       { label: "Fill in your organisation, project name (optional), and paste the token below" },
     ],
   },
+  {
+    id: "confluence",
+    title: "Confluence",
+    subtitle: "Publish Narratia runbooks to a Confluence space",
+    icon: <ConfluenceIcon />,
+    testKey: "confluence",
+    fields: [
+      { key: "CONFLUENCE_DOMAIN", label: "Domain", placeholder: "yoursite.atlassian.net", hint: "Just the domain, no https://" },
+      { key: "CONFLUENCE_EMAIL", label: "Account email", placeholder: "you@company.com" },
+      { key: "CONFLUENCE_API_TOKEN", label: "API Token", placeholder: "ATATT3xFfGF…" },
+      { key: "CONFLUENCE_SPACE_KEY", label: "Space key", placeholder: "ENG", hint: "The space to publish to" },
+    ],
+    steps: [
+      { label: "Create an API token at id.atlassian.com", link: { text: "Create token", url: "https://id.atlassian.com/manage-profile/security/api-tokens" } },
+      { label: "Find your space key in the space settings (e.g. ENG)" },
+      { label: "Fill in your domain, email, token, and space key below" },
+    ],
+  },
+  {
+    id: "notion",
+    title: "Notion",
+    subtitle: "Publish Narratia runbooks as Notion pages",
+    icon: <NotionIcon />,
+    testKey: "notion",
+    fields: [
+      { key: "NOTION_API_TOKEN", label: "Integration token", placeholder: "secret_…", hint: "From notion.so/my-integrations" },
+      { key: "NOTION_PARENT_PAGE", label: "Parent page ID", placeholder: "32-char page ID", hint: "From the parent page URL" },
+    ],
+    steps: [
+      { label: "Create an integration at notion.so/my-integrations", link: { text: "Open Notion", url: "https://www.notion.so/my-integrations" } },
+      { label: "Share the parent page with your integration so it can post there" },
+      { label: "Paste the integration token and the parent page ID (from the URL) below" },
+    ],
+  },
 ];
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 function AnthropicIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#D4845A" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">A</text></svg>);
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1a4fd6" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">A</text></svg>);
 }
 function OpenAIIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#10A37F" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="9" fontWeight="700">GPT</text></svg>);
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#3a6cf0" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">B</text></svg>);
 }
 function GitHubIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#24292E" /><path d="M12 3.5C7.3 3.5 3.5 7.3 3.5 12c0 3.75 2.44 6.94 5.82 8.07.43.08.59-.18.59-.41V18.3c-2.37.51-2.87-1.14-2.87-1.14-.39-1-.95-1.26-.95-1.26-.77-.53.06-.52.06-.52.85.06 1.3.88 1.3.88.76 1.3 1.99.92 2.47.7.08-.55.3-.92.54-1.13-1.89-.21-3.88-.95-3.88-4.21 0-.93.33-1.69.88-2.29-.09-.21-.38-1.08.08-2.25 0 0 .72-.23 2.35.88a8.2 8.2 0 0 1 2.15-.29c.73 0 1.46.1 2.15.29 1.63-1.11 2.35-.88 2.35-.88.46 1.17.17 2.04.08 2.25.55.6.87 1.36.87 2.29 0 3.27-1.99 3.99-3.89 4.2.31.27.58.8.58 1.61v2.38c0 .23.15.5.59.41A8.51 8.51 0 0 0 20.5 12C20.5 7.3 16.7 3.5 12 3.5Z" fill="white" /></svg>);
@@ -176,11 +183,11 @@ function AzureIcon() {
 function AzureReposIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#0078D4" /><path d="M17 7H13L7 12L13 17H17L11 12L17 7Z" fill="white" /><rect x="7" y="11" width="2" height="2" rx="1" fill="white" /></svg>);
 }
-function GeminiIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1A73E8" /><path d="M12 4L13.8 10.2H20.4L15 13.8L16.8 20L12 16.4L7.2 20L9 13.8L3.6 10.2H10.2L12 4Z" fill="white" /></svg>);
+function ConfluenceIcon() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1868DB" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="10" fontWeight="700">C</text></svg>);
 }
-function CopilotIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#6E40C9" /><circle cx="9" cy="10" r="2" fill="white" /><circle cx="15" cy="10" r="2" fill="white" /><path d="M8 15c0 0 1.5 2 4 2s4-2 4-2" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none" /></svg>);
+function NotionIcon() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#111" /><text x="12" y="16" textAnchor="middle" fill="white" fontSize="10" fontWeight="700">N</text></svg>);
 }
 
 // ─── Tone helpers (success/error using brand tokens) ────────────────────────────
@@ -432,19 +439,60 @@ function ProgressBar({ configured, total }: { configured: number; total: number 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// Trackers (Jira/ADO) and Documentation (Confluence/Notion) moved to the Team
+// tab — they're shared at the team level. Personal keeps repo + agent creds.
+const PERSONAL_GROUPS: { label: string; ids: string[] }[] = [
+  { label: "Repositories", ids: ["github", "azurerepos"] },
+  { label: "Agents", ids: ["anthropic", "openai"] },
+];
+
 export default function SettingsPage() {
   const { configMap, loading, error, refreshConfig } = useConfig();
+  const { team, isAdmin } = useTeam();
+  const tabParam = new URLSearchParams(window.location.search).get("tab");
+  const initialTab: "personal" | "team" | "audit" =
+    tabParam === "team" ? "team" : tabParam === "audit" ? "audit" : "personal";
+  const [tab, setTab] = useState<"personal" | "team" | "audit">(initialTab);
 
-  const configuredCount = INTEGRATIONS.filter((integ) => integ.fields.every((f) => configMap[f.key]?.set)).length;
+  const personalIntegrations = INTEGRATIONS.filter((i) =>
+    PERSONAL_GROUPS.some((g) => g.ids.includes(i.id)),
+  );
+  const configuredCount = personalIntegrations.filter((integ) => integ.fields.every((f) => configMap[f.key]?.set)).length;
+  const byId = new Map(INTEGRATIONS.map((i) => [i.id, i]));
+
+  const tabBtn = (key: "personal" | "team" | "audit", label: string): React.CSSProperties => ({
+    fontSize: 13,
+    fontWeight: tab === key ? 600 : 500,
+    padding: "8px 2px",
+    background: "none",
+    border: "none",
+    borderBottom: tab === key ? "2px solid var(--c-blue)" : "2px solid transparent",
+    color: tab === key ? "var(--c-blue)" : "var(--c-ink-3)",
+    cursor: "pointer",
+  });
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-6">
-      <h1 className="text-lg font-semibold tracking-tight text-foreground">Settings</h1>
-      <p className="mb-6 mt-0.5 text-xs text-muted-foreground">
+      <p className="mb-4 text-xs text-muted-foreground">
         Connect your tools. Credentials are stored securely in the database and loaded automatically on startup.
       </p>
 
-      {loading ? (
+      {/* Tab switcher */}
+      <div style={{ display: "flex", gap: 16, borderBottom: "1px solid var(--c-border)", marginBottom: 20 }}>
+        <button style={tabBtn("personal", "Personal")} onClick={() => setTab("personal")}>Personal</button>
+        {team && (
+          <button style={tabBtn("team", "Team")} onClick={() => setTab("team")}>Team</button>
+        )}
+        {team && isAdmin && (
+          <button style={tabBtn("audit", "Audit log")} onClick={() => setTab("audit")}>Audit log</button>
+        )}
+      </div>
+
+      {tab === "audit" && team && isAdmin ? (
+        <AuditTab />
+      ) : tab === "team" && team ? (
+        <TeamTab />
+      ) : loading ? (
         <div className="flex flex-col gap-2.5">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-14 rounded-md border bg-card" style={{ animation: "dc-pulse 1.5s ease-in-out infinite" }} />
@@ -454,12 +502,37 @@ export default function SettingsPage() {
         <div className="rounded-md border px-4 py-3 text-[13px]" style={tone(RED)}>{error}</div>
       ) : (
         <>
-          <ProgressBar configured={configuredCount} total={INTEGRATIONS.length} />
-          <div className="flex flex-col gap-2.5">
-            {INTEGRATIONS.map((integ) => (
-              <IntegrationCard key={integ.id} integration={integ} configMap={configMap} onSaved={refreshConfig} />
-            ))}
-          </div>
+          <ProgressBar configured={configuredCount} total={personalIntegrations.length} />
+          {team && (
+            <div className="mb-5 rounded-md border px-3.5 py-2.5 text-[13px] text-muted-foreground">
+              Tracker credentials (Jira, Azure DevOps) and documentation targets (Confluence, Notion) are managed at the
+              team level. Open the <button onClick={() => setTab("team")} className="font-medium text-[var(--c-blue)]">Team</button> tab to configure them.
+            </div>
+          )}
+          {PERSONAL_GROUPS.map((group) => (
+            <div key={group.label} style={{ marginBottom: 24 }}>
+              <div
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--c-ink-4)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  fontWeight: 600,
+                  marginBottom: 10,
+                }}
+              >
+                {group.label}
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {group.ids
+                  .map((id) => byId.get(id))
+                  .filter((i): i is Integration => Boolean(i))
+                  .map((integ) => (
+                    <IntegrationCard key={integ.id} integration={integ} configMap={configMap} onSaved={refreshConfig} />
+                  ))}
+              </div>
+            </div>
+          ))}
         </>
       )}
     </div>

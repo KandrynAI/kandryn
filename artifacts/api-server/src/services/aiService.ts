@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { z } from "zod/v4";
 import { buildPrompt } from "../stack/prompts.js";
+import { describeStack } from "./stackPromptBuilder.js";
 import { logger } from "../lib/logger.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js";
@@ -205,6 +206,49 @@ interface ScoredEntry {
   recommendation: string;
 }
 
+export interface SynthesisContext {
+  title: string;
+  acceptanceCriteria: string[];
+}
+
+const ScoreDimensionSchema = z.object({
+  score: z.number(),
+  weight: z.number(),
+  verdict: z.enum(["strong", "adequate", "weak"]),
+  reason: z.string().default(""),
+});
+const ScoreBreakdownSchema = z.object({
+  correctness: ScoreDimensionSchema,
+  readability: ScoreDimensionSchema,
+  minimalDiff: ScoreDimensionSchema,
+  conventions: ScoreDimensionSchema,
+  acCoverage: ScoreDimensionSchema,
+  // Behaviour signals (weight 0 — informational, do not affect the overall
+  // score). Optional so a model omission or an older run still parses.
+  ambiguityHandling: ScoreDimensionSchema.optional(),
+  surgicalPrecision: ScoreDimensionSchema.optional(),
+  overallNarrative: z.string().default(""),
+  recommendation: z.enum(["Recommended", "Alternative"]).default("Alternative"),
+  confidence: z.number().default(50),
+  confidenceReason: z.string().default(""),
+});
+const ScorePairSchema = z.object({
+  suggestionA: ScoreBreakdownSchema,
+  suggestionB: ScoreBreakdownSchema,
+});
+type ScoreBreakdownOut = z.infer<typeof ScoreBreakdownSchema>;
+
+/** Weighted average of the five 0–100 dimensions → an integer 0–10 overall. */
+function weightedScore10(b: ScoreBreakdownOut): number {
+  const raw =
+    b.correctness.score * 0.35 +
+    b.readability.score * 0.2 +
+    b.minimalDiff.score * 0.15 +
+    b.conventions.score * 0.15 +
+    b.acCoverage.score * 0.15;
+  return Math.round(Math.max(0, Math.min(100, raw)) / 10);
+}
+
 export class SynthesisEngine {
   private readonly anthropicApiKey: string | undefined;
 
@@ -215,13 +259,51 @@ export class SynthesisEngine {
   async synthesize(
     suggestions: CodeSuggestion[],
     stack: StackProfile,
+    context?: SynthesisContext,
   ): Promise<CodeSuggestion[]> {
     if (suggestions.length === 0) return [];
 
     const client = new Anthropic({ apiKey: this.anthropicApiKey });
 
-    const synthesisPrompt = buildSynthesisPrompt(suggestions, stack);
+    // Rich per-dimension breakdown for the two-agent pair (A = first, B = second).
+    if (suggestions.length >= 2) {
+      try {
+        const message = await client.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: 8192,
+          messages: [{ role: "user", content: buildScoreAnalysisPrompt(suggestions[0], suggestions[1], stack, context) }],
+        });
+        const block = message.content[0];
+        if (block.type !== "text") throw new Error("Claude returned non-text block");
+        const pair = ScorePairSchema.parse(extractJson(block.text));
 
+        const breakdowns = [pair.suggestionA, pair.suggestionB];
+        const result: CodeSuggestion[] = suggestions.map((s, i) => {
+          const b = breakdowns[i];
+          if (!b) return { ...s, score: 0, recommendation: "Alternative", scoreBreakdown: null, scoreNarrative: null };
+          return {
+            ...s,
+            score: weightedScore10(b),
+            recommendation: b.recommendation,
+            scoreBreakdown: b,
+            scoreNarrative: b.overallNarrative,
+          };
+        });
+
+        result.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        result.forEach((s, i) => {
+          const rec = i === 0 ? "Recommended" : "Alternative";
+          s.recommendation = rec;
+          if (s.scoreBreakdown) s.scoreBreakdown.recommendation = rec;
+        });
+        return result;
+      } catch (err) {
+        logger.warn({ err }, "SynthesisEngine: breakdown scoring failed — falling back to simple scoring");
+      }
+    }
+
+    // Fallback: simple 0–10 scoring (also used when there is a single suggestion).
+    const synthesisPrompt = buildSynthesisPrompt(suggestions, stack);
     let scored: ScoredEntry[];
     try {
       const message = await client.messages.create({
@@ -229,16 +311,12 @@ export class SynthesisEngine {
         max_tokens: 8192,
         messages: [{ role: "user", content: synthesisPrompt }],
       });
-
       const block = message.content[0];
       if (block.type !== "text") throw new Error("Claude returned non-text block");
       scored = extractJson<ScoredEntry[]>(block.text);
     } catch (err) {
       logger.warn({ err }, "SynthesisEngine: Claude scoring failed — using default scores");
-      scored = suggestions.map((_, i) => ({
-        score: suggestions.length - i,
-        recommendation: "",
-      }));
+      scored = suggestions.map((_, i) => ({ score: suggestions.length - i, recommendation: "" }));
     }
 
     const result: CodeSuggestion[] = suggestions.map((s, i) => ({
@@ -246,15 +324,84 @@ export class SynthesisEngine {
       score: scored[i]?.score ?? 0,
       recommendation: scored[i]?.recommendation ?? "",
     }));
-
     result.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-
-    if (result.length > 0) {
-      result[0].recommendation = "Recommended";
-    }
-
+    if (result.length > 0) result[0].recommendation = "Recommended";
     return result;
   }
+}
+
+function buildScoreAnalysisPrompt(
+  a: CodeSuggestion,
+  b: CodeSuggestion,
+  stack: StackProfile,
+  context?: SynthesisContext,
+): string {
+  const ac = context?.acceptanceCriteria?.length
+    ? context.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")
+    : "(none provided)";
+  return `You are the Synthesis engine for Blue Mantis. You evaluate two code
+suggestions for the same work item and explain your reasoning clearly.
+
+Work item: ${context?.title ?? "(untitled)"}
+Acceptance criteria:
+${ac}
+
+Repository stack: ${describeStack(stack) || "not detected"}
+
+Suggestion A (Raptia):
+File: ${a.filePath}
+
+\`\`\`${a.language}
+${a.code.slice(0, 6000)}
+\`\`\`
+
+Suggestion B (Fovea):
+File: ${b.filePath}
+
+\`\`\`${b.language}
+${b.code.slice(0, 6000)}
+\`\`\`
+
+Score each suggestion on five dimensions. For each dimension give:
+- score: 0–100
+- weight: the percentage weight this dimension carries (weights must sum to 100)
+- verdict: "strong" (>=80), "adequate" (50–79), or "weak" (<50)
+- reason: one specific sentence referencing actual code details
+
+Dimensions and weights:
+- correctness (35%): Does the code correctly solve the stated problem? Reference specific logic, conditions, or return values.
+- readability (20%): Is the code clear and maintainable? Reference naming, structure, or complexity.
+- minimalDiff (15%): Does it change only what is necessary? Reference scope of change.
+- conventions (15%): Does it follow the conventions of a ${describeStack(stack) || "generic"} codebase? Check framework-specific patterns (${stack.backend || "general"} conventions, naming, structure) for the detected stack.
+- acCoverage (15%): How completely does it address the acceptance criteria? Reference which criteria are and are not covered.
+
+Also score two behaviour signals (weight 0 — informational only, they do NOT affect the overall ranking):
+- ambiguityHandling (0%): Did the suggestion acknowledge any ambiguity in the acceptance criteria, or did it silently assume? Score 0-100: 100 = explicitly flagged ambiguity with reasoning; 70 = addressed all criteria without obvious ambiguity; 40 = silently picked one interpretation of an unclear criterion; 10 = ignored criteria that could not be addressed by this change. In the reason, name the ambiguity (or state there was none).
+- surgicalPrecision (0%): Does the suggestion change only what the work item requires, or does it include unrequested additions? Score 0-100: 100 = every changed line maps to a criterion; 70 = minor unrequested additions (a comment, a type tightening); 40 = moderate scope creep (unrequested refactor or abstraction); 10 = significant unrequested changes unrelated to the work item. In the reason, name any unrequested change (or state there was none).
+
+Then write:
+- overallNarrative: 2-3 sentences explaining the ranking decision in plain English, referencing actual code details.
+- recommendation: "Recommended" for the higher-scoring suggestion, "Alternative" for the other.
+- confidence: 0–100. 90+ = clearly better, 70-89 = probably better, 50-69 = marginal, <50 = too close to call.
+- confidenceReason: one sentence explaining the confidence level.
+
+Return ONLY a JSON object, no markdown fences, with this exact structure:
+{
+  "suggestionA": {
+    "correctness": { "score": N, "weight": 35, "verdict": "...", "reason": "..." },
+    "readability": { "score": N, "weight": 20, "verdict": "...", "reason": "..." },
+    "minimalDiff": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "conventions": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "acCoverage":  { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "ambiguityHandling": { "score": N, "weight": 0, "verdict": "...", "reason": "..." },
+    "surgicalPrecision": { "score": N, "weight": 0, "verdict": "...", "reason": "..." },
+    "overallNarrative": "...",
+    "recommendation": "Recommended" | "Alternative",
+    "confidence": N,
+    "confidenceReason": "..."
+  },
+  "suggestionB": { ...same shape... }
+}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,10 +503,15 @@ export async function generateBreakdown(
 // ---------------------------------------------------------------------------
 
 const TestCaseSchema = z.object({
+  id: z.string().default(""),
   title: z.string().min(1).max(200),
+  priority: z.enum(["high", "medium", "low"]).default("medium"),
+  type: z.enum(["happy-path", "edge-case", "failure"]).default("happy-path"),
   given: z.string().default(""),
   when: z.string().default(""),
   then: z.string().default(""),
+  assertion: z.string().default(""),
+  tags: z.array(z.string()).default([]),
 });
 const TestScriptSchema = z.object({
   filePath: z.string().min(1).max(300),
@@ -367,7 +519,7 @@ const TestScriptSchema = z.object({
   framework: z.string().default(""),
 });
 const TestGenSchema = z.object({
-  testCases: z.array(TestCaseSchema).min(1).max(20),
+  testCases: z.array(TestCaseSchema).min(1).max(30),
   testScript: TestScriptSchema,
 });
 export type GeneratedTestCase = z.infer<typeof TestCaseSchema>;
@@ -385,10 +537,11 @@ export interface TestGenInput {
 function buildTestPrompt(input: TestGenInput, stack: StackProfile | null, strict: boolean): string {
   const fw = input.framework || stack?.testFramework || "the project's test framework";
   const lang = stack?.language ?? "the implementation language";
-  return `You are a senior engineer writing tests for a change that has just been implemented.
+  return `You are a senior QA engineer writing test cases for a code change.
 
-## Acceptance criteria
-${input.acceptanceCriteria.length ? input.acceptanceCriteria.map((c) => `- ${c}`).join("\n") : "(none provided)"}
+Work item: ${input.title}
+Acceptance criteria:
+${input.acceptanceCriteria.length ? input.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n") : "(none provided)"}
 
 ## Implemented change
 ${input.suggestionExplanation}
@@ -398,13 +551,40 @@ ${input.suggestionCode.slice(0, 6000)}
 \`\`\`
 
 ## Task
-1. Write Given/When/Then test cases covering the acceptance criteria and the implemented change.
-2. Write one runnable automated test file using ${fw} in ${lang}, matching the project's conventions. Choose a sensible filePath next to the code under test.
+Generate DETAILED test cases. For each acceptance criterion, write at minimum one
+happy-path case and one edge/failure case. Then write one runnable automated test
+file using ${fw} in ${lang}, matching the project's conventions, at a sensible
+filePath next to the code under test.
+
+Rules:
+- Each test case must be specific and executable — not generic.
+- Reference actual values from the code (function names, error types, status codes,
+  field names) — not abstract descriptions.
+- Happy path: normal successful execution.
+- Edge cases: boundary values, empty inputs, concurrent calls.
+- Failure cases: invalid input, missing data, downstream errors.
+- For each case, identify the exact assertion (what to assert and why).
+- id runs "tc-001", "tc-002", … in order.
+- priority is "high" | "medium" | "low"; type is "happy-path" | "edge-case" | "failure".
+- tags reference which acceptance criterion a case covers, e.g. "acceptance-criteria-2",
+  plus "regression" where relevant.
 
 ## Output format
 Respond with ONLY a JSON object, no prose, no markdown fences:
 {
-  "testCases": [ { "title": "...", "given": "...", "when": "...", "then": "..." } ],
+  "testCases": [
+    {
+      "id": "tc-001",
+      "title": "Short descriptive title (max 8 words)",
+      "priority": "high",
+      "type": "happy-path",
+      "given": "The specific precondition — name real setup steps",
+      "when": "The exact action — name the function, endpoint, or event",
+      "then": "The precise assertion — what value, status, or state to check",
+      "assertion": "The exact code assertion, e.g. expect(result.status).toBe(201)",
+      "tags": ["acceptance-criteria-1", "regression"]
+    }
+  ],
   "testScript": { "filePath": "...", "code": "...", "framework": "${fw}" }
 }
 ${strict ? "\nIMPORTANT: Your previous response was not valid JSON matching this schema. Return ONLY the raw JSON object with the exact keys shown." : ""}`;
@@ -431,7 +611,14 @@ export async function generateTests(
     const block = message.content[0];
     if (block.type !== "text") throw new AIFormatError("Model returned a non-text block.");
     try {
-      return TestGenSchema.parse(extractJson(block.text));
+      const parsed = TestGenSchema.parse(extractJson(block.text));
+      // Guarantee stable ids even if the model omitted or duplicated them.
+      const seen = new Set<string>();
+      parsed.testCases.forEach((tc, i) => {
+        if (!tc.id || seen.has(tc.id)) tc.id = `tc-${String(i + 1).padStart(3, "0")}`;
+        seen.add(tc.id);
+      });
+      return parsed;
     } catch (err) {
       logger.warn({ attempt, err }, "Test generation parse failed");
       if (attempt === 1) throw new AIFormatError("The generated tests could not be parsed. Please try again.");
@@ -455,6 +642,9 @@ ${s.code}
     .join("\n");
 
   return `You are a senior code reviewer evaluating AI-generated code suggestions.
+
+## Repository stack
+${describeStack(stack) || "not detected"}
 
 ## Stack Profile
 \`\`\`json

@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { and, eq, isNull, inArray, sql } from "drizzle-orm";
+import { and, eq, isNull, inArray, or, sql } from "drizzle-orm";
 import { db, projectsTable, repositoriesTable, tasksTable, runsTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { listPlmProjects, validatePlmProject, PlmError } from "../services/plmProjects.js";
 import { syncProject } from "../services/syncService.js";
 import { createPlmWorkItem } from "../services/plmWrite.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -102,10 +103,16 @@ async function backfillUserProjects(userId: string) {
 
 // --- List with counts -------------------------------------------------------
 router.get("/projects", async (req, res): Promise<void> => {
+  // Own projects plus any team-visible project of the caller's team (0017).
   const projects = await db
     .select()
     .from(projectsTable)
-    .where(eq(projectsTable.userId, req.userId))
+    .where(
+      or(
+        eq(projectsTable.userId, req.userId),
+        and(eq(projectsTable.teamId, req.teamId ?? -1), eq(projectsTable.visibility, "team")),
+      ),
+    )
     .orderBy(projectsTable.createdAt);
 
   const itemCounts = await db
@@ -215,9 +222,30 @@ router.post("/projects", async (req, res): Promise<void> => {
   try {
     const [proj] = await db
       .insert(projectsTable)
-      .values({ userId: req.userId, name, plmProvider, plmProjectKey, plmProjectName: plmName ?? null, repositoryId })
+      .values({
+        userId: req.userId,
+        name,
+        plmProvider,
+        plmProjectKey,
+        plmProjectName: plmName ?? null,
+        repositoryId,
+        // Team context (0017): a new project created by a team member is
+        // team-visible; a user with no team keeps it personal.
+        teamId: req.teamId ?? null,
+        visibility: req.teamId ? "team" : "personal",
+      })
       .returning();
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "project.created",
+      entityType: "project",
+      entityId: proj.id,
+      metadata: { name: proj.name, plmProvider: proj.plmProvider },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.status(201).json(proj);
   } catch (err) {
     // Lost a race with a concurrent create. Drizzle wraps the pg error, so the
@@ -305,15 +333,30 @@ router.delete("/projects/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid project id" });
     return;
   }
-  // FK cascades delete the project's work items and runs; never touches the PLM.
-  const [proj] = await db
-    .delete(projectsTable)
-    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.userId)))
-    .returning();
-  if (!proj) {
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, params.data.id));
+  if (!project) {
     res.status(404).json({ error: "Project not found" });
     return;
   }
+  // The creator, or a team admin of the project's team, may delete it (0017).
+  const isOwner = project.userId === req.userId;
+  const isTeamAdmin = req.teamRole === "admin" && project.teamId != null && project.teamId === req.teamId;
+  if (!isOwner && !isTeamAdmin) {
+    res.status(403).json({ error: "Only the project owner or a team admin can delete this project." });
+    return;
+  }
+  // FK cascades delete the project's work items and runs; never touches the PLM.
+  await db.delete(projectsTable).where(eq(projectsTable.id, project.id));
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "project.deleted",
+    entityType: "project",
+    entityId: project.id,
+    metadata: { name: project.name },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.sendStatus(204);
 });
 
@@ -334,6 +377,16 @@ router.post("/projects/:id/sync", async (req, res): Promise<void> => {
   }
   try {
     const summary = await syncProject(req.userId, params.data.id);
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "project.synced",
+      entityType: "project",
+      entityId: params.data.id,
+      metadata: { itemsSynced: summary.created + summary.updated, ...summary },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.json(summary);
   } catch (err) {
     if (err instanceof PlmError) {

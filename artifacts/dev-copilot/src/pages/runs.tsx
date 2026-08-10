@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, Link, useLocation } from "wouter";
+import { useParams, Link, useLocation, useSearch } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, X, Loader2, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, X, Loader2, Clock, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 import {
   fetchRuns,
   fetchProject,
   fetchProjectWorkItems,
   cancelRun,
+  reRunItem,
   ApiError,
   type Run,
   type RunStatus,
@@ -18,21 +19,25 @@ import {
 } from "@/services/api";
 
 const STATUS_META: Record<RunStatus, { label: string; className: string; icon: typeof Clock }> = {
-  scheduled: { label: "Scheduled", className: "text-amber-400 border-amber-400/40", icon: Clock },
-  queued: { label: "Queued", className: "text-blue-400 border-blue-400/40", icon: Loader2 },
-  running: { label: "Running", className: "text-blue-400 border-blue-400/40", icon: Loader2 },
-  succeeded: { label: "Succeeded", className: "text-emerald-400 border-emerald-400/40", icon: CheckCircle2 },
-  failed: { label: "Failed", className: "text-red-400 border-red-400/40", icon: XCircle },
+  scheduled: { label: "Scheduled", className: "text-amber-700 border-amber-600/40", icon: Clock },
+  queued: { label: "Queued", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
+  running: { label: "Running", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
+  succeeded: { label: "Succeeded", className: "text-emerald-700 border-emerald-600/40", icon: CheckCircle2 },
+  failed: { label: "Failed", className: "text-red-700 border-red-600/40", icon: XCircle },
   canceled: { label: "Canceled", className: "text-muted-foreground border-border", icon: XCircle },
 };
 
 const CANCELABLE: RunStatus[] = ["scheduled", "queued"];
+const RERUNNABLE = new Set<RunStatus>(["failed", "canceled"]);
 
 export default function RunsPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = Number(params.projectId);
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const search = useSearch();
+  // ContextPanel deep-links here with ?status=scheduled|running.
+  const statusFilter = new URLSearchParams(search).get("status");
 
   const [project, setProject] = useState<Project | null>(null);
   const [runs, setRuns] = useState<Run[] | null>(null);
@@ -40,6 +45,27 @@ export default function RunsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
+  const [rerunning, setRerunning] = useState<Set<number>>(new Set());
+
+  const onReRun = async (run: Run) => {
+    setRerunning((s) => new Set(s).add(run.id));
+    try {
+      const nr = await reRunItem(run.workItemId);
+      toast({ title: "Run started" });
+      navigate(`/runs/${nr.id}`);
+    } catch (err) {
+      setRerunning((s) => {
+        const n = new Set(s);
+        n.delete(run.id);
+        return n;
+      });
+      toast({
+        title: "Could not start run",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const load = useCallback(
     async (silent = false) => {
@@ -116,21 +142,55 @@ export default function RunsPage() {
     );
   }
 
-  const list = runs ?? [];
+  const allRuns = runs ?? [];
+  const list = statusFilter
+    ? allRuns.filter((r) => {
+        if (statusFilter === "running") return r.status === "running" || r.status === "queued";
+        if (statusFilter === "scheduled") return r.status === "scheduled";
+        // A committed run has no dedicated status — it's a succeeded run that
+        // produced a commit (dashboard "Linked commits" deep-links here).
+        if (statusFilter === "committed") return r.commitHash != null || r.committedSuggestionId != null;
+        return r.status === statusFilter;
+      })
+    : allRuns;
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-5 px-5 py-6">
       <div className="flex items-center justify-between">
-        <div>
-          <Link href={`/p/${projectId}/board`}>
-            <Button variant="ghost" size="sm" className="-ml-2">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              {project.name}
-            </Button>
-          </Link>
-          <h1 className="mt-1 text-lg font-semibold tracking-tight">Runs</h1>
-        </div>
+        <Link href={`/p/${projectId}/board`}>
+          <Button variant="ghost" size="sm" className="-ml-2">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {project.name}
+          </Button>
+        </Link>
       </div>
+
+      {statusFilter && (
+        <div>
+          <span
+            style={{
+              fontSize: "var(--fs-xs)",
+              padding: "2px 8px",
+              borderRadius: 3,
+              background: "var(--c-blue-bg)",
+              color: "var(--c-blue)",
+              border: "1px solid var(--c-blue)",
+              display: "inline-flex",
+              gap: 5,
+              alignItems: "center",
+            }}
+          >
+            Showing: {statusFilter}
+            <button
+              onClick={() => navigate(`/p/${projectId}/runs`)}
+              title="Clear filter"
+              style={{ background: "none", border: "none", color: "var(--c-blue)", cursor: "pointer", display: "inline-flex", padding: 0 }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        </div>
+      )}
 
       {list.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-16 text-center">
@@ -180,6 +240,33 @@ export default function RunsPage() {
                     <StatusIcon className={`mr-1.5 h-3.5 w-3.5 ${spinning ? "animate-spin" : ""}`} />
                     {meta.label}
                   </Badge>
+                  {RERUNNABLE.has(run.status) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onReRun(run);
+                      }}
+                      disabled={rerunning.has(run.id)}
+                      title="Re-run this item"
+                      style={{
+                        fontSize: "var(--fs-xs)",
+                        fontWeight: 600,
+                        padding: "2px 8px",
+                        borderRadius: 3,
+                        background: "transparent",
+                        color: "var(--c-blue)",
+                        border: "1px solid var(--c-blue)",
+                        cursor: rerunning.has(run.id) ? "default" : "pointer",
+                        opacity: rerunning.has(run.id) ? 0.6 : 1,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      {rerunning.has(run.id) ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                      Re-run
+                    </button>
+                  )}
                   {CANCELABLE.includes(run.status) && (
                     <Button
                       variant="ghost"

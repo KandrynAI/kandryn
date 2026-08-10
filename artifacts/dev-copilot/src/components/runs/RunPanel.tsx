@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import {
   Sheet,
@@ -41,11 +41,14 @@ export function RunPanel({
   open,
   onOpenChange,
   onScheduled,
+  scheduleDefault = false,
 }: {
   item: WorkItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onScheduled?: () => void;
+  /** Presentational: pre-check "Schedule for later" when the panel opens. */
+  scheduleDefault?: boolean;
 }) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -54,6 +57,11 @@ export function RunPanel({
   const [scheduleOn, setScheduleOn] = useState(false);
   const [scheduleAt, setScheduleAt] = useState(defaultScheduleValue);
   const [busy, setBusy] = useState<"run" | "schedule" | null>(null);
+
+  // Reflect the requested default whenever the panel is opened.
+  useEffect(() => {
+    if (open) setScheduleOn(scheduleDefault);
+  }, [open, scheduleDefault]);
 
   const reset = () => {
     setRefinePrompt("");
@@ -140,7 +148,7 @@ export function RunPanel({
             <Label htmlFor="refine">Refinement (optional)</Label>
             <Textarea
               id="refine"
-              placeholder="Add extra guidance for the agents — e.g. 'use the existing pagination helper', 'target the v2 endpoint'…"
+              placeholder="Ask Raptia and Fovea to adjust the approach…"
               value={refinePrompt}
               onChange={(e) => setRefinePrompt(e.target.value)}
               rows={4}

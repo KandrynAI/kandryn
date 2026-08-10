@@ -69,6 +69,39 @@ export function fetchTasks(): Promise<DevCopilotTask[]> {
   return request<DevCopilotTask[]>('/api/tasks');
 }
 
+export interface RepositoryGraphStatus {
+  built: boolean;
+  builtAt: string | null;
+  nodeCount: number | null;
+  stale: boolean;
+}
+
+export function fetchRepositoryGraphStatus(repoId: number): Promise<RepositoryGraphStatus> {
+  return request<RepositoryGraphStatus>(`/api/repositories/${repoId}/graph`);
+}
+
+export function uploadRepositoryGraph(
+  repoId: number,
+  graph: unknown,
+): Promise<{ nodeCount: number; edgeCount: number; message: string }> {
+  return request(`/api/repositories/${repoId}/graph`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ graph }),
+  });
+}
+
+/**
+ * Ask the Graphify microservice to re-index this repo (Phase 3). Resolves 202
+ * (indexing started); throws ApiError 503 when no microservice is configured —
+ * callers should fall back to prompting a manual graph.json upload.
+ */
+export function rebuildRepositoryGraph(
+  repoId: number,
+): Promise<{ status: string; message: string }> {
+  return request(`/api/repositories/${repoId}/graph/rebuild`, { method: 'POST' });
+}
+
 export function fetchRepositories(): Promise<Repository[]> {
   return request<Repository[]>('/api/repositories');
 }
@@ -228,7 +261,128 @@ export interface Run {
   error: string | null;
   prUrl: string | null;
   commitHash: string | null;
+  committedSuggestionId: number | null;
+  usedGraphContext?: boolean;
+  stackDesc?: string | null;
+  review?: ReviewResult | null;
+  reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
+  securityScan?: AegisScanResult | null;
+  securityScanStatus?: 'pending' | 'running' | 'done' | 'failed' | 'skipped' | null;
+  securityGate?: 'approved' | 'blocked' | 'pending' | null;
+  runbook?: string | null;
+  runbookStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
+  runbookTarget?: string | null;
+  runbookUrl?: string | null;
+  parentRunId?: number | null;
+  triggerContext?: string | null;
   createdAt: string;
+}
+
+export interface RemediateResponse {
+  ticketKey: string;
+  ticketUrl: string;
+  newRunId: number | null;
+  action: 'push' | 'remediate-now';
+  message: string;
+  alreadyPushed?: boolean;
+}
+
+export function remediateAegisFinding(
+  runId: number,
+  findingId: string,
+  action: 'push' | 'remediate-now',
+): Promise<RemediateResponse> {
+  return request<RemediateResponse>(`/api/runs/${runId}/security/remediate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ findingId, action }),
+  });
+}
+
+export type RunbookTarget = 'markdown' | 'confluence' | 'notion';
+
+export function runNarratia(
+  runId: number,
+  target: RunbookTarget,
+): Promise<{ runbook: string; url: string | null; target: string; sections?: string[] }> {
+  return request(`/api/runs/${runId}/runbook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target }),
+  });
+}
+
+export type SecuritySeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export interface AegisFinding {
+  id: string;
+  severity: SecuritySeverity;
+  owasp: string;
+  title: string;
+  detail: string;
+  lineRef?: string;
+  remediation: string;
+  cveRef?: string;
+  plmTicketUrl?: string;
+  plmTicketKey?: string;
+  pushedToBoard?: boolean;
+  remediationRunId?: number;
+  remediationStatus?: 'pending' | 'running' | 'committed' | 'failed';
+}
+
+export interface AegisScanResult {
+  summary: string;
+  findings: AegisFinding[];
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  gateDecision: 'approved' | 'blocked';
+  gateReason: string;
+  scannedFile: string;
+  generatedAt: string;
+}
+
+export function runAegisScan(runId: number): Promise<{ scan: AegisScanResult }> {
+  return request<{ scan: AegisScanResult }>(`/api/runs/${runId}/security`, { method: 'POST' });
+}
+
+export interface ReviewFinding {
+  type: 'strength' | 'gap' | 'risk';
+  title: string;
+  detail: string;
+  acRef?: string;
+  severity?: 'low' | 'medium' | 'high';
+}
+
+export interface ReviewResult {
+  summary: string;
+  acCoverage: { covered: string[]; missed: string[]; partial: string[] };
+  findings: ReviewFinding[];
+  reviewerNote: string;
+  generatedAt: string;
+}
+
+export interface ScoreDimension {
+  score: number;
+  weight: number;
+  verdict: 'strong' | 'adequate' | 'weak';
+  reason: string;
+}
+
+export interface ScoreBreakdown {
+  correctness: ScoreDimension;
+  readability: ScoreDimension;
+  minimalDiff: ScoreDimension;
+  conventions: ScoreDimension;
+  acCoverage: ScoreDimension;
+  // Behaviour signals (weight 0 — informational). Optional for older runs.
+  ambiguityHandling?: ScoreDimension;
+  surgicalPrecision?: ScoreDimension;
+  overallNarrative: string;
+  recommendation: 'Recommended' | 'Alternative';
+  confidence: number;
+  confidenceReason: string;
 }
 
 export interface RunSuggestion {
@@ -241,12 +395,23 @@ export interface RunSuggestion {
   language: string;
   score: number | null;
   recommendation: string | null;
+  scoreBreakdown?: ScoreBreakdown | null;
+  scoreNarrative?: string | null;
+  testCases?: TestCase[];
+  testScript?: TestScript | null;
   createdAt: string;
+}
+
+export interface RunWorkItemSummary {
+  externalId: string | null;
+  source: string | null;
 }
 
 export interface RunDetail {
   run: Run;
   suggestions: RunSuggestion[];
+  /** Present on GET /runs/:id; used to gate PLM actions (e.g. test-case push). */
+  workItem?: RunWorkItemSummary | null;
 }
 
 /**
@@ -266,10 +431,27 @@ export function createRun(
   });
 }
 
-export function fetchRuns(params: { projectId?: number; status?: RunStatus } = {}): Promise<Run[]> {
+/**
+ * Re-run a work item inline. Thin wrapper over `createRun` (which posts to
+ * `/api/work-items/:id/runs`) that normalises the `RunDetail | Run` response
+ * down to the new run's id.
+ */
+export async function reRunItem(workItemId: number): Promise<{ id: number }> {
+  const res = await createRun(workItemId);
+  const id = "run" in res ? res.run.id : res.id;
+  return { id };
+}
+
+/** Recent runs for a single work item (server caps this at 10). */
+export function fetchRunsForItem(workItemId: number): Promise<Run[]> {
+  return request<Run[]>(`/api/runs?workItemId=${workItemId}`);
+}
+
+export function fetchRuns(params: { projectId?: number; status?: RunStatus; limit?: number } = {}): Promise<Run[]> {
   const q = new URLSearchParams();
   if (params.projectId != null) q.set('projectId', String(params.projectId));
   if (params.status) q.set('status', params.status);
+  if (params.limit != null) q.set('limit', String(params.limit));
   const qs = q.toString();
   return request<Run[]>(`/api/runs${qs ? `?${qs}` : ''}`);
 }
@@ -280,6 +462,11 @@ export function fetchRun(runId: number): Promise<RunDetail> {
 
 export function cancelRun(runId: number): Promise<Run> {
   return request<Run>(`/api/runs/${runId}/cancel`, { method: 'POST' });
+}
+
+/** Trigger the Veria review agent for a committed run. */
+export function runReview(runId: number): Promise<{ review: ReviewResult }> {
+  return request<{ review: ReviewResult }>(`/api/runs/${runId}/review`, { method: 'POST' });
 }
 
 export function commitRunSuggestion(
@@ -334,6 +521,15 @@ export function updateWorkItem(
   });
 }
 
+/**
+ * Promote a local-only work item into the project's PLM (Jira/ADO). Returns the
+ * now-linked work item (externalId/source/plmUrl populated). Throws ApiError:
+ * 409 if already linked, 424 when the PLM isn't connected, 502 on a PLM API error.
+ */
+export function pushWorkItemToPlm(workItemId: number): Promise<WorkItem> {
+  return request<WorkItem>(`/api/work-items/${workItemId}/push-to-plm`, { method: 'POST' });
+}
+
 export interface BreakdownChild {
   itemType: 'story' | 'task' | 'bug';
   title: string;
@@ -350,10 +546,25 @@ export function breakdownWorkItem(workItemId: number): Promise<{ parentId: numbe
 /* ---- Test generation & push-back (Phase 5) ---- */
 
 export interface TestCase {
+  id: string;
   title: string;
+  priority: 'high' | 'medium' | 'low';
+  type: 'happy-path' | 'edge-case' | 'failure';
   given: string;
   when: string;
   then: string;
+  assertion: string;
+  tags: string[];
+  selected?: boolean; // client-side only, not persisted
+  // Set once the case has been pushed to the PLM (persisted server-side).
+  plmKey?: string;
+  plmUrl?: string;
+}
+
+export interface PushedTestCase {
+  testCaseId: string;
+  plmUrl: string;
+  plmKey: string;
 }
 
 export interface TestScript {
@@ -386,8 +597,8 @@ export function commitTestScript(
 export function pushTestCases(
   workItemId: number,
   testCases: TestCase[],
-): Promise<{ created: { externalId: string; plmUrl: string; title: string }[] }> {
-  return request<{ created: { externalId: string; plmUrl: string; title: string }[] }>(
+): Promise<{ pushed: PushedTestCase[] }> {
+  return request<{ pushed: PushedTestCase[] }>(
     `/api/work-items/${workItemId}/tests/push`,
     {
       method: 'POST',
@@ -395,4 +606,212 @@ export function pushTestCases(
       body: JSON.stringify({ testCases }),
     },
   );
+}
+
+/* ---- Reporting dashboard (Phase 3) ---- */
+
+export interface ChartSeries {
+  labels: string[];
+  data: (number | null)[];
+}
+
+export interface StackedSeries {
+  labels: string[];
+  datasets: { label: string; data: number[] }[];
+}
+
+export interface BacklogSeries {
+  labels: string[];
+  created: number[];
+  completed: number[];
+}
+
+export interface ReportData {
+  range: { days: number; since: string; until: string };
+  scope: 'team' | 'personal';
+  kpis: {
+    totalRuns: number;
+    successRate: number;
+    prsOpened: number;
+    committedRuns: number;
+    avgTimeToPrHours: number | null;
+    securityFindings: number;
+  };
+  charts: {
+    runVolumeByWeek: ChartSeries;
+    outcomes: ChartSeries;
+    timeToPrDaily: ChartSeries;
+    agentWinRate: ChartSeries;
+    scoreTrend: ChartSeries;
+    securityByOwasp: StackedSeries;
+    workItemsByType: ChartSeries;
+    backlogBurn: BacklogSeries;
+  };
+}
+
+export function fetchReportSummary(days: number, projectId?: number): Promise<ReportData> {
+  const q = new URLSearchParams();
+  q.set('days', String(days));
+  if (projectId != null) q.set('projectId', String(projectId));
+  return request<ReportData>(`/api/reports/summary?${q.toString()}`);
+}
+
+/* ---- Audit log (admin only) ---- */
+
+export interface AuditLogItem {
+  id: number;
+  teamId: number | null;
+  userId: string;
+  action: string;
+  entityType: string | null;
+  entityId: number | null;
+  metadata: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export interface AuditLogResponse {
+  items: AuditLogItem[];
+  hasMore: boolean;
+  nextBefore: string | null;
+}
+
+export function fetchAuditLog(params: {
+  days?: number;
+  action?: string;
+  userId?: string;
+  before?: string;
+  limit?: number;
+}): Promise<AuditLogResponse> {
+  const p = new URLSearchParams();
+  if (params.days) p.set('days', String(params.days));
+  if (params.action) p.set('action', params.action);
+  if (params.userId) p.set('userId', params.userId);
+  if (params.before) p.set('before', params.before);
+  if (params.limit) p.set('limit', String(params.limit));
+  return request<AuditLogResponse>(`/api/audit?${p}`);
+}
+
+export function fetchAuditActions(): Promise<{ actions: string[] }> {
+  return request<{ actions: string[] }>('/api/audit/actions');
+}
+
+export function auditLogCsvUrl(days: number): string {
+  return `/api/audit/export.csv?days=${days}`;
+}
+
+/* ---- Teams / multi-tenancy (Phase 1) ---- */
+
+export interface TeamInfo {
+  id: number;
+  name: string;
+  slug: string | null;
+  ownerUserId: string;
+  plan: string;
+  createdAt: string;
+}
+
+export interface TeamMe {
+  team: TeamInfo | null;
+  role?: 'admin' | 'member';
+  memberCount?: number;
+}
+
+export function fetchMyTeam(): Promise<TeamMe> {
+  return request<TeamMe>('/api/teams/me');
+}
+
+export function bootstrapTeam(name?: string): Promise<{ team: TeamInfo }> {
+  return request<{ team: TeamInfo }>('/api/teams/bootstrap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(name ? { name } : {}),
+  });
+}
+
+export function acceptTeamInvite(token: string): Promise<{ teamId: number; role: string }> {
+  return request<{ teamId: number; role: string }>('/api/invites/accept', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function createTeamInvite(
+  teamId: number,
+  email: string,
+  role: 'admin' | 'member',
+): Promise<{ invite: { id: number; email: string; role: string } }> {
+  return request(`/api/teams/${teamId}/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+export interface TeamMemberRow {
+  id: number;
+  userId: string;
+  role: 'admin' | 'member';
+  joinedAt: string;
+}
+
+export interface TeamInviteRow {
+  id: number;
+  email: string;
+  role: 'admin' | 'member';
+  expiresAt: string;
+  acceptedAt: string | null;
+}
+
+export interface TeamIntegrationRow {
+  key: string;
+  setBy: string;
+  setAt: string;
+  masked: string;
+}
+
+export function fetchTeamMembers(teamId: number): Promise<TeamMemberRow[]> {
+  return request<TeamMemberRow[]>(`/api/teams/${teamId}/members`);
+}
+
+export function fetchInvites(teamId: number): Promise<TeamInviteRow[]> {
+  return request<TeamInviteRow[]>(`/api/teams/${teamId}/invites`);
+}
+
+export function cancelInvite(teamId: number, inviteId: number): Promise<void> {
+  return request(`/api/teams/${teamId}/invites/${inviteId}`, { method: 'DELETE' });
+}
+
+export function removeTeamMember(teamId: number, userId: string): Promise<void> {
+  return request(`/api/teams/${teamId}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+}
+
+export function updateMemberRole(
+  teamId: number,
+  userId: string,
+  role: 'admin' | 'member',
+): Promise<{ userId: string; role: string }> {
+  return request(`/api/teams/${teamId}/members/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function fetchTeamIntegrations(teamId: number): Promise<TeamIntegrationRow[]> {
+  return request<TeamIntegrationRow[]>(`/api/teams/${teamId}/integrations`);
+}
+
+export function setTeamIntegration(
+  teamId: number,
+  key: string,
+  value: string,
+): Promise<{ key: string; setAt: string }> {
+  return request(`/api/teams/${teamId}/integrations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value }),
+  });
 }

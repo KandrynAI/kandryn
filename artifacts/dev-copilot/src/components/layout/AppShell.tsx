@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Sidebar } from "./Sidebar";
-import { TabBar } from "./TabBar";
+import { CommandRail } from "./CommandRail";
+import { ContextPanel } from "./ContextPanel";
+import { TopBar } from "./TopBar";
 import { TabsProvider } from "@/context/TabsContext";
-import { useConfig } from "@/context/ConfigContext";
+import { TopBarSlotProvider } from "@/context/TopBarContext";
 import { Toaster } from "@/components/ui/toaster";
 
 interface AppShellProps {
@@ -10,32 +11,26 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const { isAzureConnected, isJiraConnected } = useConfig();
-
+  // TabsProvider stays mounted because other components still read useTabs();
+  // the TabBar itself is no longer rendered (navigation is via the rail/panel).
   return (
     <TabsProvider>
-      <div
-        style={{
-          display: "flex",
-          height: "100vh",
-          overflow: "hidden",
-          background: "var(--bg-app)",
-          color: "var(--text-primary)",
-          fontFamily: "var(--app-font-sans)",
-        }}
-      >
-        <Sidebar isAzureConnected={isAzureConnected} isJiraConnected={isJiraConnected} />
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <TabBar />
-          <main
-            data-testid="app-main"
-            style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--bg-app)" }}
-          >
-            {children}
-          </main>
+      <TopBarSlotProvider>
+        <div data-testid="app-shell" style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "var(--sans)" }}>
+          <CommandRail />
+          <ContextPanel />
+          <div data-testid="app-main-col" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <TopBar />
+            <main
+              data-testid="app-main"
+              style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--c-bg)" }}
+            >
+              {children}
+            </main>
+          </div>
         </div>
         <Toaster />
-      </div>
+      </TopBarSlotProvider>
     </TabsProvider>
   );
 }

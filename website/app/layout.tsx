@@ -1,76 +1,52 @@
 import type { Metadata } from 'next';
-import { Newsreader, Space_Grotesk, IBM_Plex_Mono } from 'next/font/google';
+import { Archivo, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
-import Nav from '@/components/Nav';
-import Footer from '@/components/Footer';
-import AnnouncementBar from '@/components/AnnouncementBar';
-import ModalProvider from '@/components/ModalProvider';
+import SiteHeader from '@/components/layout/SiteHeader';
+import SiteFooter from '@/components/layout/SiteFooter';
+import CtaBanner from '@/components/layout/CtaBanner';
 import { JsonLd, organizationLd, softwareApplicationLd } from '@/lib/jsonld';
 import { SITE } from '@/lib/site';
 
-const newsreader = Newsreader({
+const archivo = Archivo({
   subsets: ['latin'],
-  weight: ['400', '500'],
-  style: ['normal', 'italic'],
+  weight: ['400', '500', '600', '700', '800', '900'],
   display: 'swap',
-  variable: '--font-newsreader',
+  variable: '--font-archivo',
 });
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
-  weight: ['400', '500', '700'],
-  display: 'swap',
-  variable: '--font-space-grotesk',
-});
-const ibmPlexMono = IBM_Plex_Mono({
+const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   weight: ['400', '500'],
   display: 'swap',
-  variable: '--font-ibm-plex-mono',
+  variable: '--font-mono',
 });
 
-const HOME_TITLE =
-  'Blue Mantis | Autonomous AI Engineering Agents That Ship Reviewed Pull Requests';
-const HOME_DESC =
-  'Blue Mantis turns tickets into reviewed pull requests. Orchestrated AI agents build, test, and secure the change; your engineers approve it. No new tools.';
+const SITE_URL = `https://${SITE.domain}`;
+const TITLE = 'Blue Mantis — the backlog writes the code back to you';
+const DESC =
+  'An AI delivery assistant that reads a work item, runs six agents against it — Raptia and Fovea generate, Synthesia ranks, Veria reviews, Aegis scans for security, Narratia writes the runbook — and opens the pull request. Run it now, or queue tonight and read the diffs in the morning.';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(SITE.url),
-  title: { default: HOME_TITLE, template: '%s | Blue Mantis' },
-  description: HOME_DESC,
+  metadataBase: new URL(SITE_URL),
+  title: { default: TITLE, template: '%s | Blue Mantis' },
+  description: DESC,
   applicationName: 'Blue Mantis',
   alternates: { canonical: '/' },
-  openGraph: {
-    type: 'website',
-    siteName: 'Blue Mantis',
-    title: HOME_TITLE,
-    description: HOME_DESC,
-    url: SITE.url,
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: HOME_TITLE,
-    description: HOME_DESC,
-  },
+  openGraph: { type: 'website', siteName: 'Blue Mantis', title: TITLE, description: DESC, url: SITE_URL },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESC },
   robots: { index: true, follow: true },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const fontVars = `${newsreader.variable} ${spaceGrotesk.variable} ${ibmPlexMono.variable}`;
   return (
-    <html lang="en" className={fontVars}>
+    <html lang="en" className={`${archivo.variable} ${jetbrainsMono.variable}`}>
       <body>
-        {/* Progressive enhancement: mark JS on before paint so reveals only
-            hide when JS is available. Content is visible by default. */}
-        <script
-          dangerouslySetInnerHTML={{ __html: `document.documentElement.classList.add('js')` }}
-        />
         <a className="skip" href="#main">Skip to content</a>
-        <ModalProvider>
-          <AnnouncementBar />
-          <Nav />
+        <div className="page">
+          <SiteHeader />
           <main id="main">{children}</main>
-          <Footer />
-        </ModalProvider>
+          <CtaBanner />
+          <SiteFooter />
+        </div>
         <JsonLd data={organizationLd} />
         <JsonLd data={softwareApplicationLd} />
       </body>

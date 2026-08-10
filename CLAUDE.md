@@ -93,7 +93,7 @@ Standalone **Clerk development instance** (`pk_test_…`), not Replit-managed.
 
 PostgreSQL on **Supabase**. Schema in `lib/db/src/schema/`. **All PKs are `serial` integers** (a uuid FK can't reference a serial PK). **Every query scoped to `userId`** — no global data.
 
-`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`.
+`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`. Later additive migrations to apply in Supabase before deploy: `0007_test_cases.sql`, `0008_score_breakdown.sql`, `0009_veria_review.sql`, `0010_graphify_graph.sql`, `0011_run_graph_context.sql`, `0012_test_script.sql`, `0013_run_stack.sql`, `0014_aegis.sql`, `0015_narratia.sql`, `0016_aegis_remediation.sql`, `0017_multitenancy.sql`, `0018_audit_log.sql`.
 
 | Table | Key columns |
 |---|---|
@@ -106,7 +106,7 @@ PostgreSQL on **Supabase**. Schema in `lib/db/src/schema/`. **All PKs are `seria
 | `waitlist` | marketing signups |
 
 ### Config keys (`configService.ts → CONFIG_KEYS`)
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GEMINI_API_KEY`, `GITHUB_COPILOT_TOKEN`, `GITHUB_TOKEN`, `AZURE_REPOS_ORG`, `AZURE_REPOS_TOKEN`, `AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`, `AZURE_DEVOPS_PAT`, `JIRA_DOMAIN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`. All AI/Git/PLM creds are **per-user** here, not env vars. The Zod schema for `PUT/PATCH /api/config` is auto-built from this array.
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GEMINI_API_KEY`, `GITHUB_COPILOT_TOKEN`, `GITHUB_TOKEN`, `AZURE_REPOS_ORG`, `AZURE_REPOS_TOKEN`, `AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`, `AZURE_DEVOPS_PAT`, `JIRA_DOMAIN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `CONFLUENCE_DOMAIN`, `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`, `CONFLUENCE_SPACE_KEY`, `NOTION_API_TOKEN`, `NOTION_PARENT_PAGE`. All AI/Git/PLM/docs creds are **per-user** here, not env vars. The Zod schema for `PUT/PATCH /api/config` is auto-built from this array.
 
 ---
 
@@ -128,10 +128,10 @@ The end-to-end user journey, mapped to the code paths:
 
 Public (mounted **before** `requireAuth`): `POST /api/waitlist`, `POST /api/contact`, and the cron dispatcher. Everything else requires `requireAuth`.
 
-- **Repositories:** `GET/POST /api/repositories`, `GET/PATCH/DELETE /api/repositories/:id`, `GET /api/repositories/:repoId/stack`.
+- **Repositories:** `GET/POST /api/repositories`, `GET/PATCH/DELETE /api/repositories/:id`, `GET /api/repositories/:repoId/stack`. **Graphify:** `GET /api/repositories/:repoId/graph` (status: `built`/`builtAt`/`nodeCount`/`stale`), `POST /api/repositories/:repoId/graph` (upload graph.json), `POST /api/repositories/:repoId/graph/rebuild` (re-index via the microservice; `202`, or `503` when unconfigured).
 - **Projects:** `GET /api/projects` (with counts), `POST /api/projects`, `GET/PATCH/DELETE /api/projects/:id`, `POST /api/projects/backfill`, `GET /api/plm/:provider/projects`, `POST /api/projects/:id/sync`, `GET /api/projects/:id/work-items`, `POST /api/projects/:id/work-items` (`pushToPlm`).
-- **Work items:** `PATCH /api/work-items/:id` (local edit; `done` propagates via `closeTask`), `POST /api/work-items/:id/breakdown` (proposals, not saved).
-- **Runs:** `POST /api/work-items/:id/runs` (inline → `{run,suggestions}`; `scheduledAt` future ≤30d → `202`; ≤20 pending/user), `GET /api/runs?projectId=&status=`, `GET /api/runs/:id`, `POST /api/runs/:id/cancel`, `POST /api/runs/:id/commit`.
+- **Work items:** `PATCH /api/work-items/:id` (local edit; `done` propagates via `closeTask`), `POST /api/work-items/:id/breakdown` (proposals, not saved), `POST /api/work-items/:id/push-to-plm` (promote a local-only item into Jira/ADO → records externalId/source/plmUrl; `409` if already linked).
+- **Runs:** `POST /api/work-items/:id/runs` (inline → `{run,suggestions}`; `scheduledAt` future ≤30d → `202`; ≤20 pending/user), `GET /api/runs?projectId=&status=&limit=`, `GET /api/runs/:id`, `POST /api/runs/:id/cancel`, `POST /api/runs/:id/commit`, `POST /api/runs/:id/review` (Veria), `POST /api/runs/:id/security` (Aegis), `POST /api/runs/:id/runbook` (Narratia; body `{target: markdown|confluence|notion}`).
 - **Tests:** `POST /api/work-items/:id/tests/generate`, `.../tests/commit-script` (same branch/PR), `.../tests/push`.
 - **Legacy task flow (still mounted):** `POST /api/tasks/:taskId/suggestions` (rate-limited 20/min), `.../commit`, `.../complete`; `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/:id`.
 - **Internal (cron):** `GET|POST /api/internal/dispatch-runs` — `CRON_SECRET` bearer-guarded, before `requireAuth`.
@@ -168,7 +168,11 @@ artifacts/api-server/src/
 - **Runs engine** (`runService.executeRun`, never throws — failures land on the run row): load (scoped to `run.userId`) → keyword-extract → Git context → Claude+OpenAI → SynthesisEngine rank → persist suggestions → if `auto_commit`, commit top (branch `task/<id>` → PR), set `committed_suggestion_id`, item → `review` → mark `succeeded`; scheduled runs email the owner. **Dispatcher** (`routes/internal.ts`, cron 5-min, `CRON_SECRET`): sweep `running` >20 min → `failed`, then claim ≤2 due `scheduled` rows with `FOR UPDATE SKIP LOCKED` → `queued` → run each.
 - **Sync engine** (`syncService.syncProject`): project-scoped fetch, upsert on `(project_id, external_id)`, two-pass parent resolution, ADO `Feature`→`epic`, cancels pending runs on close. Jira uses the **enhanced** `GET /rest/api/3/search/jql` (classic `/search` is **410 Gone**), paginating by `nextPageToken`/`isLast`; domains normalized via `normalizeJiraDomain` (users enter `acme.atlassian.net` without a scheme).
 - **AI shapes:** `AIOrchestrator.generateSuggestions` runs both models in parallel; `SynthesisEngine` scores/ranks, flags top as `Recommended`. `generateBreakdown`/`generateTests` are zod-validated with one retry → else `AIFormatError` → 422. Mock agents (`antigravity`,`copilot`) gated behind `ENABLE_DEMO_AGENTS=true`.
+- **Stack-aware prompting:** the run's `repositories.stack_profile` is threaded through the whole pipeline — `services/stackPromptBuilder.ts` (`buildStackAwarePrompt` + `describeStack`) prepends a language/framework/db/test/package-manager conventions block (+ "don't introduce a new stack" guardrail) inside `stack/prompts.ts:buildPrompt`, shared by both agents; SynthesisEngine's convention dimension is stack-explicit via `describeStack`; `gitService.fetchFileContext` already filters context files by stack extension. `runService.executeRun` logs the stack and persists `runs.stack_desc` (`0013`), surfaced in the run-detail **Stack** info cell. All graceful no-ops when `stack_profile` is null.
+- **Aegis** (`aegisService.ts`, `aegisPlmService.ts`): the sixth agent — a post-commit security scan on `POST /runs/:id/security` (mirrors Veria's guard: needs `committedSuggestionId`, per-user `ANTHROPIC_API_KEY`, model **`claude-fable-5`**). Persists `runs.security_scan`/`security_scan_status`/`security_gate` (`0014`). The **stop gate** blocks on any High/Critical finding; each High/Critical finding files a PLM child (`bug`, via `createPlmWorkItem` with `parentExternalId`) and the result posts a GitHub commit status check `blue-mantis/security` (`postSecurityStatus` in `gitService.ts` — non-fatal). Surfaced on run detail (gate banner + findings); repo detail shows a one-time branch-protection setup notice. **Remediation loop** (`POST /runs/:id/security/remediate`, body `{findingId, action: push|remediate-now}`, `0016`): per-finding **Push to PLM** (or bulk) files the ticket + mirrors a board `bug` task (`ensureFindingTask`, keyed on project+externalId so a later sync upserts) + syncs the board; **Remediate Now** additionally starts a remediation run on the new task (`triggerContext='remediation'`, `parentRunId`, fix-only `buildRemediationPrompt`) via `executeRun` in the background, then navigates to that run. Board cards for `[SECURITY]` items show a red square. `GET /runs` gains `?trigger=&parentRunId=` filters.
+- **Narratia** (`narratiaService.ts`, `narratiaPushService.ts`): the seventh agent — post-commit runbook generation on `POST /runs/:id/runbook` (per-user `ANTHROPIC_API_KEY`, model `claude-sonnet-4-5`, guard on `committedSuggestionId`). Enriches the prompt with Veria/Aegis findings + generated test cases. Persists `runs.runbook`/`runbook_status`/`runbook_target`/`runbook_url` (`0015`). Targets: **markdown** (commits `docs/runbooks/<key>.md` onto the PR branch via `branchHeadSha`+`commitChanges`), **confluence**, **notion** (both push via per-user creds — new `CONFLUENCE_*`/`NOTION_*` `CONFIG_KEYS`; each returns `null` when unconfigured, so the runbook still saves). Surfaced on run detail (target pills, generate, gate/preview with an inline md→html render). Settings gains a Documentation group.
 - **Commit/PR:** branch is deterministic `task/<id>`. `GitService.commitChanges(baseSha?)` defaults to the default-branch HEAD; the **test-script commit** passes the branch's own HEAD (`branchHeadSha`) so it stacks on the existing PR instead of overwriting the implementation commit.
+- **Graphify** (`graphifyService.ts`, `graphify-service/` microservice): a per-repo knowledge graph (`repositories.graph_json`/`graph_built_at`/`graph_node_count`) gives runs precise, low-token file context. `runService` picks the graph path when `isGraphUsable(graphBuiltAt)` (fresh <24h) → `git.fetchFileContextWithGraph` returns `{context, usedGraph}`; `usedGraph` persists to `runs.used_graph_context` (surfaced as a "Graph context" badge on run detail). **Phase 2:** the Python microservice (`/index`) clones + runs `graphify extract` and POSTs the graph to `POST /api/internal/graphify-callback` (guarded by `GRAPHIFY_SERVICE_SECRET`); triggered fire-and-forget on repo connect. **Phase 3:** `triggerRepoIndex()` (shared helper) also re-indexes after every commit (auto + manual) and on the **Rebuild graph** button (`POST /repositories/:repoId/graph/rebuild`, `503` when `GRAPHIFY_SERVICE_URL` unset). Re-indexing is a full re-extract via `/index` (a partial sparse-checkout would drop cross-file edges); developers without the microservice can still upload a `graph.json` by hand. Graph work is a **no-op unless `GRAPHIFY_SERVICE_URL` + `GRAPHIFY_SERVICE_SECRET` are set** — the keyword fallback (`fetchFileContext`) always runs otherwise.
 
 ### Error-handling conventions
 - Express 5 auto-propagates async throws → global handler in `app.ts` returns `{ error }`. Use try/catch only to return a non-500.
@@ -210,7 +214,7 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 - **RunPanel** (`components/runs/RunPanel.tsx`, Sheet) — refinement textarea, **auto-commit** checkbox (off by default), **Schedule for later** checkbox → `datetime-local` (default +1h, ≤30d), footer **Run now** / **Schedule run**. Run now → navigate to run detail; Schedule → toast + refresh the board's scheduled badges.
 - **NewItemDialog** (`components/workitems/NewItemDialog.tsx`) — type (epic/story/task/bug), parent (epics/stories), title, description, acceptance criteria, **"Also create in Jira/ADO"** toggle.
 - **BreakdownDialog** (`components/workitems/BreakdownDialog.tsx`) — calls breakdown on open (loading), shows editable proposal rows (checkbox, type select, title, description, AC bullets), batch **"Also create in PLM"**, creates approved children under the parent.
-- **TestStage** (`components/tests/TestStage.tsx`) — **Generate tests** → editable test **script** (filePath + code, framework badge, Regenerate, **Commit to PR**) + **test cases** (Given/When/Then checkbox rows, **Push to PLM**; blocked with a note when the work item isn't PLM-linked).
+- **TestStage** (`components/tests/TestStage.tsx`) — **Generate tests** → editable test **script** (filePath + code, framework badge, Regenerate, **Commit to PR**) + **test cases** (Given/When/Then checkbox rows, **Push to PLM**; blocked with a note + **Push item to PLM** promote button when the work item isn't PLM-linked). Generated cases + script persist on the committed suggestion (`suggestions.test_cases`/`test_script`, migration `0012`), so the run detail **rehydrates** them on reload; per-case PLM push status (`plmKey`/`plmUrl`, stored on each `test_cases` entry) shows as a **Pushed · KEY** badge across reloads. Regenerate replaces both and clears push status.
 
 ### Contexts + client
 `ConfigContext` (loads `/api/config`; `isAzureConnected`/`isJiraConnected`), `RepoContext` (active repo), `TabsContext` (tabs). API client = `src/services/api.ts` — `request<T>` + **`ApiError { status, body }`** (now carries the parsed error body), relative URLs, covering repositories/tasks/projects/work-items/runs/tests. Toasts via `hooks/use-toast` (+ `ToastAction`).
@@ -234,6 +238,8 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 | `RESEND_API_KEY` / `WAITLIST_FROM_EMAIL` | ⚠️ | Email; without the key, email is a no-op |
 | `APP_BASE_URL` | ❌ | Email link origin (default `https://getbluemantis.com`) |
 | `ENABLE_DEMO_AGENTS` | ❌ | `true` adds mock agents (default off) |
+| `GRAPHIFY_SERVICE_URL` | ❌ | Graphify microservice base URL (optional; enables server-side auto-indexing) |
+| `GRAPHIFY_SERVICE_SECRET` | ❌ | Shared secret for Graphify microservice auth (`x-service-secret`) |
 | `SESSION_SECRET` | ❌ | Session signing |
 | `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`GITHUB_TOKEN`/`AZURE_REPOS_TOKEN`/`ADO_*`/`JIRA_*` | ❌ | Fallbacks only — real values are **per-user** in `integration_configs` |
 
@@ -282,3 +288,152 @@ These are the natural next tasks; none are blocking today:
 - **`website/` is outside the pnpm workspace** — build/test with npm inside `website/`; metadata routes need `dynamic='force-static'` under static export.
 - **No live external services in the sandbox** — smoke-test real flows on the Vercel deploy.
 - **Model IDs:** Claude `claude-sonnet-4-5`, OpenAI `gpt-4o`.
+
+---
+
+## Developer behaviour guidelines (Karpathy principles)
+
+These rules govern how Claude Code should behave when working on
+Blue Mantis. They apply to every task regardless of size.
+Derived from Andrej Karpathy's observations on LLM coding pitfalls.
+
+---
+
+### 1. Think before coding
+
+Before writing any code, state:
+- What you understand the task to be
+- Any assumptions you are making
+- Any ambiguity you have found
+
+If the request could be interpreted in more than one way, present
+the interpretations and ask which one to proceed with.
+Do not silently pick one and run with it.
+
+If a simpler approach exists than what was asked for, say so before
+implementing the asked-for approach.
+
+Stop and ask rather than guess. A wrong assumption discovered after
+300 lines of code costs far more than a one-line clarification question.
+
+Specific to Blue Mantis:
+- If a prompt says "update the runs table", state which columns you
+  plan to add/change and wait for confirmation before writing SQL
+- If a prompt references a component that has two possible locations
+  (e.g. run-detail.tsx vs RunDetail.tsx), name both and ask
+- If a DB migration might destroy data, say so explicitly before
+  writing the migration
+
+---
+
+### 2. Simplicity first
+
+Write the minimum code that solves the stated problem. Nothing else.
+
+- No abstractions for code that is only used once
+- No configurability that was not requested
+- No error handling for scenarios not mentioned in the task
+- No "while I'm here" refactors
+- No helper utilities that the task does not require
+- If 50 lines solves it, do not write 200
+
+The test: would a senior engineer reading this PR say "why is
+all this extra code here"? If yes, remove it.
+
+Specific to Blue Mantis:
+- Do not add Zod schemas for endpoints that do not validate input today
+  unless the task says to add validation
+- Do not extract a shared utility function unless it is called in
+  3+ places
+- Do not add loading/error/empty states to a component unless the
+  task explicitly covers UI states
+- never add console.log — use req.log on the server
+
+---
+
+### 3. Surgical changes
+
+Touch only what the task requires. Leave everything else exactly
+as it is.
+
+When editing existing code:
+- Do not rename variables or functions that are not part of the task
+- Do not reformat or re-indent adjacent code
+- Do not change comments you were not asked to change
+- Do not fix other bugs you notice — mention them in your report,
+  do not fix them silently
+- Match the existing code style even if you would do it differently
+
+When your changes create orphans:
+- Remove imports YOUR changes made unused
+- Remove variables YOUR changes made unused
+- Do not remove pre-existing dead code unless the task says to
+
+Every changed line must trace directly to the task. If you cannot
+explain why a line changed, revert it.
+
+Specific to Blue Mantis:
+- Never touch integration_configs, waitlist, or auth middleware
+  unless the task explicitly covers those
+- Never change vercel.json
+- Never change pnpm-workspace.yaml
+- If a task says "update the board page", do not touch the
+  dashboard, runs list, or settings page as a side effect
+- Schema changes must match: Drizzle schema file + SQL migration file.
+  Never update one without the other.
+
+---
+
+### 4. Goal-driven execution
+
+Before starting a multi-step task, write a brief plan:
+
+  1. [What you will do] → verify: [how you will check it worked]
+  2. [What you will do] → verify: [how you will check it worked]
+  3. [What you will do] → verify: [how you will check it worked]
+
+Then execute step by step, verifying each step before proceeding.
+
+For every task that touches the API server, the final verify step
+must include:
+  pnpm --filter @workspace/api-server run typecheck
+
+For every task that touches the frontend, the final verify step
+must include:
+  pnpm --filter @workspace/dev-copilot run typecheck
+
+For tasks that touch both:
+  pnpm run typecheck
+
+Do not report "done" until typecheck passes. A task is not complete
+if it breaks the type system.
+
+For every DB change:
+  Verify that both the Drizzle schema and the SQL migration file
+  have been updated. Verify that the SQL is idempotent
+  (uses IF NOT EXISTS / ON CONFLICT DO NOTHING).
+
+Specific to Blue Mantis success criteria that must always be met:
+- Unique constraint violations: err.cause.code === '23505' → 409
+  (never leak raw SQL error messages to the client)
+- Every new DB query must filter by userId
+  (no query returns data across users)
+- Credentials (integration_configs) are never logged
+  (not in req.log, not in error messages, not in responses)
+- Import from 'zod/v4' not 'zod'
+- All new PKs are serial integers, never uuid
+
+---
+
+### How to know it is working
+
+These guidelines are working if you see:
+- Clarifying questions before implementation, not after mistakes
+- Diffs that contain only what the task required
+- Typecheck passing on the first attempt more often
+- No surprise refactors or renames in PRs
+- Plan listed before execution on multi-step tasks
+
+---
+
+## END OF KARPATHY GUIDELINES SECTION

@@ -2,13 +2,14 @@ import { useGetRepository, useUpdateRepository, useDeleteRepository, getListRepo
 import { useParams, useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Database, Edit, Trash2, ArrowLeft, Layout as LayoutIcon, Server, FileCode, Clock, GitBranch, Github, Link as LinkIcon, CheckSquare } from "lucide-react";
-import { format } from "date-fns";
+import { Database, Edit, Trash2, ArrowLeft, Layout as LayoutIcon, Server, FileCode, Clock, GitBranch, Github, Link as LinkIcon, CheckSquare, ShieldAlert, Copy, X } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { fetchRepositoryGraphStatus, uploadRepositoryGraph, rebuildRepositoryGraph, ApiError } from "@/services/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,7 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 
 const formSchema = z.object({
@@ -201,6 +202,10 @@ export default function RepositoryDetail() {
         </Card>
       </div>
 
+      <AegisSetupNotice repoId={id} provider={repo.provider} url={repo.url} />
+
+      <GraphifySection repoId={id} />
+
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold tracking-tight">Linked Tasks</h2>
@@ -243,6 +248,169 @@ export default function RepositoryDetail() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AegisSetupNotice({ repoId, provider, url }: { repoId: number; provider: string; url: string }) {
+  const { toast } = useToast();
+  const key = `bm_aegis_setup_dismissed_${repoId}`;
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  if (provider !== "github" || dismissed) return null;
+
+  const dismiss = () => {
+    try {
+      localStorage.setItem(key, "1");
+    } catch { /* ignore */ }
+    setDismissed(true);
+  };
+
+  const copyCheckName = async () => {
+    try {
+      await navigator.clipboard.writeText("blue-mantis/security");
+      toast({ title: "Copied", description: "blue-mantis/security" });
+    } catch {
+      toast({ title: "Copy failed", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card className="border-amber-500/30">
+      <CardHeader>
+        <CardTitle className="text-sm font-mono text-muted-foreground flex items-center justify-between">
+          <span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" /> Security gate setup</span>
+          <button onClick={dismiss} title="Dismiss" className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          To enforce the Aegis stop gate, add <code className="font-mono">blue-mantis/security</code> as a required status
+          check on your main branch in GitHub: Settings → Branches → Branch protection rules → Require status checks.
+        </p>
+        <div className="mt-3 flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" className="font-mono text-xs" onClick={copyCheckName}>
+            <Copy className="mr-2 h-3.5 w-3.5" /> Copy check name
+          </Button>
+          <Button variant="outline" size="sm" className="font-mono text-xs" onClick={() => window.open(`${url}/settings/branches`, "_blank")}>
+            <LinkIcon className="mr-2 h-3.5 w-3.5" /> Open GitHub branch settings →
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GraphifySection({ repoId }: { repoId: number }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: ["repo", repoId, "graph"],
+    queryFn: () => fetchRepositoryGraphStatus(repoId),
+  });
+
+  const onRebuild = async () => {
+    setRebuilding(true);
+    try {
+      const res = await rebuildRepositoryGraph(repoId);
+      toast({ title: "Rebuild started", description: res.message });
+      // Re-index runs in the background; poll the status a moment later.
+      setTimeout(() => qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] }), 4000);
+    } catch (err) {
+      const notConfigured = err instanceof ApiError && err.status === 503;
+      toast({
+        title: notConfigured ? "Automatic rebuild unavailable" : "Rebuild failed",
+        description:
+          err instanceof ApiError ? err.message : "Could not start the rebuild.",
+        variant: "destructive",
+      });
+    } finally {
+      setRebuilding(false);
+    }
+  };
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const graph = JSON.parse(await file.text());
+      const res = await uploadRepositoryGraph(repoId, graph);
+      toast({ title: res.message });
+      qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] });
+    } catch (err) {
+      toast({
+        title: "Upload failed",
+        description: err instanceof ApiError ? err.message : "Could not parse graph.json.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const built = status?.built ?? false;
+  const stale = status?.stale ?? false;
+  const dot = !built ? "#9ba3ac" : stale ? "#d4821a" : "#1a7f4b";
+  const statusText = isLoading
+    ? "Checking…"
+    : !built
+      ? "Not loaded"
+      : `Loaded — ${status?.nodeCount ?? 0} nodes${status?.builtAt ? `, built ${formatDistanceToNow(new Date(status.builtAt))} ago` : ""}${stale ? " · Rebuild recommended" : ""}`;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm font-mono text-muted-foreground">Graphify context</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2 text-sm">
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, display: "inline-block", flexShrink: 0 }} />
+          <span>{statusText}</span>
+        </div>
+
+        {!built && !isLoading && (
+          <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 4, padding: "14px 16px", marginTop: 10 }}>
+            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", marginBottom: 8, fontWeight: 600 }}>Graph context</div>
+            <p style={{ fontSize: 13, color: "var(--c-ink-2)", lineHeight: 1.6 }}>
+              Blue Mantis uses a Graphify knowledge graph to send Raptia and Fovea precise file context instead of guessing
+              from keywords. This reduces tokens per run by up to 5×.
+            </p>
+            <ol style={{ fontSize: 13, color: "var(--c-ink-2)", marginTop: 10, paddingLeft: 18, lineHeight: 1.8 }}>
+              <li>Install Graphify: <code style={{ fontFamily: "var(--mono)" }}>uv tool install graphifyy</code></li>
+              <li>In Claude Code on your repository: <code style={{ fontFamily: "var(--mono)" }}>/graphify . --code-only --no-viz</code></li>
+              <li>Upload the result:</li>
+            </ol>
+          </div>
+        )}
+
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input ref={fileRef} type="file" accept=".json" style={{ display: "none" }} onChange={onFile} />
+          <Button variant="outline" size="sm" className="font-mono text-xs" disabled={uploading} onClick={() => fileRef.current?.click()}>
+            {uploading ? "Uploading…" : built ? "Re-upload graph.json" : "Upload graph.json"}
+          </Button>
+          <Button variant="outline" size="sm" className="font-mono text-xs" disabled={rebuilding} onClick={onRebuild}>
+            {rebuilding ? "Rebuilding…" : "Rebuild graph"}
+          </Button>
+        </div>
+        {built && (
+          <p style={{ fontSize: 12, color: "var(--c-ink-4)", marginTop: 8, lineHeight: 1.5 }}>
+            Rebuild re-indexes from the latest default branch via the Graphify service. The graph also
+            re-indexes automatically after Blue Mantis commits code.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

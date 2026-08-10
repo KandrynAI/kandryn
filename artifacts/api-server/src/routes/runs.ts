@@ -1,8 +1,20 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { db, runsTable, tasksTable, suggestionsTable } from "@workspace/db";
+import { db, runsTable, tasksTable, suggestionsTable, projectsTable, repositoriesTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { executeRun, commitFromSuggestion, RunError } from "../services/runService.js";
+import { getConfigs } from "../services/configService.js";
+import { runVeriaReview } from "../services/veriaService.js";
+import { runAegisScan } from "../services/aegisService.js";
+import { createAegisPlmTicket, ensureFindingTask, buildRemediationPrompt } from "../services/aegisPlmService.js";
+import { postSecurityStatus } from "../services/gitService.js";
+import { syncProject } from "../services/syncService.js";
+import type { PlmProvider } from "../services/plmWrite.js";
+import type { AegisScanResult } from "../../../../shared/types/aegisResult.js";
+import { runNarratia } from "../services/narratiaService.js";
+import { pushAsMarkdown, pushToConfluence, pushToNotion } from "../services/narratiaPushService.js";
+import type { RunbookTarget } from "../../../../shared/types/narratiaResult.js";
+import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
@@ -26,9 +38,13 @@ const CommitRunBody = z.object({
 
 const ListRunsQuery = z.object({
   projectId: z.coerce.number().int().positive().optional(),
+  workItemId: z.coerce.number().int().positive().optional(),
   status: z
     .enum(["scheduled", "queued", "running", "succeeded", "failed", "canceled"])
     .optional(),
+  limit: z.coerce.number().int().positive().max(50).optional(),
+  trigger: z.string().optional(), // filters runs.trigger_context (e.g. "remediation")
+  parentRunId: z.coerce.number().int().positive().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -97,9 +113,25 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
         refinePrompt: refinePrompt ?? null,
         autoCommit,
         scheduledAt: when,
+        runByUserId: req.userId,
       })
       .returning();
     req.log.info({ runId: run.id, workItemId: workItem.id, scheduledAt }, "Run scheduled");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "run.scheduled",
+      entityType: "run",
+      entityId: run.id,
+      metadata: {
+        workItemId: workItem.id,
+        trigger: "manual",
+        scheduledAt: when.toISOString(),
+        hasRefinePrompt: Boolean(refinePrompt),
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.status(202).json(run);
     return;
   }
@@ -115,10 +147,26 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
       trigger: "manual",
       refinePrompt: refinePrompt ?? null,
       autoCommit,
+      runByUserId: req.userId,
     })
     .returning();
 
   req.log.info({ runId: run.id, workItemId: workItem.id, autoCommit }, "Run started inline");
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "run.triggered",
+    entityType: "run",
+    entityId: run.id,
+    metadata: {
+      workItemId: workItem.id,
+      trigger: "manual",
+      scheduledAt: null,
+      hasRefinePrompt: Boolean(refinePrompt),
+    },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   await executeRun(run.id);
 
   const [finished] = await db.select().from(runsTable).where(eq(runsTable.id, run.id));
@@ -141,14 +189,20 @@ router.get("/runs", async (req, res): Promise<void> => {
   }
   const conds = [eq(runsTable.userId, req.userId)];
   if (query.data.projectId != null) conds.push(eq(runsTable.projectId, query.data.projectId));
+  if (query.data.workItemId != null) conds.push(eq(runsTable.workItemId, query.data.workItemId));
   if (query.data.status) conds.push(eq(runsTable.status, query.data.status));
+  if (query.data.trigger) conds.push(eq(runsTable.triggerContext, query.data.trigger));
+  if (query.data.parentRunId != null) conds.push(eq(runsTable.parentRunId, query.data.parentRunId));
 
+  // An explicit ?limit wins (capped at 50 by the schema); otherwise a per-item
+  // lookup wants a short recent history and the broad list keeps 200.
+  const limit = query.data.limit ?? (query.data.workItemId != null ? 10 : 200);
   const runs = await db
     .select()
     .from(runsTable)
     .where(and(...conds))
     .orderBy(desc(runsTable.createdAt))
-    .limit(200);
+    .limit(limit);
   res.json(runs);
 });
 
@@ -161,20 +215,36 @@ router.get("/runs/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid run id" });
     return;
   }
-  const [run] = await db
-    .select()
-    .from(runsTable)
-    .where(and(eq(runsTable.id, params.data.id), eq(runsTable.userId, req.userId)));
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, params.data.id));
   if (!run) {
     res.status(404).json({ error: "Run not found" });
     return;
+  }
+  // Owner sees their own run; any team member sees runs on a team project (0017).
+  if (run.userId !== req.userId) {
+    const [project] = run.projectId
+      ? await db.select({ teamId: projectsTable.teamId }).from(projectsTable).where(eq(projectsTable.id, run.projectId))
+      : [undefined];
+    const isTeamProject = req.teamId != null && project?.teamId === req.teamId;
+    if (!isTeamProject) {
+      res.status(403).json({ error: "Access denied." });
+      return;
+    }
   }
   const suggestions = await db
     .select()
     .from(suggestionsTable)
     .where(eq(suggestionsTable.runId, run.id))
     .orderBy(desc(suggestionsTable.score));
-  res.json({ run, suggestions });
+
+  // Minimal work-item summary so the client can gate PLM actions (e.g. pushing
+  // test cases) on the item's real PLM-link state instead of assuming it.
+  const [workItem] = await db
+    .select({ externalId: tasksTable.externalId, source: tasksTable.source })
+    .from(tasksTable)
+    .where(eq(tasksTable.id, run.workItemId));
+
+  res.json({ run, suggestions, workItem: workItem ?? null });
 });
 
 // ---------------------------------------------------------------------------
@@ -210,6 +280,15 @@ router.post("/runs/:id/cancel", async (req, res): Promise<void> => {
     return;
   }
   req.log.info({ runId: run.id }, "Run canceled");
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "run.canceled",
+    entityType: "run",
+    entityId: run.id,
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.json(updated);
 });
 
@@ -227,6 +306,27 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid submission" });
     return;
   }
+
+  // Enforce a single commit per run. (Commit is signalled by
+  // committedSuggestionId — this codebase has no dedicated "committed" status;
+  // a committed run stays "succeeded".)
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, params.data.id), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (run.committedSuggestionId !== null) {
+    res.status(409).json({
+      error: "This run has already been committed.",
+      committedSuggestionId: run.committedSuggestionId,
+      prUrl: run.prUrl ?? null,
+    });
+    return;
+  }
+
   try {
     const result = await commitFromSuggestion(
       req.userId,
@@ -235,6 +335,25 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
       parsed.data.commitMessage,
     );
     req.log.info({ runId: params.data.id, ...result }, "Run suggestion committed");
+    const [committedSuggestion] = await db
+      .select({ agent: suggestionsTable.agent, score: suggestionsTable.score, filePath: suggestionsTable.filePath })
+      .from(suggestionsTable)
+      .where(eq(suggestionsTable.id, parsed.data.suggestionId));
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "run.committed",
+      entityType: "run",
+      entityId: params.data.id,
+      metadata: {
+        agent: committedSuggestion?.agent,
+        score: committedSuggestion?.score,
+        filePath: committedSuggestion?.filePath,
+        prUrl: result.prUrl,
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
     res.json(result);
   } catch (err) {
     if (err instanceof RunError) {
@@ -243,6 +362,602 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
     }
     throw err;
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/review — Veria reviews the committed code against the AC.
+// A committed run is signalled by committedSuggestionId (there is no dedicated
+// "committed" status; the run stays "succeeded").
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/review", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const runId = params.data.id;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+
+  if (run.committedSuggestionId == null) {
+    res.status(409).json({ error: "Veria requires a committed run. Commit a suggestion first." });
+    return;
+  }
+  if (run.reviewStatus === "done" && run.review) {
+    res.status(200).json({ review: run.review });
+    return;
+  }
+  if (run.reviewStatus === "running") {
+    res.status(202).json({ message: "Veria is already running on this run." });
+    return;
+  }
+
+  // Mark running before the AI call (prevents double-dispatch).
+  await db.update(runsTable).set({ reviewStatus: "running" }).where(eq(runsTable.id, runId));
+
+  const [suggestion] = await db
+    .select()
+    .from(suggestionsTable)
+    .where(eq(suggestionsTable.id, run.committedSuggestionId));
+  if (!suggestion) {
+    await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(404).json({ error: "Committed suggestion record not found." });
+    return;
+  }
+
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+
+  // acceptance_criteria is a single newline-separated text column → string[].
+  const acceptanceCriteria = workItem?.acceptanceCriteria
+    ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY"]);
+  if (!creds.ANTHROPIC_API_KEY) {
+    await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Veria." });
+    return;
+  }
+
+  try {
+    const review = await runVeriaReview(
+      {
+        itemTitle: workItem?.title ?? "Untitled work item",
+        itemType: workItem?.itemType ?? workItem?.type ?? "task",
+        acceptanceCriteria,
+        suggestionAgent: suggestion.agent,
+        suggestionFilePath: suggestion.filePath,
+        suggestionCode: suggestion.code,
+      },
+      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+    );
+
+    await db.update(runsTable).set({ review, reviewStatus: "done" }).where(eq(runsTable.id, runId));
+    req.log.info({ runId }, "Veria review completed");
+    res.status(200).json({ review });
+  } catch (err) {
+    req.log.error({ err }, "Veria review failed");
+    await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(502).json({ error: "Veria could not complete the review. Try again." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/security — Aegis scans the committed code for vulnerabilities,
+// files PLM tickets for High/Critical findings, posts a GitHub commit status
+// check, and records the stop-gate decision. A committed run is signalled by
+// committedSuggestionId (no dedicated "committed" status). Mirrors the Veria
+// route's guard/lifecycle.
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/security", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const runId = params.data.id;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+  if (run.committedSuggestionId == null) {
+    res.status(409).json({ error: "Aegis requires a committed run. Commit a suggestion first." });
+    return;
+  }
+  if (run.securityScanStatus === "done" && run.securityScan) {
+    res.status(200).json({ scan: run.securityScan });
+    return;
+  }
+  if (run.securityScanStatus === "running") {
+    res.status(202).json({ message: "Aegis is already scanning." });
+    return;
+  }
+
+  // Mark running before the AI call (prevents double-dispatch).
+  await db
+    .update(runsTable)
+    .set({ securityScanStatus: "running", securityGate: "pending" })
+    .where(eq(runsTable.id, runId));
+
+  const [suggestion] = await db
+    .select()
+    .from(suggestionsTable)
+    .where(eq(suggestionsTable.id, run.committedSuggestionId));
+  if (!suggestion) {
+    await db.update(runsTable).set({ securityScanStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(404).json({ error: "Committed suggestion record not found." });
+    return;
+  }
+
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+  const acceptanceCriteria = workItem?.acceptanceCriteria
+    ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
+  const repo = project?.repositoryId
+    ? (await db.select().from(repositoriesTable).where(eq(repositoriesTable.id, project.repositoryId)))[0]
+    : undefined;
+
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]);
+  if (!creds.ANTHROPIC_API_KEY) {
+    await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Aegis." });
+    return;
+  }
+
+  try {
+    const scan = await runAegisScan(
+      {
+        itemTitle: workItem?.title ?? "Untitled work item",
+        itemType: workItem?.itemType ?? workItem?.type ?? "task",
+        acceptanceCriteria,
+        filePath: suggestion.filePath,
+        code: suggestion.code,
+        language: suggestion.language ?? undefined,
+        stackDesc: run.stackDesc ?? undefined,
+      },
+      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+    );
+
+    // File PLM tickets for High/Critical findings (best-effort; never fatal).
+    const canFilePlm =
+      workItem?.externalId &&
+      (project?.plmProvider === "jira" || project?.plmProvider === "azure-devops") &&
+      project.plmProjectKey;
+    if (canFilePlm && workItem && project) {
+      for (const finding of scan.findings) {
+        if (finding.severity !== "critical" && finding.severity !== "high") continue;
+        const ticket = await createAegisPlmTicket({
+          finding,
+          parentExternalId: workItem.externalId as string,
+          parentTitle: workItem.title,
+          plmProvider: project.plmProvider as PlmProvider,
+          plmProjectKey: project.plmProjectKey,
+          userId: req.userId,
+          projectId: project.id,
+          repositoryId: project.repositoryId,
+          parentTaskId: workItem.id,
+        });
+        if (ticket) {
+          finding.plmTicketUrl = ticket.ticketUrl;
+          finding.plmTicketKey = ticket.ticketKey;
+        }
+      }
+    }
+
+    await db
+      .update(runsTable)
+      .set({ securityScan: scan, securityScanStatus: "done", securityGate: scan.gateDecision })
+      .where(eq(runsTable.id, runId));
+
+    // Post the GitHub commit status check (the stop-gate signal).
+    if (repo && run.commitHash) {
+      const gateDesc =
+        scan.gateDecision === "blocked"
+          ? `Blocked: ${scan.highCount} high, ${scan.criticalCount} critical finding(s)`
+          : `Approved: ${scan.findings.length} finding(s), none critical/high`;
+      await postSecurityStatus(repo.url, run.commitHash, scan.gateDecision, gateDesc, creds.GITHUB_TOKEN);
+    }
+
+    req.log.info({ runId, gate: scan.gateDecision, findings: scan.findings.length }, "Aegis scan completed");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "aegis.scan_run",
+      entityType: "run",
+      entityId: run.id,
+      metadata: {
+        gateDecision: scan.gateDecision,
+        criticalCount: scan.criticalCount,
+        highCount: scan.highCount,
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+    res.status(200).json({ scan });
+  } catch (err) {
+    req.log.error({ err }, "Aegis scan failed");
+    await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+    res.status(502).json({ error: "Aegis could not complete the scan. Try again." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/runbook — Narratia generates an operational runbook from the
+// committed run and pushes it to the chosen target (markdown → PR branch /
+// confluence / notion). Committed run signalled by committedSuggestionId.
+// ---------------------------------------------------------------------------
+const RunbookBody = z.object({
+  target: z.enum(["markdown", "confluence", "notion"]).default("markdown"),
+});
+
+router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const parsedBody = RunbookBody.safeParse(req.body ?? {});
+  if (!parsedBody.success) {
+    res.status(400).json({ error: "target must be markdown, confluence, or notion" });
+    return;
+  }
+  const runId = params.data.id;
+  const target: RunbookTarget = parsedBody.data.target;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+  if (run.committedSuggestionId == null) {
+    res.status(409).json({ error: "Narratia requires a committed run." });
+    return;
+  }
+  if (run.runbookStatus === "done" && run.runbook && run.runbookTarget === target) {
+    res.status(200).json({ runbook: run.runbook, url: run.runbookUrl, target });
+    return;
+  }
+  if (run.runbookStatus === "running") {
+    res.status(202).json({ message: "Narratia is already generating." });
+    return;
+  }
+
+  await db.update(runsTable).set({ runbookStatus: "running", runbookTarget: target }).where(eq(runsTable.id, runId));
+
+  const [suggestion] = await db
+    .select()
+    .from(suggestionsTable)
+    .where(eq(suggestionsTable.id, run.committedSuggestionId));
+  if (!suggestion) {
+    await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(404).json({ error: "Committed suggestion record not found." });
+    return;
+  }
+
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+  const acceptanceCriteria = workItem?.acceptanceCriteria
+    ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
+  const repo = project?.repositoryId
+    ? (await db.select().from(repositoriesTable).where(eq(repositoriesTable.id, project.repositoryId)))[0]
+    : undefined;
+
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  if (!creds.ANTHROPIC_API_KEY) {
+    await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Narratia." });
+    return;
+  }
+
+  // Enrichment from the other agents.
+  const veriaFindings: string[] = [];
+  run.review?.findings?.forEach((f) => {
+    if (f.type === "gap" || f.type === "risk") veriaFindings.push(`${f.type.toUpperCase()}: ${f.title} — ${f.detail}`);
+  });
+  const aegisFindings: string[] =
+    run.securityScan?.findings?.map((f) => `${f.severity.toUpperCase()} (${f.owasp}): ${f.title}${f.plmTicketKey ? ` → ${f.plmTicketKey}` : ""}`) ?? [];
+  const testCases = (suggestion.testCases ?? []).map((t) => ({
+    title: t.title,
+    given: t.given,
+    when: t.when,
+    then: t.then,
+    assertion: t.assertion,
+  }));
+
+  const itemKey = workItem?.externalId ?? `RUN-${runId}`;
+  const branchName = `task/${run.workItemId}`;
+
+  try {
+    const result = await runNarratia(
+      {
+        itemKey,
+        itemTitle: workItem?.title ?? "Untitled work item",
+        itemType: workItem?.itemType ?? workItem?.type ?? "task",
+        itemDescription: workItem?.description ?? undefined,
+        acceptanceCriteria,
+        filePath: suggestion.filePath,
+        code: suggestion.code,
+        language: suggestion.language ?? undefined,
+        stackDesc: run.stackDesc ?? undefined,
+        branchName,
+        prUrl: run.prUrl ?? undefined,
+        commitHash: run.commitHash ?? undefined,
+        veriaFindings: veriaFindings.length ? veriaFindings : undefined,
+        aegisFindings: aegisFindings.length ? aegisFindings : undefined,
+        aegisGate: run.securityScan?.gateDecision ?? undefined,
+        testCases: testCases.length ? testCases : undefined,
+        target,
+      },
+      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+    );
+
+    let pushedUrl: string | null = null;
+    if (target === "markdown" && repo) {
+      const push = await pushAsMarkdown({
+        markdown: result.markdown,
+        filePath: `docs/runbooks/${itemKey.toLowerCase()}.md`,
+        branchName,
+        repoId: repo.id,
+        repoUrl: repo.url,
+        creds: { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN },
+      });
+      pushedUrl = push?.url ?? null;
+    } else if (target === "confluence") {
+      pushedUrl = (await pushToConfluence(req.userId, result))?.url ?? null;
+    } else if (target === "notion") {
+      pushedUrl = (await pushToNotion(req.userId, result))?.url ?? null;
+    }
+
+    await db
+      .update(runsTable)
+      .set({ runbook: result.markdown, runbookStatus: "done", runbookTarget: target, runbookUrl: pushedUrl })
+      .where(eq(runsTable.id, runId));
+
+    req.log.info({ runId, target, pushed: pushedUrl != null }, "Narratia runbook generated");
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "narratia.runbook_generated",
+      entityType: "run",
+      entityId: run.id,
+      metadata: { target, pushedUrl },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+    res.status(200).json({ runbook: result.markdown, url: pushedUrl, target, sections: result.sections.map((s) => s.title) });
+  } catch (err) {
+    req.log.error({ err }, "Narratia generation failed");
+    await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    res.status(502).json({ error: "Narratia could not generate the runbook. Try again." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/security/remediate — close the Aegis loop for one finding.
+// action 'push': file the PLM ticket (if not already) + mirror a board task +
+// sync. action 'remediate-now': the same, then start a remediation run (Raptia
+// + Fovea) on the new task with a fix-only refinement prompt.
+// ---------------------------------------------------------------------------
+const RemediateBody = z.object({
+  findingId: z.string().min(1),
+  action: z.enum(["push", "remediate-now"]),
+});
+
+router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const parsed = RemediateBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "findingId and action are required." });
+    return;
+  }
+  const runId = params.data.id;
+  const { findingId, action } = parsed.data;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+  if (!run.securityScan) {
+    res.status(409).json({ error: "No security scan found on this run." });
+    return;
+  }
+  const scan = run.securityScan as AegisScanResult;
+  const finding = scan.findings.find((f) => f.id === findingId);
+  if (!finding) {
+    res.status(404).json({ error: `Finding ${findingId} not found.` });
+    return;
+  }
+
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
+  if (!project) {
+    res.status(409).json({ error: "No project found for this run." });
+    return;
+  }
+  if (project.plmProvider !== "jira" && project.plmProvider !== "azure-devops") {
+    res.status(409).json({ error: "This project's tracker doesn't support ticket creation." });
+    return;
+  }
+  const [workItem] = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+
+  // STEP A: ensure a PLM ticket + mirrored board task exist for this finding.
+  let ticketKey: string;
+  let ticketUrl: string | undefined;
+  let internalTaskId: number;
+  try {
+    if (finding.plmTicketKey) {
+      // Filed already (during the scan, for high/critical). Reuse it; just make
+      // sure the board task exists so we can run against it.
+      ticketKey = finding.plmTicketKey;
+      ticketUrl = finding.plmTicketUrl;
+      internalTaskId = await ensureFindingTask({
+        userId: req.userId,
+        projectId: project.id,
+        repositoryId: project.repositoryId,
+        parentTaskId: workItem?.id ?? null,
+        finding,
+        ticketKey,
+        ticketUrl: ticketUrl ?? "",
+        plmProvider: project.plmProvider as PlmProvider,
+      });
+    } else {
+      const ticket = await createAegisPlmTicket({
+        finding,
+        parentExternalId: workItem?.externalId ?? "",
+        parentTitle: workItem?.title ?? "",
+        plmProvider: project.plmProvider as PlmProvider,
+        plmProjectKey: project.plmProjectKey,
+        userId: req.userId,
+        projectId: project.id,
+        repositoryId: project.repositoryId,
+        parentTaskId: workItem?.id ?? null,
+      });
+      if (!ticket) {
+        res.status(502).json({ error: "Could not create PLM ticket. Check your tracker credentials." });
+        return;
+      }
+      ticketKey = ticket.ticketKey;
+      ticketUrl = ticket.ticketUrl;
+      internalTaskId = ticket.internalTaskId;
+    }
+  } catch (err) {
+    req.log.error({ err, findingId }, "Failed to create PLM ticket for finding");
+    res.status(502).json({ error: "Could not create PLM ticket. Check your tracker credentials." });
+    return;
+  }
+
+  // Reflect the ticket on the stored scan finding.
+  const mark = (patch: Partial<typeof finding>) => {
+    const updated = scan.findings.map((f) => (f.id === findingId ? { ...f, ...patch } : f));
+    return { ...scan, findings: updated };
+  };
+  let updatedScan = mark({ plmTicketKey: ticketKey, plmTicketUrl: ticketUrl, pushedToBoard: true });
+  await db.update(runsTable).set({ securityScan: updatedScan }).where(eq(runsTable.id, runId));
+
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "aegis.finding_pushed",
+    entityType: "run",
+    entityId: runId,
+    metadata: { findingId, ticketKey, severity: finding.severity, internalTaskId },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
+
+  // STEP B: sync the board so the new ticket appears (non-fatal).
+  try {
+    await syncProject(req.userId, project.id);
+  } catch (syncErr) {
+    req.log.warn({ syncErr }, "Board sync after remediation ticket creation failed");
+  }
+
+  // STEP C: for remediate-now, start a remediation run on the new task.
+  let newRunId: number | null = null;
+  if (action === "remediate-now") {
+    try {
+      const [newRun] = await db
+        .insert(runsTable)
+        .values({
+          userId: req.userId,
+          projectId: project.id,
+          workItemId: internalTaskId,
+          status: "queued",
+          trigger: "manual",
+          triggerContext: "remediation",
+          parentRunId: runId,
+          refinePrompt: buildRemediationPrompt(finding),
+          autoCommit: false,
+        })
+        .returning();
+      newRunId = newRun.id;
+
+      updatedScan = mark({
+        plmTicketKey: ticketKey,
+        plmTicketUrl: ticketUrl,
+        pushedToBoard: true,
+        remediationRunId: newRun.id,
+        remediationStatus: "pending",
+      });
+      await db.update(runsTable).set({ securityScan: updatedScan }).where(eq(runsTable.id, runId));
+
+      audit.log({
+        userId: req.userId,
+        teamId: req.teamId ?? null,
+        action: "aegis.remediation_started",
+        entityType: "run",
+        entityId: newRun.id,
+        metadata: { findingId, ticketKey, parentRunId: runId },
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
+
+      // executeRun(runId) loads everything by id (scoped to run.userId) and never
+      // throws — kick it off in the background so the response returns immediately.
+      void executeRun(newRun.id).catch((err) => req.log.error({ err, newRunId }, "Remediation run failed"));
+    } catch (runErr) {
+      req.log.error({ runErr, findingId }, "Failed to create remediation run");
+      // Non-fatal — ticket exists; the run can be started from the board.
+    }
+  }
+
+  res.status(200).json({
+    ticketKey,
+    ticketUrl,
+    newRunId,
+    action,
+    message:
+      action === "remediate-now"
+        ? `Ticket ${ticketKey} created and remediation run ${newRunId ? `#${newRunId} started` : "queued"}.`
+        : `Ticket ${ticketKey} created and synced to board.`,
+  });
 });
 
 export default router;
