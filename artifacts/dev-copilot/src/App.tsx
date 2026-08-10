@@ -58,24 +58,38 @@ const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL as string | undefined
 
 function getClerkAppearance(_isDark: boolean) {
   // App is light-only (Modernist). Ignore the theme flag and force the light palette.
+  // Element styles are passed as CSSProperties objects (Clerk applies them as
+  // inline styles) so they take effect regardless of the CDN clerk-js version —
+  // raw CSS-declaration strings would be treated as class names and not apply.
   return {
     baseTheme: undefined,
     variables: {
-      colorPrimary: "#1a4fd6",
       colorBackground: "#ffffff",
+      colorText: "#141618",
+      colorTextSecondary: "#4a5568",
       colorInputBackground: "#ffffff",
-      colorInputText: "#161b24",
-      colorText: "#161b24",
-      colorTextSecondary: "#3c4553",
-      colorNeutral: "#3c4553",
+      colorInputText: "#141618",
+      colorPrimary: "#1a56db",
+      colorNeutral: "#141618",
       colorDanger: "#c0392b",
-      borderRadius: "0px",
-      fontFamily: "'Archivo', system-ui, sans-serif",
+      borderRadius: "4px",
+      fontFamily: "Archivo, Inter, sans-serif",
+      fontSize: "15px",
     },
     elements: {
-      card: "shadow-none",
-      formButtonPrimary:
-        "bg-[#1a4fd6] hover:bg-[#1741b0] text-white rounded-none normal-case tracking-normal",
+      card: { background: "#ffffff", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", border: "1px solid #e2e5e9" },
+      headerTitle: { color: "#141618", fontSize: "22px", fontWeight: 700 },
+      headerSubtitle: { color: "#4a5568", fontSize: "14px" },
+      formFieldLabel: { color: "#141618", fontSize: "13px", fontWeight: 500 },
+      formFieldInput: { color: "#141618", background: "#ffffff", border: "1px solid #c8cdd4", borderRadius: "4px", fontSize: "14px" },
+      formButtonPrimary: { background: "#1a56db", color: "#ffffff", fontWeight: 600, fontSize: "14px", borderRadius: "4px" },
+      socialButtonsBlockButton: { border: "1px solid #e2e5e9", color: "#141618", background: "#ffffff", borderRadius: "4px", fontSize: "14px", fontWeight: 500 },
+      socialButtonsBlockButtonText: { color: "#141618", fontWeight: 500 },
+      footerActionLink: { color: "#1a56db", fontWeight: 500 },
+      dividerLine: { background: "#e2e5e9" },
+      dividerText: { color: "#8a9ab0", fontSize: "12px" },
+      identityPreviewText: { color: "#141618" },
+      formFieldInputShowPasswordButton: { color: "#4a5568" },
     },
   };
 }
