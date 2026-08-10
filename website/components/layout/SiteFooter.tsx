@@ -67,7 +67,17 @@ export default function SiteFooter() {
         }}
       >
         <span>{SITE.domain}</span>
-        <span>Privacy · Terms · Security · Trust · Contact</span>
+        <nav aria-label="Legal links" style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+          <a href="/privacy/" className="legal-footer-link">Privacy</a>
+          <span style={{ opacity: 0.5 }}> · </span>
+          <a href="/terms/" className="legal-footer-link">Terms</a>
+          <span style={{ opacity: 0.5 }}> · </span>
+          <a href="/security/" className="legal-footer-link">Security</a>
+          <span style={{ opacity: 0.5 }}> · </span>
+          <a href="/trust/" className="legal-footer-link">Trust</a>
+          <span style={{ opacity: 0.5 }}> · </span>
+          <a href="/contact/" className="legal-footer-link">Contact</a>
+        </nav>
       </div>
     </footer>
   );
