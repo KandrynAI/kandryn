@@ -137,20 +137,15 @@ Defined in `app/globals.css`. **Exactly three colors**, all OKLCH tints/opacitie
 - **`IntegrationLogos.tsx`** — monochrome inline SVGs (GitHub, GitLab, Bitbucket, Jira, Linear, Slack), `--text-dim`, each with `<title>`/`aria-label`.
 - **`Faq.tsx`** — native `<details>/<summary>`.
 - **`Reveal.tsx`** — IntersectionObserver scroll reveal. Progressive enhancement: content is visible by default; the layout's inline script adds a `.js` class so reveals only hide when JS is present.
-- **Forms + modal:** `ContactForm.tsx`, `Modal.tsx`, `ModalProvider.tsx`, `AccessButtons.tsx` — see §5.4.
+- **Contact form:** `ContactView.tsx` (client component embedded on `/contact/`) — see §5.4.
 
 ### 5.4 Lead-capture flows (Request Access + Book a Walkthrough)
 This is the primary functional behavior of the marketing site.
 
-- **`ContactForm`** — one reusable component, two variants:
-  - `request-access`: Name*, Work email*, Company*, Engineering team size, "What would you like Blue Mantis to handle?"
-  - `walkthrough`: Name*, Work email*, Company*, Preferred time and time zone, "Anything specific to cover?"
-  - Client-side validation (required + email regex), accessible (`aria-invalid`, `role="alert"`, focus first invalid), status states in blue/grey/copy only.
+- **`ContactView`** — the client component embedded on `/contact/`. Fields: Name, Work email, Tracker and repository, and a free-text "What would you point it at first?". Two submit buttons post the same form with different `type` — **Request access** and **Book a walkthrough** — and it shows an inline "Request received." success state.
 - **Where it appears:**
-  - **Landing hero** embeds the Request Access form inline (two-column).
-  - Every **"Request access"** button (nav, mobile menu, final CTA) opens the same form as a **modal** (`ModalProvider` + `Modal`, accessible: `aria-modal`, Escape/backdrop close, scroll lock, dark scrim without blur).
-  - **`/contact`** embeds the Request Access form and offers a **Book a walkthrough** button that opens the walkthrough modal. (The old `mailto:` "Email the team" button was removed.)
-- **Deep link:** `ModalProvider` opens the Request Access / Walkthrough modal when the URL carries `?request-access` / `?walkthrough`, then strips the param. This is how the app's sign-in page routes users back to Request Access.
+  - Every **"Request access"** button (hero, nav header, final CTA banner, footer) is a full-page link to **`/contact/`** — a plain navigation, no query param and no modal.
+  - **`/contact/`** embeds `ContactView` alongside onboarding facts in a two-column layout.
 - **Submission:** `POST /api/contact` with `{ type, name, email, company, teamSize?, preferredTime?, message? }`. The api-server emails **arvind.kandula@venakaninfo.com** and **accounts@venakaninfo.com** (reply-to the prospect) via Resend. Requires `RESEND_API_KEY` set on the api-server; without it the endpoint still returns 200 but sends nothing (same as the waitlist).
 
 ### 5.5 SEO & performance
@@ -161,7 +156,7 @@ One H1 per page; unique Next Metadata per route; canonical + OpenGraph + Twitter
 Rendered by **dev-copilot** (`artifacts/dev-copilot/src/App.tsx`, `AuthPage`) at `/app/sign-in` and `/app/sign-up` using Clerk's `<SignIn>` / `<SignUp>`. Currently customized:
 - **Social logins hidden** (GitHub, Google) + the "or" divider, via Clerk `cl-*` CSS selectors in `src/index.css`.
 - **"Development mode" badge hidden** via `components/HideClerkDevBadge.tsx` — finds it by text (clerk-js loads from CDN, so class names are version-unstable) and hides it with a short-lived MutationObserver. This is a "for now" measure; the real fix is a **production Clerk instance** (see §12).
-- **Sign-up replaced:** the sign-in footer says **"Don't have account? Request Your Access"**, a full-page link to `/?request-access=1` that opens the marketing Request Access modal (instead of Clerk's default sign-up).
+- **Sign-up replaced:** the sign-in footer says **"Don't have an account? Request access"**, a full-page link to the marketing **`/contact/`** page (instead of Clerk's default sign-up).
 - Successful auth → `forceRedirectUrl = /app/dashboard`.
 
 ---
