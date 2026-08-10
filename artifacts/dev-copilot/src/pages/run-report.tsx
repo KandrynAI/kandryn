@@ -3,6 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { useUser } from "@clerk/react";
 import { ArrowLeft, Download, ExternalLink } from "lucide-react";
 import { agentDisplay } from "@/lib/agents";
+import { Logo } from "@/components/Logo";
 import { useRepo } from "@/context/RepoContext";
 import {
   fetchRun,
@@ -128,8 +129,7 @@ export default function RunReportPage() {
         <div className="report-section">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <img src={`${import.meta.env.BASE_URL}bluemantis-mark.png`} alt="" style={{ height: 24 }} />
-              <span style={{ fontSize: 16, fontWeight: 600, color: "var(--c-ink)" }}>Blue Mantis</span>
+              <Logo context="print" height={24} />
             </div>
             <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>{reportDate}</span>
           </div>

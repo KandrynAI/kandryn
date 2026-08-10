@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NAV_ITEMS } from '@/lib/site';
 import Btn from '@/components/ui/Btn';
+import { Logo } from '@/components/Logo';
 
 export default function SiteHeader() {
   const pathname = usePathname() || '/';
@@ -30,9 +31,7 @@ export default function SiteHeader() {
         style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, whiteSpace: 'nowrap' }}
         aria-label="Blue Mantis home"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/bluemantis-mark-dark.png" alt="Blue Mantis" style={{ height: 26, width: 'auto' }} />
-        <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--color-text)' }}>Blue Mantis</span>
+        <Logo context="nav-light" height={26} />
       </Link>
 
       {/* CENTRE — nav */}

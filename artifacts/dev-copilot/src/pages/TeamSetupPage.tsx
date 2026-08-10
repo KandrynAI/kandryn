@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { bootstrapTeam, createTeamInvite, ApiError, type TeamInfo } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+import { Logo } from "@/components/Logo";
 
 /** First-run workspace onboarding (rendered outside the AppShell). */
 export default function TeamSetupPage() {
@@ -57,7 +56,7 @@ export default function TeamSetupPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#eceff4", padding: 24, fontFamily: "'Archivo', system-ui, sans-serif" }}>
-      <img src={`${basePath}/bluemantis-mark.png`} alt="Blue Mantis" style={{ height: 28, marginBottom: 20 }} />
+      <Logo context="signin" height={28} style={{ marginBottom: 20 }} />
       <div style={{ width: "100%", maxWidth: 440, background: "#fff", border: "2px solid color-mix(in srgb, #161b24 38%, transparent)", padding: 28 }}>
         {!team ? (
           <>

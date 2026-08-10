@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { SITE, FOOTER_COLS } from '@/lib/site';
+import { Logo } from '@/components/Logo';
 
 export default function SiteFooter() {
   return (
@@ -23,9 +24,7 @@ export default function SiteFooter() {
         {/* Brand column */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/bluemantis-mark-light.png" alt="Blue Mantis" style={{ height: 24, width: 'auto' }} />
-            <span style={{ fontSize: 16, fontWeight: 800, color: '#ffffff' }}>Blue Mantis</span>
+            <Logo context="footer-dark" height={24} />
           </div>
           <p style={{ fontSize: 13, lineHeight: 1.55, marginTop: 14, maxWidth: 320, color: 'var(--color-neutral-400)' }}>
             {SITE.tagline}

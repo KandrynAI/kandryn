@@ -5,6 +5,7 @@ import BoardView from '@/components/demo/BoardView';
 import RunView from '@/components/demo/RunView';
 import DashView from '@/components/demo/DashView';
 import RunPanel from '@/components/demo/RunPanel';
+import { Logo } from '@/components/Logo';
 
 type Screen = 'board' | 'run' | 'dashboard';
 type Phase = 'idle' | 'running' | 'done' | 'committed';
@@ -87,9 +88,7 @@ export default function DemoSection() {
               flexShrink: 0,
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/bluemantis-mark-dark.png" alt="Blue Mantis" style={{ height: 18, width: 'auto' }} />
-            <span style={{ fontSize: 13, fontWeight: 800 }}>Blue Mantis</span>
+            <Logo context="nav-light" height={18} />
           </div>
 
           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>

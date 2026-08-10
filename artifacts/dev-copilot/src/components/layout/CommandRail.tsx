@@ -4,21 +4,7 @@ import { useUser } from "@clerk/react";
 import { LayoutDashboard, Kanban, Play, GitBranch, History, BarChart2, Settings } from "lucide-react";
 import { fetchProjects, type Project } from "@/services/api";
 import { useTeam } from "@/context/TeamContext";
-
-/** The Blue Mantis mark — a simple geometric "claw" V, no wordmark. */
-function MantisMark() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path
-        d="M3 3.5 L9 13.5 L15 3.5"
-        stroke="var(--c-blue)"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+import { Logo } from "@/components/Logo";
 
 interface RailIcon {
   key: string;
@@ -90,7 +76,7 @@ export function CommandRail() {
       `}</style>
       <nav className="cr-root" data-testid="command-rail">
         <button className="cr-logo" onClick={() => navigate("/dashboard")} title="Blue Mantis" aria-label="Blue Mantis — Dashboard">
-          <MantisMark />
+          <Logo context="sidebar" height={16} />
         </button>
 
         {nav.map(({ key, title, href, active, Icon }) => (
