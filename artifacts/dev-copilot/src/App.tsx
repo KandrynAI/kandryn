@@ -30,6 +30,7 @@ import NotFound from "@/pages/not-found";
 import HistoryPage from "@/pages/HistoryPage";
 import SettingsPage from "@/pages/SettingsPage";
 import NewProject from "@/pages/new-project";
+import ProjectSettingsPage from "@/pages/ProjectSettingsPage";
 import ProjectBoard from "@/pages/project-board";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
@@ -284,6 +285,7 @@ function ProtectedApp() {
       <AppShell>
         <Switch>
           <Route path="/projects/new" component={NewProject} />
+          <Route path="/projects/:projectId/settings" component={ProjectSettingsPage} />
           <Route path="/p/:projectId/board" component={ProjectBoard} />
           <Route path="/p/:projectId/runs" component={RunsPage} />
           <Route path="/runs/:runId/report" component={RunReportPage} />

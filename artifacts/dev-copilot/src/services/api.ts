@@ -198,6 +198,29 @@ export function fetchProject(id: number): Promise<Project> {
   return request<Project>(`/api/projects/${id}`);
 }
 
+export function updateProject(
+  id: number,
+  data: { name?: string; repositoryId?: number },
+): Promise<Project> {
+  return request<Project>(`/api/projects/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProject(id: number): Promise<void> {
+  const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) msg = body.error;
+    } catch { /* ignore */ }
+    throw new ApiError(msg, res.status);
+  }
+}
+
 export function createProject(data: {
   name: string;
   plmProvider: PlmProvider;

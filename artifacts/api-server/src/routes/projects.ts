@@ -19,6 +19,7 @@ const CreateProjectBody = z.object({
 const UpdateProjectBody = z.object({
   name: z.string().min(1).max(160).optional(),
   defaultTarget: z.enum(["story", "task"]).optional(),
+  repositoryId: z.coerce.number().int().positive().optional(),
 });
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -315,15 +316,34 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid submission" });
     return;
   }
-  const [proj] = await db
-    .update(projectsTable)
-    .set(parsed.data)
-    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.userId)))
-    .returning();
-  if (!proj) {
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, params.data.id));
+  if (!project) {
     res.status(404).json({ error: "Project not found" });
     return;
   }
+  // The creator, or a team admin of the project's team, may update it (0017).
+  const isOwner = project.userId === req.userId;
+  const isTeamAdmin = req.teamRole === "admin" && project.teamId != null && project.teamId === req.teamId;
+  if (!isOwner && !isTeamAdmin) {
+    res.status(403).json({ error: "Only the project owner or a team admin can update this project." });
+    return;
+  }
+  // Changing the repository: it must be one the caller owns.
+  if (parsed.data.repositoryId != null) {
+    const [repo] = await db
+      .select({ id: repositoriesTable.id })
+      .from(repositoriesTable)
+      .where(and(eq(repositoriesTable.id, parsed.data.repositoryId), eq(repositoriesTable.userId, req.userId)));
+    if (!repo) {
+      res.status(400).json({ error: "Repository not found" });
+      return;
+    }
+  }
+  const [proj] = await db
+    .update(projectsTable)
+    .set(parsed.data)
+    .where(eq(projectsTable.id, project.id))
+    .returning();
   res.json(proj);
 });
 
