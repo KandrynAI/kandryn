@@ -9,6 +9,7 @@ import {
   CONFIG_KEYS,
   type ConfigKey,
 } from "../services/configService.js";
+import { getUserRole } from "../services/teamService.js";
 import { logger } from "../lib/logger.js";
 import * as audit from "../services/auditService.js";
 
@@ -120,16 +121,18 @@ router.get("/config/test/:integration", (_req, res): void => {
   res.status(405).json({ error: "Use POST to test a connection" });
 });
 
-// Helper: resolve a value from request body, else fall back to user's saved DB value
+// Helper: resolve a value from request body, else fall back to the saved DB value.
+// When teamId is set, getConfig resolves team-first then personal.
 async function resolve(
   body: Record<string, unknown>,
   bodyKey: string,
   userId: string,
   dbKey: ConfigKey,
+  teamId: number | null,
 ): Promise<string> {
   const fromBody = body[bodyKey] as string | undefined;
   if (fromBody && fromBody.trim()) return fromBody.trim();
-  return getConfig(userId, dbKey);
+  return getConfig(userId, dbKey, teamId);
 }
 
 // POST /api/config/test/:integration — live connection test
@@ -138,10 +141,28 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const uid = req.userId;
 
+  // Optional team scoping: with ?teamId=, test the team's saved credentials
+  // (getConfig resolves team-first). The caller must be a member of that team.
+  const teamIdRaw = req.query.teamId;
+  let teamId: number | null = null;
+  if (typeof teamIdRaw === "string" && teamIdRaw !== "") {
+    const parsed = Number(teamIdRaw);
+    if (!Number.isInteger(parsed)) {
+      res.status(400).json({ ok: false, message: "Invalid teamId" });
+      return;
+    }
+    const role = await getUserRole(uid, parsed);
+    if (!role) {
+      res.status(403).json({ ok: false, message: "Not a member of this team" });
+      return;
+    }
+    teamId = parsed;
+  }
+
   try {
     switch (integration) {
       case "anthropic": {
-        const key = await resolve(body, "ANTHROPIC_API_KEY", uid, "ANTHROPIC_API_KEY");
+        const key = await resolve(body, "ANTHROPIC_API_KEY", uid, "ANTHROPIC_API_KEY", teamId);
         if (!key) { res.status(400).json({ ok: false, message: "API key not set" }); return; }
         const r = await fetch("https://api.anthropic.com/v1/models", {
           headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
@@ -152,7 +173,7 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "openai": {
-        const key = await resolve(body, "OPENAI_API_KEY", uid, "OPENAI_API_KEY");
+        const key = await resolve(body, "OPENAI_API_KEY", uid, "OPENAI_API_KEY", teamId);
         if (!key) { res.status(400).json({ ok: false, message: "API key not set" }); return; }
         const r = await fetch("https://api.openai.com/v1/models", {
           headers: { Authorization: `Bearer ${key}` },
@@ -163,7 +184,7 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "gemini": {
-        const key = await resolve(body, "GOOGLE_GEMINI_API_KEY", uid, "GOOGLE_GEMINI_API_KEY");
+        const key = await resolve(body, "GOOGLE_GEMINI_API_KEY", uid, "GOOGLE_GEMINI_API_KEY", teamId);
         if (!key) { res.status(400).json({ ok: false, message: "API key not set" }); return; }
         const r = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
@@ -178,7 +199,7 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "copilot": {
-        const token = await resolve(body, "GITHUB_COPILOT_TOKEN", uid, "GITHUB_COPILOT_TOKEN");
+        const token = await resolve(body, "GITHUB_COPILOT_TOKEN", uid, "GITHUB_COPILOT_TOKEN", teamId);
         if (!token) { res.status(400).json({ ok: false, message: "Token not set" }); return; }
         res.json({
           ok: false,
@@ -188,7 +209,7 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "github": {
-        const token = await resolve(body, "GITHUB_TOKEN", uid, "GITHUB_TOKEN");
+        const token = await resolve(body, "GITHUB_TOKEN", uid, "GITHUB_TOKEN", teamId);
         if (!token) { res.status(400).json({ ok: false, message: "Token not set" }); return; }
         const r = await fetch("https://api.github.com/user", {
           headers: { Authorization: `Bearer ${token}`, "User-Agent": "RedMantis" },
@@ -200,9 +221,9 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "jira": {
-        const domain = await resolve(body, "JIRA_DOMAIN", uid, "JIRA_DOMAIN");
-        const email = await resolve(body, "JIRA_EMAIL", uid, "JIRA_EMAIL");
-        const token = await resolve(body, "JIRA_API_TOKEN", uid, "JIRA_API_TOKEN");
+        const domain = await resolve(body, "JIRA_DOMAIN", uid, "JIRA_DOMAIN", teamId);
+        const email = await resolve(body, "JIRA_EMAIL", uid, "JIRA_EMAIL", teamId);
+        const token = await resolve(body, "JIRA_API_TOKEN", uid, "JIRA_API_TOKEN", teamId);
         if (!domain || !email || !token) {
           res.status(400).json({ ok: false, message: "All three JIRA fields are required" });
           return;
@@ -219,9 +240,9 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "azuredevops": {
-        const org = await resolve(body, "AZURE_DEVOPS_ORG", uid, "AZURE_DEVOPS_ORG");
-        const project = await resolve(body, "AZURE_DEVOPS_PROJECT", uid, "AZURE_DEVOPS_PROJECT");
-        const pat = await resolve(body, "AZURE_DEVOPS_PAT", uid, "AZURE_DEVOPS_PAT");
+        const org = await resolve(body, "AZURE_DEVOPS_ORG", uid, "AZURE_DEVOPS_ORG", teamId);
+        const project = await resolve(body, "AZURE_DEVOPS_PROJECT", uid, "AZURE_DEVOPS_PROJECT", teamId);
+        const pat = await resolve(body, "AZURE_DEVOPS_PAT", uid, "AZURE_DEVOPS_PAT", teamId);
         if (!org || !pat) {
           res.status(400).json({ ok: false, message: "Organisation and PAT are required" });
           return;
@@ -239,8 +260,8 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "azurerepos": {
-        const token = await resolve(body, "AZURE_REPOS_TOKEN", uid, "AZURE_REPOS_TOKEN");
-        const org = (await resolve(body, "AZURE_REPOS_ORG", uid, "AZURE_REPOS_ORG")).trim();
+        const token = await resolve(body, "AZURE_REPOS_TOKEN", uid, "AZURE_REPOS_TOKEN", teamId);
+        const org = (await resolve(body, "AZURE_REPOS_ORG", uid, "AZURE_REPOS_ORG", teamId)).trim();
         if (!token) {
           res.status(400).json({ ok: false, message: "Personal Access Token is required" });
           return;
@@ -265,9 +286,9 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "confluence": {
-        const domain = (await resolve(body, "CONFLUENCE_DOMAIN", uid, "CONFLUENCE_DOMAIN")).trim();
-        const email = (await resolve(body, "CONFLUENCE_EMAIL", uid, "CONFLUENCE_EMAIL")).trim();
-        const token = await resolve(body, "CONFLUENCE_API_TOKEN", uid, "CONFLUENCE_API_TOKEN");
+        const domain = (await resolve(body, "CONFLUENCE_DOMAIN", uid, "CONFLUENCE_DOMAIN", teamId)).trim();
+        const email = (await resolve(body, "CONFLUENCE_EMAIL", uid, "CONFLUENCE_EMAIL", teamId)).trim();
+        const token = await resolve(body, "CONFLUENCE_API_TOKEN", uid, "CONFLUENCE_API_TOKEN", teamId);
         if (!domain || !email || !token) {
           res.status(400).json({ ok: false, message: "Domain, email, and API token are required" });
           return;
@@ -283,7 +304,7 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
       }
 
       case "notion": {
-        const token = await resolve(body, "NOTION_API_TOKEN", uid, "NOTION_API_TOKEN");
+        const token = await resolve(body, "NOTION_API_TOKEN", uid, "NOTION_API_TOKEN", teamId);
         if (!token) {
           res.status(400).json({ ok: false, message: "Notion API token is required" });
           return;
