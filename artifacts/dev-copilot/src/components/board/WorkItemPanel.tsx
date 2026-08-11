@@ -218,26 +218,34 @@ function PanelInner({ item, onClose, onRun, onSchedule }: WorkItemPanelProps & {
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — epics are too broad to run; break them into stories first. */}
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--c-border)", background: "var(--c-surface)", display: "flex", gap: 8, flexShrink: 0 }}>
-          <button
-            onClick={() => {
-              onClose();
-              onRun(item);
-            }}
-            style={{ flex: 1, background: "var(--c-blue)", color: "#fff", border: "none", fontSize: "var(--fs-base)", fontWeight: 600, padding: "9px 0", borderRadius: 3, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}
-          >
-            <Play size={13} />Run now
-          </button>
-          <button
-            onClick={() => {
-              onClose();
-              onSchedule(item);
-            }}
-            style={{ background: "transparent", color: "var(--c-ink-2)", border: "1px solid var(--c-border)", borderRadius: 3, fontSize: "var(--fs-base)", fontWeight: 500, padding: "9px 14px", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5 }}
-          >
-            <Clock size={13} />Schedule
-          </button>
+          {item.itemType === "epic" ? (
+            <span style={{ flex: 1, textAlign: "center", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", padding: "9px 0" }}>
+              Break this epic into stories to run agents.
+            </span>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  onClose();
+                  onRun(item);
+                }}
+                style={{ flex: 1, background: "var(--c-blue)", color: "#fff", border: "none", fontSize: "var(--fs-base)", fontWeight: 600, padding: "9px 0", borderRadius: 3, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}
+              >
+                <Play size={13} />Run now
+              </button>
+              <button
+                onClick={() => {
+                  onClose();
+                  onSchedule(item);
+                }}
+                style={{ background: "transparent", color: "var(--c-ink-2)", border: "1px solid var(--c-border)", borderRadius: 3, fontSize: "var(--fs-base)", fontWeight: 500, padding: "9px 14px", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5 }}
+              >
+                <Clock size={13} />Schedule
+              </button>
+            </>
+          )}
         </div>
       </aside>
     </div>

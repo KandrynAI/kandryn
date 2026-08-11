@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { Loader2, Check } from "lucide-react";
 import { useUser, useClerk } from "@clerk/react";
 import { useRepo } from "@/context/RepoContext";
 import { useConfig } from "@/context/ConfigContext";
@@ -47,6 +48,45 @@ const BOARD_ROWS: { label: string; key: keyof Counts; col: string }[] = [
   { label: "Done", key: "done", col: "done" },
 ];
 
+function relativeTime(iso: string | null): string {
+  if (!iso) return "";
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+const runItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  width: "100%",
+  padding: "5px 6px",
+  fontSize: 12,
+  color: "var(--c-ink)",
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  textAlign: "left",
+  borderRadius: 4,
+};
+const runTitleStyle: React.CSSProperties = {
+  flex: 1,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+const runSubStyle: React.CSSProperties = {
+  fontSize: 10,
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  color: "var(--c-ink-4)",
+  padding: "4px 4px 2px",
+};
+
 export function ContextPanel() {
   const [location, navigate] = useLocation();
   const { user } = useUser();
@@ -62,6 +102,9 @@ export function ContextPanel() {
   });
   const [counts, setCounts] = useState<Counts | null>(null);
   const [countsLoading, setCountsLoading] = useState(false);
+  const [itemTitles, setItemTitles] = useState<Map<number, string>>(new Map());
+  const [runningRuns, setRunningRuns] = useState<Run[]>([]);
+  const [completedRuns, setCompletedRuns] = useState<Run[]>([]);
 
   // Refetch on navigation so a project created this session appears without a reload.
   useEffect(() => {
@@ -108,6 +151,7 @@ export function ContextPanel() {
           if (r.status === "scheduled") c.scheduled += 1;
           else if (r.status === "running" || r.status === "queued") c.running += 1;
         }
+        setItemTitles(new Map(items.map((it) => [it.id, it.title])));
         setCounts(c);
       })
       .finally(() => {
@@ -117,6 +161,32 @@ export function ContextPanel() {
       cancelled = true;
     };
   }, [activeProject, location]);
+
+  // Running + recently completed runs for the panel lists. Poll every 5s so a run
+  // that starts or finishes while the run panel is closed still shows up here.
+  useEffect(() => {
+    if (!activeProject) {
+      setRunningRuns([]);
+      setCompletedRuns([]);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      fetchRuns({ projectId: activeProject.id, limit: 50 })
+        .then((runs) => {
+          if (cancelled) return;
+          setRunningRuns(runs.filter((r) => r.status === "running" || r.status === "queued"));
+          setCompletedRuns(runs.filter((r) => r.status === "succeeded").slice(0, 5));
+        })
+        .catch(() => {});
+    };
+    load();
+    const iv = setInterval(load, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [activeProject]);
 
   const providerLabel = activeProject
     ? `${activeProject.plmProvider === "jira" ? "jira" : "azure"}${activeProject.plmProjectKey ? ` · ${activeProject.plmProjectKey}` : ""}`
@@ -295,23 +365,42 @@ export function ContextPanel() {
         {/* RUNS */}
         <div className="cp-section" style={{ marginTop: 12 }}>
           <div className="cp-label">Runs</div>
-          {([
-            ["Scheduled", counts?.scheduled, "scheduled"],
-            ["Running", counts?.running, "running"],
-          ] as const).map(([label, val, status]) => (
-            <div
-              className={`cp-row${activeProject ? " clickable" : ""}`}
-              key={label}
-              onClick={activeProject ? () => goRuns(status) : undefined}
-              role={activeProject ? "button" : undefined}
-              title={activeProject ? `${label} runs` : undefined}
-            >
-              <span className="cp-row-label">{label}</span>
-              <span className="cp-row-count">
-                {activeProject && countsLoading ? <span className="cp-skel" /> : activeProject ? cell(val) : "—"}
-              </span>
+          <div
+            className={`cp-row${activeProject ? " clickable" : ""}`}
+            onClick={activeProject ? () => goRuns("scheduled") : undefined}
+            role={activeProject ? "button" : undefined}
+            title={activeProject ? "Scheduled runs" : undefined}
+          >
+            <span className="cp-row-label">Scheduled</span>
+            <span className="cp-row-count">
+              {activeProject && countsLoading ? <span className="cp-skel" /> : activeProject ? cell(counts?.scheduled) : "—"}
+            </span>
+          </div>
+
+          {runningRuns.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={runSubStyle}>Running</div>
+              {runningRuns.map((run) => (
+                <button key={run.id} onClick={() => navigate(`/runs/${run.id}`)} style={runItemStyle} title="View run">
+                  <Loader2 className="animate-spin" size={12} style={{ color: "var(--c-blue)", flexShrink: 0 }} />
+                  <span style={runTitleStyle}>{itemTitles.get(run.workItemId) ?? `#${run.workItemId}`}</span>
+                </button>
+              ))}
             </div>
-          ))}
+          )}
+
+          {completedRuns.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={runSubStyle}>Completed</div>
+              {completedRuns.map((run) => (
+                <button key={run.id} onClick={() => navigate(`/runs/${run.id}`)} style={runItemStyle} title="View run">
+                  <Check size={12} strokeWidth={2.5} style={{ color: "var(--c-green)", flexShrink: 0 }} />
+                  <span style={runTitleStyle}>{itemTitles.get(run.workItemId) ?? `#${run.workItemId}`}</span>
+                  <span style={{ fontSize: 10, color: "var(--c-ink-4)", flexShrink: 0 }}>{relativeTime(run.finishedAt)}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* REPOSITORY */}
