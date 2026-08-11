@@ -20,6 +20,8 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
+const ACTIVE_PROJECT_KEY = "bluemantis_active_project_id";
+
 interface Counts {
   open: number;
   inProgress: number;
@@ -54,19 +56,33 @@ export function ContextPanel() {
   const { team, role, isAdmin, loading: teamLoading } = useTeam();
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [storedProjectId] = useState<number | null>(() => {
+    const v = localStorage.getItem(ACTIVE_PROJECT_KEY);
+    return v ? Number(v) : null;
+  });
   const [counts, setCounts] = useState<Counts | null>(null);
   const [countsLoading, setCountsLoading] = useState(false);
 
+  // Refetch on navigation so a project created this session appears without a reload.
   useEffect(() => {
     fetchProjects().then(setProjects).catch(() => {});
-  }, []);
+  }, [location]);
 
   const routeMatch = location.match(/\/p\/(\d+)/);
   const routeId = routeMatch ? Number(routeMatch[1]) : null;
   const activeProject = useMemo(
-    () => projects.find((p) => p.id === routeId) ?? projects[0] ?? null,
-    [projects, routeId],
+    () =>
+      projects.find((p) => p.id === routeId) ??
+      projects.find((p) => p.id === storedProjectId) ??
+      projects[0] ??
+      null,
+    [projects, routeId, storedProjectId],
   );
+
+  // Persist the active project so it is restored on the next load.
+  useEffect(() => {
+    if (activeProject) localStorage.setItem(ACTIVE_PROJECT_KEY, String(activeProject.id));
+  }, [activeProject]);
   const activeRepoId = activeRepository?.id ?? repos[0]?.id ?? null;
 
   // Panel counts come from the same endpoints the board/runs pages use.
@@ -231,6 +247,23 @@ export function ContextPanel() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <button
+                onClick={() => navigate(`/projects/${activeProject.id}/settings`)}
+                data-testid="project-settings-link"
+                style={{
+                  fontSize: 11,
+                  color: "var(--c-ink-4)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "2px 0",
+                  marginTop: 2,
+                  display: "block",
+                  textAlign: "left",
+                }}
+              >
+                Project settings
+              </button>
             </>
           ) : (
             <>
