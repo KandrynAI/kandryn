@@ -141,12 +141,12 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const uid = req.userId;
 
-  // Optional team scoping: with ?teamId=, test the team's saved credentials
-  // (getConfig resolves team-first). The caller must be a member of that team.
-  const teamIdRaw = req.query.teamId;
+  // Optional team scoping: with { teamId } in the body, test the team's saved
+  // credentials (getConfig resolves team-first). The caller must be a member.
+  const rawTeamId = body.teamId;
   let teamId: number | null = null;
-  if (typeof teamIdRaw === "string" && teamIdRaw !== "") {
-    const parsed = Number(teamIdRaw);
+  if (rawTeamId != null && rawTeamId !== "") {
+    const parsed = Number(rawTeamId);
     if (!Number.isInteger(parsed)) {
       res.status(400).json({ ok: false, message: "Invalid teamId" });
       return;
