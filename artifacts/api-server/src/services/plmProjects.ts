@@ -4,7 +4,8 @@ import { getConfigs } from "./configService.js";
  * Lists / validates PLM projects for the project-creation wizard and the live
  * binding check on POST /api/projects. Reuses the same auth as the PLM adapters
  * (Jira: Basic email:token at {domain}/rest/api/3; ADO: Basic :pat at
- * dev.azure.com/{org}). All calls are scoped to the given userId's credentials.
+ * dev.azure.com/{org}). Tracker credentials are team-level, so callers pass the
+ * user's teamId and getConfigs resolves team-first then personal.
  */
 
 export type PlmProvider = "jira" | "azure-devops";
@@ -43,9 +44,10 @@ export function normalizeJiraDomain(raw: string): string {
 export async function listPlmProjects(
   userId: string,
   provider: PlmProvider,
+  teamId: number | null,
 ): Promise<PlmProjectRef[]> {
   if (provider === "jira") {
-    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"]);
+    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"], teamId);
     if (!c.JIRA_DOMAIN || !c.JIRA_EMAIL || !c.JIRA_API_TOKEN) {
       throw new PlmError("Jira is not connected. Add your Jira credentials in Integrations.", "not_connected");
     }
@@ -61,7 +63,7 @@ export async function listPlmProjects(
   }
 
   // azure-devops
-  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"]);
+  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"], teamId);
   if (!c.AZURE_DEVOPS_ORG || !c.AZURE_DEVOPS_PAT) {
     throw new PlmError("Azure DevOps is not connected. Add your Azure DevOps credentials in Integrations.", "not_connected");
   }
@@ -85,8 +87,9 @@ export async function validatePlmProject(
   userId: string,
   provider: PlmProvider,
   key: string,
+  teamId: number | null,
 ): Promise<{ ok: boolean; name?: string }> {
-  const projects = await listPlmProjects(userId, provider);
+  const projects = await listPlmProjects(userId, provider, teamId);
   const match = projects.find((p) => p.key === key || p.name === key);
   return match ? { ok: true, name: match.name } : { ok: false };
 }

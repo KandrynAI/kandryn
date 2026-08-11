@@ -201,7 +201,7 @@ router.post("/projects", async (req, res): Promise<void> => {
   // PLM binding: confirm the project is visible with the user's credentials.
   let plmName: string | undefined;
   try {
-    const v = await validatePlmProject(req.userId, plmProvider, plmProjectKey);
+    const v = await validatePlmProject(req.userId, plmProvider, plmProjectKey, req.teamId ?? null);
     if (!v.ok) {
       res.status(422).json({
         error: `Project "${plmProjectKey}" was not found in ${
@@ -275,7 +275,7 @@ router.get("/plm/:provider/projects", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const projects = await listPlmProjects(req.userId, provider);
+    const projects = await listPlmProjects(req.userId, provider, req.teamId ?? null);
     res.json(projects);
   } catch (err) {
     if (err instanceof PlmError) {
