@@ -151,7 +151,8 @@ export default function ProjectBoard() {
     );
   }
 
-  const all = items ?? [];
+  // Bugs live in the BUGS section of the left panel, not the board columns.
+  const all = (items ?? []).filter((it) => it.itemType !== "bug");
   const epics = all.filter((it) => it.itemType === "epic");
   const parentOf = new Map(all.map((it) => [it.id, it.parentId]));
   const inEpic = (it: WorkItem, epicId: number): boolean => {

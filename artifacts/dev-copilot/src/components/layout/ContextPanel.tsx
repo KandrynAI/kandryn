@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Check } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useUser, useClerk } from "@clerk/react";
 import { useRepo } from "@/context/RepoContext";
 import { useConfig } from "@/context/ConfigContext";
@@ -10,8 +10,6 @@ import {
   fetchProjectWorkItems,
   fetchRuns,
   type Project,
-  type WorkItem,
-  type Run,
 } from "@/services/api";
 import {
   DropdownMenu,
@@ -20,6 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { useRightPanel } from "@/context/RightPanelContext";
 
 const ACTIVE_PROJECT_KEY = "bluemantis_active_project_id";
 
@@ -28,9 +27,24 @@ interface Counts {
   inProgress: number;
   review: number;
   done: number;
+  openBugs: number;
+  allBugs: number;
   scheduled: number;
   running: number;
+  completed: number;
 }
+
+const ZERO_COUNTS: Counts = {
+  open: 0,
+  inProgress: 0,
+  review: 0,
+  done: 0,
+  openBugs: 0,
+  allBugs: 0,
+  scheduled: 0,
+  running: 0,
+  completed: 0,
+};
 
 const STATUS_COL: Record<string, keyof Counts> = {
   open: "open",
@@ -48,45 +62,6 @@ const BOARD_ROWS: { label: string; key: keyof Counts; col: string }[] = [
   { label: "Done", key: "done", col: "done" },
 ];
 
-function relativeTime(iso: string | null): string {
-  if (!iso) return "";
-  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (secs < 60) return "just now";
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-const runItemStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  width: "100%",
-  padding: "5px 6px",
-  fontSize: 12,
-  color: "var(--c-ink)",
-  background: "none",
-  border: "none",
-  cursor: "pointer",
-  textAlign: "left",
-  borderRadius: 4,
-};
-const runTitleStyle: React.CSSProperties = {
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-const runSubStyle: React.CSSProperties = {
-  fontSize: 10,
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  color: "var(--c-ink-4)",
-  padding: "4px 4px 2px",
-};
-
 export function ContextPanel() {
   const [location, navigate] = useLocation();
   const { user } = useUser();
@@ -94,6 +69,7 @@ export function ContextPanel() {
   const { activeRepository, repos } = useRepo();
   const { isAzureConnected, isJiraConnected } = useConfig();
   const { team, role, isAdmin, loading: teamLoading } = useTeam();
+  const { open: openRightPanel } = useRightPanel();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [storedProjectId] = useState<number | null>(() => {
@@ -102,9 +78,6 @@ export function ContextPanel() {
   });
   const [counts, setCounts] = useState<Counts | null>(null);
   const [countsLoading, setCountsLoading] = useState(false);
-  const [itemTitles, setItemTitles] = useState<Map<number, string>>(new Map());
-  const [runningRuns, setRunningRuns] = useState<Run[]>([]);
-  const [completedRuns, setCompletedRuns] = useState<Run[]>([]);
 
   // Refetch on navigation so a project created this session appears without a reload.
   useEffect(() => {
@@ -128,7 +101,8 @@ export function ContextPanel() {
   }, [activeProject]);
   const activeRepoId = activeRepository?.id ?? repos[0]?.id ?? null;
 
-  // Panel counts come from the same endpoints the board/runs pages use.
+  // Board + bug counts from the project's work items. Bugs are excluded from the
+  // board columns and counted separately for the BUGS section.
   useEffect(() => {
     if (!activeProject) {
       setCounts(null);
@@ -136,24 +110,25 @@ export function ContextPanel() {
     }
     let cancelled = false;
     setCountsLoading(true);
-    Promise.all([
-      fetchProjectWorkItems(activeProject.id).catch(() => [] as WorkItem[]),
-      fetchRuns({ projectId: activeProject.id }).catch(() => [] as Run[]),
-    ])
-      .then(([items, runs]) => {
+    fetchProjectWorkItems(activeProject.id)
+      .then((items) => {
         if (cancelled) return;
-        const c: Counts = { open: 0, inProgress: 0, review: 0, done: 0, scheduled: 0, running: 0 };
+        const c = { open: 0, inProgress: 0, review: 0, done: 0, openBugs: 0, allBugs: 0 };
         for (const it of items) {
+          if (it.itemType === "bug") {
+            c.allBugs += 1;
+            if (it.status === "open") c.openBugs += 1;
+            continue;
+          }
           const col = STATUS_COL[it.status];
-          if (col) (c[col] as number) += 1;
+          if (col === "open") c.open += 1;
+          else if (col === "inProgress") c.inProgress += 1;
+          else if (col === "review") c.review += 1;
+          else if (col === "done") c.done += 1;
         }
-        for (const r of runs) {
-          if (r.status === "scheduled") c.scheduled += 1;
-          else if (r.status === "running" || r.status === "queued") c.running += 1;
-        }
-        setItemTitles(new Map(items.map((it) => [it.id, it.title])));
-        setCounts(c);
+        setCounts((prev) => ({ ...(prev ?? ZERO_COUNTS), ...c }));
       })
+      .catch(() => {})
       .finally(() => {
         if (!cancelled) setCountsLoading(false);
       });
@@ -162,24 +137,26 @@ export function ContextPanel() {
     };
   }, [activeProject, location]);
 
-  // Running + recently completed runs for the panel lists. Poll every 5s so a run
-  // that starts or finishes while the run panel is closed still shows up here.
+  // Run counts (scheduled / running / completed). Poll every 5s so the badges stay
+  // live while a run progresses in the background.
   useEffect(() => {
-    if (!activeProject) {
-      setRunningRuns([]);
-      setCompletedRuns([]);
-      return;
-    }
+    if (!activeProject) return;
     let cancelled = false;
-    const load = () => {
-      fetchRuns({ projectId: activeProject.id, limit: 50 })
+    const load = () =>
+      fetchRuns({ projectId: activeProject.id })
         .then((runs) => {
           if (cancelled) return;
-          setRunningRuns(runs.filter((r) => r.status === "running" || r.status === "queued"));
-          setCompletedRuns(runs.filter((r) => r.status === "succeeded").slice(0, 5));
+          let scheduled = 0;
+          let running = 0;
+          let completed = 0;
+          for (const r of runs) {
+            if (r.status === "scheduled") scheduled += 1;
+            else if (r.status === "running" || r.status === "queued") running += 1;
+            else if (r.status === "succeeded") completed += 1;
+          }
+          setCounts((prev) => ({ ...(prev ?? ZERO_COUNTS), scheduled, running, completed }));
         })
         .catch(() => {});
-    };
     load();
     const iv = setInterval(load, 5000);
     return () => {
@@ -198,10 +175,6 @@ export function ContextPanel() {
   const goBoard = (col?: string) => {
     if (!activeProject) return;
     navigate(`/p/${activeProject.id}/board${col ? `?col=${col}` : ""}`);
-  };
-  const goRuns = (status: string) => {
-    if (!activeProject) return;
-    navigate(`/p/${activeProject.id}/runs?status=${status}`);
   };
 
   return (
@@ -362,45 +335,54 @@ export function ContextPanel() {
           ))}
         </div>
 
+        {/* BUGS */}
+        <div className="cp-section" style={{ marginTop: 12 }}>
+          <div className="cp-label">Bugs</div>
+          {([
+            ["Open bugs", counts?.openBugs, "open"],
+            ["All bugs", counts?.allBugs, "all"],
+          ] as const).map(([label, val, filter]) => (
+            <div
+              className={`cp-row${activeProject ? " clickable" : ""}`}
+              key={label}
+              onClick={activeProject ? () => openRightPanel({ type: "bugs", filter, projectId: activeProject.id }) : undefined}
+              role={activeProject ? "button" : undefined}
+              title={activeProject ? label : undefined}
+            >
+              <span className="cp-row-label">{label}</span>
+              <span className="cp-row-count">
+                {activeProject && countsLoading ? <span className="cp-skel" /> : activeProject ? cell(val) : "—"}
+              </span>
+            </div>
+          ))}
+        </div>
+
         {/* RUNS */}
         <div className="cp-section" style={{ marginTop: 12 }}>
           <div className="cp-label">Runs</div>
-          <div
-            className={`cp-row${activeProject ? " clickable" : ""}`}
-            onClick={activeProject ? () => goRuns("scheduled") : undefined}
-            role={activeProject ? "button" : undefined}
-            title={activeProject ? "Scheduled runs" : undefined}
-          >
-            <span className="cp-row-label">Scheduled</span>
-            <span className="cp-row-count">
-              {activeProject && countsLoading ? <span className="cp-skel" /> : activeProject ? cell(counts?.scheduled) : "—"}
-            </span>
-          </div>
-
-          {runningRuns.length > 0 && (
-            <div style={{ marginTop: 6 }}>
-              <div style={runSubStyle}>Running</div>
-              {runningRuns.map((run) => (
-                <button key={run.id} onClick={() => navigate(`/runs/${run.id}`)} style={runItemStyle} title="View run">
-                  <Loader2 className="animate-spin" size={12} style={{ color: "var(--c-blue)", flexShrink: 0 }} />
-                  <span style={runTitleStyle}>{itemTitles.get(run.workItemId) ?? `#${run.workItemId}`}</span>
-                </button>
-              ))}
+          {([
+            ["Scheduled", counts?.scheduled, "scheduled"],
+            ["Running", counts?.running, "running"],
+            ["Completed", counts?.completed, "completed"],
+          ] as const).map(([label, val, status]) => (
+            <div
+              className={`cp-row${activeProject ? " clickable" : ""}`}
+              key={label}
+              onClick={activeProject ? () => openRightPanel({ type: "run-list", status, projectId: activeProject.id }) : undefined}
+              role={activeProject ? "button" : undefined}
+              title={activeProject ? `${label} runs` : undefined}
+            >
+              <span className="cp-row-label" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                {status === "running" && (val ?? 0) > 0 && (
+                  <Loader2 className="animate-spin" size={11} style={{ color: "var(--c-blue)" }} />
+                )}
+                {label}
+              </span>
+              <span className="cp-row-count">
+                {activeProject && countsLoading ? <span className="cp-skel" /> : activeProject ? cell(val) : "—"}
+              </span>
             </div>
-          )}
-
-          {completedRuns.length > 0 && (
-            <div style={{ marginTop: 6 }}>
-              <div style={runSubStyle}>Completed</div>
-              {completedRuns.map((run) => (
-                <button key={run.id} onClick={() => navigate(`/runs/${run.id}`)} style={runItemStyle} title="View run">
-                  <Check size={12} strokeWidth={2.5} style={{ color: "var(--c-green)", flexShrink: 0 }} />
-                  <span style={runTitleStyle}>{itemTitles.get(run.workItemId) ?? `#${run.workItemId}`}</span>
-                  <span style={{ fontSize: 10, color: "var(--c-ink-4)", flexShrink: 0 }}>{relativeTime(run.finishedAt)}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
 
         {/* REPOSITORY */}
