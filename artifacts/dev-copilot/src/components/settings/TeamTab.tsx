@@ -3,7 +3,8 @@ import { useTeam } from "@/context/TeamContext";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { X, Check } from "lucide-react";
+import { X, Check, Loader2 } from "lucide-react";
+import { SecretInput, StatusPill, isSecret, tone, GREEN, RED } from "@/components/settings/credentials";
 import {
   fetchTeamIntegrations,
   setTeamIntegration,
@@ -19,10 +20,11 @@ import {
   type TeamInviteRow,
 } from "@/services/api";
 
-const CRED_GROUPS: { label: string; note: string; fields: { key: string; label: string }[] }[] = [
+const CRED_GROUPS: { label: string; note: string; testKey: string; fields: { key: string; label: string }[] }[] = [
   {
     label: "Jira",
     note: "Shared across all team members",
+    testKey: "jira",
     fields: [
       { key: "JIRA_DOMAIN", label: "Domain" },
       { key: "JIRA_EMAIL", label: "Account email" },
@@ -32,6 +34,7 @@ const CRED_GROUPS: { label: string; note: string; fields: { key: string; label: 
   {
     label: "Azure DevOps",
     note: "Shared across all team members",
+    testKey: "azuredevops",
     fields: [
       { key: "AZURE_DEVOPS_ORG", label: "Organisation" },
       { key: "AZURE_DEVOPS_PROJECT", label: "Project" },
@@ -41,6 +44,7 @@ const CRED_GROUPS: { label: string; note: string; fields: { key: string; label: 
   {
     label: "Confluence",
     note: "For Narratia runbook push",
+    testKey: "confluence",
     fields: [
       { key: "CONFLUENCE_DOMAIN", label: "Domain" },
       { key: "CONFLUENCE_EMAIL", label: "Account email" },
@@ -51,6 +55,7 @@ const CRED_GROUPS: { label: string; note: string; fields: { key: string; label: 
   {
     label: "Notion",
     note: "For Narratia runbook push",
+    testKey: "notion",
     fields: [
       { key: "NOTION_API_TOKEN", label: "Integration token" },
       { key: "NOTION_PARENT_PAGE", label: "Parent page ID" },
@@ -105,27 +110,106 @@ function TeamCredField({
     }
   };
 
+  const placeholder = isSet ? "••••••••  (enter a new value to replace)" : "Not set";
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-medium text-foreground">
-        {label}
-        {isSet && <span className="ml-1.5 font-normal text-muted-foreground">— configured</span>}
+      <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-foreground">
+        <span>{label}</span>
+        <StatusPill set={isSet} />
       </label>
       <div className="flex items-center gap-2">
-        <Input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={isSet ? "••••••••  (enter a new value to replace)" : "Not set"}
-          disabled={!canEdit}
-          className="h-9 font-mono text-sm"
-          type="password"
-          autoComplete="off"
-        />
+        <div className="flex-1">
+          {isSecret(fieldKey) ? (
+            <SecretInput value={value} onChange={setValue} placeholder={placeholder} disabled={!canEdit} />
+          ) : (
+            <Input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={placeholder}
+              disabled={!canEdit}
+              className="h-9 font-mono text-sm"
+              type="text"
+              autoComplete="off"
+            />
+          )}
+        </div>
         {canEdit && (
           <Button variant="outline" size="sm" className="h-9" onClick={save} disabled={saving || !value.trim()}>
             {saving ? "Saving…" : "Save"}
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** One team integration: its credential fields plus a Test-connection button
+ *  that verifies the team's saved credentials (teamId-scoped) via the shared endpoint. */
+function TeamCredGroup({
+  group,
+  setKeys,
+  canEdit,
+  teamId,
+  onSaved,
+}: {
+  group: (typeof CRED_GROUPS)[number];
+  setKeys: Set<string>;
+  canEdit: boolean;
+  teamId: number;
+  onSaved: () => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/config/test/${group.testKey}?teamId=${teamId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = (await res.json()) as { ok: boolean; message: string };
+      setTestResult(data);
+    } catch {
+      setTestResult({ ok: false, message: "Network error — could not reach the server" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={groupLabel}>
+        {group.label}{" "}
+        <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--c-ink-4)", fontWeight: 400 }}>· {group.note}</span>
+      </div>
+      <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
+        {group.fields.map((f) => (
+          <TeamCredField
+            key={f.key}
+            fieldKey={f.key}
+            label={f.label}
+            isSet={setKeys.has(f.key)}
+            canEdit={canEdit}
+            teamId={teamId}
+            onSaved={onSaved}
+          />
+        ))}
+
+        {testResult && (
+          <div className="flex items-center gap-2 rounded-md border px-3.5 py-2.5 text-[13px]" style={tone(testResult.ok ? GREEN : RED)}>
+            {testResult.ok ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />} {testResult.message}
+          </div>
+        )}
+
+        <div>
+          <Button variant="outline" size="sm" className="h-9" onClick={handleTest} disabled={testing}>
+            {testing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -196,24 +280,14 @@ export default function TeamTab() {
 
       {/* Team credentials */}
       {CRED_GROUPS.map((group) => (
-        <div key={group.label} style={{ marginBottom: 24 }}>
-          <div style={groupLabel}>
-            {group.label} <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--c-ink-4)", fontWeight: 400 }}>· {group.note}</span>
-          </div>
-          <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
-            {group.fields.map((f) => (
-              <TeamCredField
-                key={f.key}
-                fieldKey={f.key}
-                label={f.label}
-                isSet={setKeys.has(f.key)}
-                canEdit={isAdmin}
-                teamId={teamId}
-                onSaved={loadIntegrations}
-              />
-            ))}
-          </div>
-        </div>
+        <TeamCredGroup
+          key={group.label}
+          group={group}
+          setKeys={setKeys}
+          canEdit={isAdmin}
+          teamId={teamId}
+          onSaved={loadIntegrations}
+        />
       ))}
 
       {/* Members */}

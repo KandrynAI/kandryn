@@ -5,7 +5,8 @@ import TeamTab from "@/components/settings/TeamTab";
 import AuditTab from "@/components/settings/AuditTab";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
+import { Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
+import { StatusPill, SecretInput, isSecret } from "@/components/settings/credentials";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -204,45 +205,6 @@ function tone(color: string): React.CSSProperties {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function StatusPill({ set }: { set: boolean }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-      style={set ? tone(GREEN) : undefined}
-    >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: set ? GREEN : "var(--text-muted)" }} />
-      <span className={set ? "" : "text-muted-foreground"}>{set ? "Configured" : "Not set"}</span>
-    </span>
-  );
-}
-
-function SecretInput({
-  value, onChange, placeholder,
-}: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <Input
-        type={show ? "text" : "password"}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        spellCheck={false}
-        className="h-9 pr-9 font-mono text-sm"
-      />
-      <button
-        type="button"
-        onClick={() => setShow((s) => !s)}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-        title={show ? "Hide" : "Show"}
-      >
-        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-      </button>
-    </div>
-  );
-}
-
 function IntegrationCard({
   integration, configMap, onSaved,
 }: { integration: Integration; configMap: ConfigMap; onSaved: () => void }) {
@@ -370,9 +332,12 @@ function IntegrationCard({
           <div className="flex flex-col gap-3">
             {integration.fields.map((field) => (
               <div key={field.key}>
-                <label className="mb-1.5 block text-xs font-medium text-foreground">
-                  {field.label}
-                  {field.hint && <span className="ml-1.5 font-normal text-muted-foreground">— {field.hint}</span>}
+                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-foreground">
+                  <span>
+                    {field.label}
+                    {field.hint && <span className="ml-1.5 font-normal text-muted-foreground">— {field.hint}</span>}
+                  </span>
+                  <StatusPill set={Boolean(configMap[field.key]?.set)} />
                 </label>
                 {configMap[field.key]?.set && !(field.key in values) ? (
                   <div className="flex items-center gap-2">
@@ -387,8 +352,18 @@ function IntegrationCard({
                       {removing === field.key ? "Removing…" : "Remove"}
                     </Button>
                   </div>
-                ) : (
+                ) : isSecret(field.key) ? (
                   <SecretInput value={values[field.key] ?? ""} onChange={(v) => setField(field.key, v)} placeholder={field.placeholder} />
+                ) : (
+                  <Input
+                    type="text"
+                    value={values[field.key] ?? ""}
+                    onChange={(e) => setField(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="h-9 font-mono text-sm"
+                  />
                 )}
               </div>
             ))}
