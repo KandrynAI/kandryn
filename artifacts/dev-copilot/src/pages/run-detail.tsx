@@ -7,6 +7,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { agentDisplay } from "@/lib/agents";
+import { useTeam } from "@/context/TeamContext";
+
+type AegisIssueType = "bug" | "subtask";
+type AegisIssueTypePref = AegisIssueType | "smart";
+
+/** Client mirror of the server's issue-type resolution (preference + severity). */
+function resolveAegisIssueType(pref: AegisIssueTypePref, severity: string): AegisIssueType {
+  if (pref === "bug") return "bug";
+  if (pref === "subtask") return "subtask";
+  return severity === "critical" || severity === "high" ? "bug" : "subtask";
+}
 import {
   fetchRun,
   commitRunSuggestion,
@@ -16,6 +27,7 @@ import {
   runNarratia,
   remediateAegisFinding,
   pushWorkItemToPlm,
+  fetchTeamIntegrations,
   ApiError,
   type RunDetail,
   type RunStatus,
@@ -694,7 +706,7 @@ const SEV_BADGE: Record<string, { bg: string; fg: string }> = {
 type FindingLocalState = { pushed?: boolean; runId?: number; status?: string };
 
 function AegisFindingRow({
-  f, last, selectable, selected, onToggle, remediating, state, onPush, onRemediate, navigate,
+  f, last, selectable, selected, onToggle, remediating, state, defaultIssueType, onPush, onRemediate, navigate,
 }: {
   f: AegisFinding;
   last: boolean;
@@ -703,11 +715,14 @@ function AegisFindingRow({
   onToggle: (v: boolean) => void;
   remediating: boolean;
   state?: FindingLocalState;
-  onPush: () => void;
+  defaultIssueType: AegisIssueType;
+  onPush: (issueType: AegisIssueType) => void;
   onRemediate: () => void;
   navigate: (to: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [showPushPicker, setShowPushPicker] = useState(false);
+  const [pushIssueType, setPushIssueType] = useState<AegisIssueType>(defaultIssueType);
   const sev = SEV_BADGE[f.severity] ?? SEV_BADGE.info;
   const isInfo = f.severity === "info";
   const pushed = Boolean(state?.pushed || f.pushedToBoard || f.plmTicketKey);
@@ -748,8 +763,30 @@ function AegisFindingRow({
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {pushed ? (
             <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-green)", textAlign: "center" }}>Pushed ✓</span>
+          ) : showPushPicker ? (
+            <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-surface)", padding: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--c-ink-3)", fontWeight: 600 }}>Create as:</div>
+              {(["bug", "subtask"] as const).map((t) => (
+                <label key={t} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--c-ink)", cursor: "pointer" }}>
+                  <input type="radio" name={`push-${f.id}`} checked={pushIssueType === t} onChange={() => setPushIssueType(t)} />
+                  {t === "bug" ? "Bug" : "Sub-task"}
+                </label>
+              ))}
+              <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                <button
+                  onClick={() => { setShowPushPicker(false); onPush(pushIssueType); }}
+                  disabled={remediating}
+                  style={{ background: "var(--c-blue)", color: "#fff", border: "none", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 3, cursor: "pointer" }}
+                >
+                  Push
+                </button>
+                <button onClick={() => setShowPushPicker(false)} style={{ background: "none", border: "1px solid var(--c-border)", fontSize: 11, padding: "3px 10px", borderRadius: 3, cursor: "pointer", color: "var(--c-ink-3)" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
           ) : (
-            <button className="bm-ghost" onClick={onPush} disabled={remediating} style={{ justifyContent: "center" }}>
+            <button className="bm-ghost" onClick={() => { setPushIssueType(defaultIssueType); setShowPushPicker(true); }} disabled={remediating} style={{ justifyContent: "center" }}>
               {remediating ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}{remediating ? "Pushing…" : "Push to PLM"}
             </button>
           )}
@@ -779,6 +816,17 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
   onChanged: () => void;
 }) {
   const { toast } = useToast();
+  const { team } = useTeam();
+  const [issueTypePref, setIssueTypePref] = useState<AegisIssueTypePref>("smart");
+  useEffect(() => {
+    if (!team) return;
+    fetchTeamIntegrations(team.id)
+      .then((rows) => {
+        const v = rows.find((r) => r.key === "AEGIS_JIRA_ISSUE_TYPE")?.value;
+        if (v === "bug" || v === "subtask" || v === "smart") setIssueTypePref(v);
+      })
+      .catch(() => {});
+  }, [team]);
   const status = run.securityScanStatus;
   const scan = run.securityScan;
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -802,10 +850,10 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
       return n;
     });
 
-  const remediate = async (id: string, action: "push" | "remediate-now") => {
+  const remediate = async (id: string, action: "push" | "remediate-now", issueType?: AegisIssueType) => {
     setRemediatingId(id);
     try {
-      const res = await remediateAegisFinding(runId, id, action);
+      const res = await remediateAegisFinding(runId, id, action, issueType);
       setFindingStates((prev) => ({
         ...prev,
         [id]: { pushed: true, runId: res.newRunId ?? prev[id]?.runId, status: action === "remediate-now" ? "running" : undefined },
@@ -831,7 +879,8 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
 
   const onRemediateNow = (f: AegisFinding) => {
     if (window.confirm(`This will create a tracker ticket for "${f.title}" and immediately start a new run to fix it.\n\nContinue?`)) {
-      void remediate(f.id, "remediate-now");
+      // Remediate Now is always a standalone Bug — a sub-task would not make sense.
+      void remediate(f.id, "remediate-now", "bug");
     }
   };
 
@@ -840,7 +889,9 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
     setBulkPushing(true);
     for (const id of ids) {
       try {
-        await remediateAegisFinding(runId, id, "push");
+        const finding = findings.find((f) => f.id === id);
+        const issueType = finding ? resolveAegisIssueType(issueTypePref, finding.severity) : undefined;
+        await remediateAegisFinding(runId, id, "push", issueType);
         setFindingStates((prev) => ({ ...prev, [id]: { ...prev[id], pushed: true } }));
       } catch {
         /* continue with the rest */
@@ -958,7 +1009,8 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
               onToggle={(v) => toggle(f.id, v)}
               remediating={remediatingId === f.id || bulkPushing}
               state={findingStates[f.id]}
-              onPush={() => remediate(f.id, "push")}
+              defaultIssueType={resolveAegisIssueType(issueTypePref, f.severity)}
+              onPush={(issueType) => remediate(f.id, "push", issueType)}
               onRemediate={() => onRemediateNow(f)}
               navigate={navigate}
             />

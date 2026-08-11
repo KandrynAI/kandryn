@@ -148,7 +148,7 @@ export async function deleteInvite(teamId: number, inviteId: number): Promise<bo
 
 export async function listTeamIntegrations(teamId: number) {
   return db
-    .select({ key: teamIntegrationsTable.key, setBy: teamIntegrationsTable.setBy, setAt: teamIntegrationsTable.setAt })
+    .select({ key: teamIntegrationsTable.key, value: teamIntegrationsTable.value, setBy: teamIntegrationsTable.setBy, setAt: teamIntegrationsTable.setAt })
     .from(teamIntegrationsTable)
     .where(eq(teamIntegrationsTable.teamId, teamId))
     .orderBy(asc(teamIntegrationsTable.key));

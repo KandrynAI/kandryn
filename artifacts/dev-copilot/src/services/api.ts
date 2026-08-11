@@ -314,11 +314,12 @@ export function remediateAegisFinding(
   runId: number,
   findingId: string,
   action: 'push' | 'remediate-now',
+  issueType?: 'bug' | 'subtask',
 ): Promise<RemediateResponse> {
   return request<RemediateResponse>(`/api/runs/${runId}/security/remediate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ findingId, action }),
+    body: JSON.stringify({ findingId, action, issueType }),
   });
 }
 
@@ -793,6 +794,8 @@ export interface TeamIntegrationRow {
   setBy: string;
   setAt: string;
   masked: string;
+  /** Present for non-secret preference keys (e.g. AEGIS_JIRA_ISSUE_TYPE). */
+  value?: string | null;
 }
 
 export function fetchTeamMembers(teamId: number): Promise<TeamMemberRow[]> {

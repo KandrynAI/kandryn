@@ -38,6 +38,7 @@ const TEAM_CONFIG_KEYS = [
   "CONFLUENCE_SPACE_KEY",
   "NOTION_API_TOKEN",
   "NOTION_PARENT_PAGE",
+  "AEGIS_JIRA_ISSUE_TYPE",
 ] as const;
 
 const TeamIdParam = z.object({ teamId: z.coerce.number().int().positive() });
@@ -273,7 +274,18 @@ router.get("/teams/:teamId/integrations", async (req, res): Promise<void> => {
     return;
   }
   const rows = await listTeamIntegrations(params.data.teamId);
-  res.json(rows.map((r) => ({ key: r.key, setBy: r.setBy, setAt: r.setAt, masked: "••••••••" })));
+  // Credential values stay masked; non-secret preferences return their value so
+  // the UI can reflect the current selection.
+  const PREF_KEYS = new Set(["AEGIS_JIRA_ISSUE_TYPE"]);
+  res.json(
+    rows.map((r) => ({
+      key: r.key,
+      setBy: r.setBy,
+      setAt: r.setAt,
+      masked: "••••••••",
+      value: PREF_KEYS.has(r.key) ? r.value : undefined,
+    })),
+  );
 });
 
 // POST /teams/:teamId/integrations — set a shared team credential (admin).

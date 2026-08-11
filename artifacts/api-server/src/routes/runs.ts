@@ -6,7 +6,13 @@ import { executeRun, commitFromSuggestion, RunError } from "../services/runServi
 import { getConfigs } from "../services/configService.js";
 import { runVeriaReview } from "../services/veriaService.js";
 import { runAegisScan } from "../services/aegisService.js";
-import { createAegisPlmTicket, ensureFindingTask, buildRemediationPrompt } from "../services/aegisPlmService.js";
+import {
+  createAegisPlmTicket,
+  ensureFindingTask,
+  buildRemediationPrompt,
+  getAegisIssueTypePref,
+  resolveIssueType,
+} from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
 import { syncProject } from "../services/syncService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
@@ -547,6 +553,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
       (project?.plmProvider === "jira" || project?.plmProvider === "azure-devops") &&
       project.plmProjectKey;
     if (canFilePlm && workItem && project) {
+      const issueTypePref = await getAegisIssueTypePref(req.userId, project.teamId);
       for (const finding of scan.findings) {
         if (finding.severity !== "critical" && finding.severity !== "high") continue;
         const ticket = await createAegisPlmTicket({
@@ -559,6 +566,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
           projectId: project.id,
           repositoryId: project.repositoryId,
           parentTaskId: workItem.id,
+          issueType: resolveIssueType(issueTypePref, finding.severity),
         });
         if (ticket) {
           finding.plmTicketUrl = ticket.ticketUrl;
@@ -775,6 +783,8 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
 const RemediateBody = z.object({
   findingId: z.string().min(1),
   action: z.enum(["push", "remediate-now"]),
+  // Optional per-finding override; falls back to the team preference.
+  issueType: z.enum(["bug", "subtask"]).optional(),
 });
 
 router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
@@ -848,6 +858,13 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
         plmProvider: project.plmProvider as PlmProvider,
       });
     } else {
+      // Remediate Now is always a standalone Bug; a plain push honours the
+      // per-finding override, else the team preference (smart by default).
+      const issueType: "bug" | "subtask" =
+        action === "remediate-now"
+          ? "bug"
+          : parsed.data.issueType ??
+            resolveIssueType(await getAegisIssueTypePref(req.userId, project.teamId), finding.severity);
       const ticket = await createAegisPlmTicket({
         finding,
         parentExternalId: workItem?.externalId ?? "",
@@ -858,6 +875,7 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
         projectId: project.id,
         repositoryId: project.repositoryId,
         parentTaskId: workItem?.id ?? null,
+        issueType,
       });
       if (!ticket) {
         res.status(502).json({ error: "Could not create PLM ticket. Check your tracker credentials." });

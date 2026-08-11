@@ -202,6 +202,142 @@ async function createAdoItem(
   };
 }
 
+// ---- Security findings (Aegis) ----------------------------------------------
+
+function jiraPriority(severity: string): string {
+  switch (severity) {
+    case "critical":
+      return "Highest";
+    case "high":
+      return "High";
+    case "medium":
+      return "Medium";
+    default:
+      return "Low";
+  }
+}
+
+export interface SecurityFindingInput {
+  issueType: "bug" | "subtask";
+  title: string;
+  /** Plain-text body (composed by the caller). */
+  body: string;
+  severity: string;
+  parentExternalId: string | null;
+  parentTitle: string;
+}
+
+async function createJiraSecurityIssue(
+  creds: { domain: string; email: string; token: string },
+  projectKey: string,
+  input: SecurityFindingInput,
+): Promise<PlmCreateResult> {
+  const domain = normalizeJiraDomain(creds.domain);
+  const summary = input.title.slice(0, 254);
+  const descriptionAdf = input.body ? textToAdf(input.body) : undefined;
+  const labels = ["security", "aegis", input.severity];
+  const priority = { name: jiraPriority(input.severity) };
+  // Sub-tasks require a parent; without one, fall back to a standalone Bug.
+  const wantSubtask = input.issueType === "subtask" && !!input.parentExternalId;
+
+  const buildFields = (issuetypeName: string, includeFragile: boolean): Record<string, unknown> => {
+    const f: Record<string, unknown> = {
+      project: { key: projectKey },
+      issuetype: { name: issuetypeName },
+      summary,
+    };
+    if (descriptionAdf) f.description = descriptionAdf;
+    if (wantSubtask) f.parent = { key: input.parentExternalId };
+    if (includeFragile) {
+      f.priority = priority;
+      f.labels = labels;
+    }
+    return f;
+  };
+
+  const post = (fields: Record<string, unknown>) =>
+    jiraRequest<{ id: string; key: string }>(creds, "/issue", {
+      method: "POST",
+      body: JSON.stringify({ fields }),
+    });
+
+  const primaryType = wantSubtask ? "Sub-task" : "Bug";
+  let created: { id: string; key: string };
+  try {
+    created = await post(buildFields(primaryType, true));
+  } catch (err) {
+    // Priority/labels are the fragile fields (create-screen config varies) — retry
+    // without them. Some projects name the sub-task type "Subtask" (no hyphen).
+    try {
+      created = await post(buildFields(primaryType, false));
+    } catch (err2) {
+      const msg = err2 instanceof Error ? err2.message : String(err2);
+      if (wantSubtask && /issuetype|sub-?task/i.test(msg)) {
+        created = await post(buildFields("Subtask", false));
+      } else {
+        throw err2;
+      }
+    }
+  }
+
+  // A Bug is standalone — link it back to the parent story with a "Relates" link
+  // (non-fatal; the Bug already exists). Sub-tasks are linked via the parent
+  // field above, so no separate link is needed.
+  if (!wantSubtask && input.parentExternalId) {
+    try {
+      await jiraRequest(creds, "/issueLink", {
+        method: "POST",
+        body: JSON.stringify({
+          type: { name: "Relates" },
+          inwardIssue: { key: created.key },
+          outwardIssue: { key: input.parentExternalId },
+        }),
+      });
+    } catch (linkErr) {
+      logger.warn({ linkErr, issueKey: created.key }, "Could not create Jira issue link for security finding");
+    }
+  }
+
+  return { externalId: created.key, plmUrl: `${domain}/browse/${created.key}`, plmStatus: null };
+}
+
+/**
+ * Create a PLM item for an Aegis security finding. Jira honours the caller's
+ * issueType (Bug with a Relates link, or Sub-task under the parent story).
+ * Azure DevOps has no sub-tasks, so it always creates a Bug with the existing
+ * parent relation.
+ */
+export async function createSecurityFindingItem(
+  userId: string,
+  project: { plmProvider: PlmProvider; plmProjectKey: string | null },
+  input: SecurityFindingInput,
+): Promise<PlmCreateResult> {
+  if (!project.plmProjectKey) {
+    throw new PlmError("This project has no PLM project bound.", "not_connected");
+  }
+  if (project.plmProvider === "jira") {
+    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"]);
+    if (!c.JIRA_DOMAIN || !c.JIRA_EMAIL || !c.JIRA_API_TOKEN) {
+      throw new PlmError("Jira is not connected. Add your Jira credentials in Integrations.", "not_connected");
+    }
+    return createJiraSecurityIssue(
+      { domain: c.JIRA_DOMAIN, email: c.JIRA_EMAIL, token: c.JIRA_API_TOKEN },
+      project.plmProjectKey,
+      input,
+    );
+  }
+  // Azure DevOps: always a Bug, with the existing parent (hierarchy) relation.
+  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"]);
+  if (!c.AZURE_DEVOPS_ORG || !c.AZURE_DEVOPS_PAT) {
+    throw new PlmError("Azure DevOps is not connected. Add your Azure DevOps credentials in Integrations.", "not_connected");
+  }
+  return createAdoItem(
+    { org: c.AZURE_DEVOPS_ORG, pat: c.AZURE_DEVOPS_PAT },
+    project.plmProjectKey,
+    { itemType: "bug", title: input.title, description: input.body, parentExternalId: input.parentExternalId },
+  );
+}
+
 // ---- Test cases (Phase 5) ---------------------------------------------------
 
 export interface PlmTestCaseInput {
