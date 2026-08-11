@@ -4,6 +4,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 export type RightPanelView =
   | { type: "run-list"; status: "running" | "completed" | "scheduled"; projectId: number }
   | { type: "bugs"; filter: "open" | "all"; projectId: number }
+  | { type: "run-detail"; runId: number }
   | null;
 
 interface RightPanelContextValue {

@@ -4,8 +4,10 @@ import { X, Loader2, Check, Clock, ChevronRight } from "lucide-react";
 import {
   fetchProjectWorkItems,
   fetchRuns,
+  fetchRun,
   type WorkItem,
   type Run,
+  type RunDetail,
 } from "@/services/api";
 import { WorkItemPanel } from "@/components/board/WorkItemPanel";
 import { RunPanel } from "@/components/runs/RunPanel";
@@ -224,6 +226,83 @@ function BugsView({
   );
 }
 
+// ── run detail view ──────────────────────────────────────────────────────────
+
+const RUN_BADGE: Record<string, { label: string; bg: string; fg: string }> = {
+  running: { label: "Running", bg: "var(--c-blue-bg)", fg: "var(--c-blue)" },
+  queued: { label: "Queued", bg: "var(--c-blue-bg)", fg: "var(--c-blue)" },
+  succeeded: { label: "Succeeded", bg: "#dcfce7", fg: "#15803d" },
+  failed: { label: "Failed", bg: "#fee2e2", fg: "#b91c1c" },
+  canceled: { label: "Canceled", bg: "var(--c-raised)", fg: "var(--c-ink-3)" },
+  scheduled: { label: "Scheduled", bg: "#fef3c7", fg: "#b45309" },
+};
+
+function RunDetailView({ runId, onClose }: { runId: number; onClose: () => void }) {
+  const [, navigate] = useLocation();
+  const [detail, setDetail] = useState<RunDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchRun(runId)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+      .finally(() => setLoading(false));
+  }, [runId]);
+
+  const run = detail?.run ?? null;
+  const badge = run ? RUN_BADGE[run.status] ?? { label: run.status, bg: "var(--c-raised)", fg: "var(--c-ink-3)" } : null;
+  const rows: [string, string][] = run
+    ? [
+        ["Trigger", run.trigger],
+        ["Started", run.startedAt ? relativeTime(run.startedAt) : "—"],
+        ["Finished", run.finishedAt ? relativeTime(run.finishedAt) : "—"],
+        ...(run.securityGate ? ([["Security gate", run.securityGate]] as [string, string][]) : []),
+      ]
+    : [];
+
+  return (
+    <>
+      <div className="rp-head">
+        <span className="rp-title">Run #{runId}</span>
+        <button className="rp-x" onClick={onClose} aria-label="Close"><X size={16} /></button>
+      </div>
+      <div className="rp-body" style={{ padding: 14 }}>
+        {loading ? (
+          <div className="rp-empty">Loading…</div>
+        ) : !run ? (
+          <div className="rp-empty">Run not found.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {badge && (
+              <span style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 3, background: badge.bg, color: badge.fg }}>
+                {badge.label}
+              </span>
+            )}
+            <dl style={{ display: "grid", gap: 8, margin: 0 }}>
+              {rows.map(([k, v]) => (
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <dt style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>{k}</dt>
+                  <dd style={{ margin: 0, fontSize: 12, color: "var(--c-ink)", textAlign: "right", textTransform: "capitalize" }}>{v}</dd>
+                </div>
+              ))}
+            </dl>
+            {run.error && (
+              <div style={{ fontSize: 12, color: "#b91c1c", background: "#fee2e2", padding: "8px 10px", borderRadius: 4, lineHeight: 1.4 }}>{run.error}</div>
+            )}
+            {run.prUrl && (
+              <a href={run.prUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--c-blue)", fontWeight: 500 }}>View pull request →</a>
+            )}
+            <button className="rp-more" onClick={() => { navigate(`/runs/${runId}`); onClose(); }}>
+              Open full run detail →
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ── shell ────────────────────────────────────────────────────────────────────
 
 export function RightPanel() {
@@ -270,6 +349,7 @@ export function RightPanel() {
       <aside className="rp-root" style={{ transform: view ? "translateX(0)" : "translateX(100%)" }} data-testid="right-panel">
         {rendered?.type === "run-list" && <RunListView view={rendered} open={view !== null} onClose={close} />}
         {rendered?.type === "bugs" && <BugsView view={rendered} onClose={close} />}
+        {rendered?.type === "run-detail" && <RunDetailView runId={rendered.runId} onClose={close} />}
       </aside>
     </>
   );
