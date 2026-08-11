@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, Link, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, ExternalLink, Plus, Clock, GitFork } from "lucide-react";
+import { RefreshCw, ExternalLink, Plus, Clock, GitFork, Loader2, Check, X } from "lucide-react";
 import { RunPanel } from "@/components/runs/RunPanel";
 import { NewItemDialog } from "@/components/workitems/NewItemDialog";
 import { BreakdownDialog } from "@/components/workitems/BreakdownDialog";
 import { WorkItemPanel } from "@/components/board/WorkItemPanel";
 import { useTopBarActions } from "@/context/TopBarContext";
+import { useRightPanel } from "@/context/RightPanelContext";
 import {
   fetchProject,
   fetchProjectWorkItems,
@@ -16,7 +17,18 @@ import {
   ApiError,
   type Project,
   type WorkItem,
+  type Run,
 } from "@/services/api";
+
+/** The card run-state derived from a work item's latest run. */
+type CardRunState = "running" | "completed" | "failed" | null;
+function cardRunState(run: Run | undefined): CardRunState {
+  if (!run) return null;
+  if (run.status === "running" || run.status === "queued") return "running";
+  if (run.status === "succeeded") return run.securityGate === "blocked" ? "failed" : "completed";
+  if (run.status === "failed" || run.status === "canceled") return "failed";
+  return null; // scheduled — handled by the separate scheduled badge
+}
 
 const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: "open", label: "Open", statuses: ["open", "blocked"] },
@@ -54,6 +66,9 @@ export default function ProjectBoard() {
   const [breakdownItem, setBreakdownItem] = useState<WorkItem | null>(null);
   // Work item ids that currently have a scheduled (not-yet-run) run.
   const [scheduledItems, setScheduledItems] = useState<Set<number>>(new Set());
+  // Latest run per work item id — drives the per-card run progress state.
+  const [runByWorkItem, setRunByWorkItem] = useState<Map<number, Run>>(new Map());
+  const { open: openRightPanel } = useRightPanel();
 
   const loadScheduled = useCallback(() => {
     if (!Number.isFinite(projectId)) return;
@@ -82,6 +97,29 @@ export default function ProjectBoard() {
     loadScheduled();
   }, [load, loadScheduled]);
 
+  // Poll every 5s for the latest run per work item, so cards reflect run
+  // progress (running / completed / failed) without a manual refresh.
+  useEffect(() => {
+    if (!Number.isFinite(projectId)) return;
+    let cancelled = false;
+    const loadRuns = () =>
+      fetchRuns({ projectId })
+        .then((runs) => {
+          if (cancelled) return;
+          // Runs come back newest-first; keep the first (latest) per work item.
+          const map = new Map<number, Run>();
+          for (const r of runs) if (!map.has(r.workItemId)) map.set(r.workItemId, r);
+          setRunByWorkItem(map);
+        })
+        .catch(() => {});
+    loadRuns();
+    const iv = setInterval(loadRuns, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [projectId]);
+
   const onSync = useCallback(async () => {
     setSyncing(true);
     try {
@@ -104,6 +142,8 @@ export default function ProjectBoard() {
   }, [projectId, toast]);
 
   const openRun = (item: WorkItem, schedule: boolean) => {
+    // Prevent double-runs: ignore while a run is already in progress for this item.
+    if (cardRunState(runByWorkItem.get(item.id)) === "running") return;
     // Never show the detail panel and the run panel at once.
     setSelectedItem(null);
     setRunPanelSchedule(schedule);
@@ -203,10 +243,12 @@ export default function ProjectBoard() {
                     key={it.id}
                     item={it}
                     scheduled={scheduledItems.has(it.id)}
+                    activeRun={runByWorkItem.get(it.id)}
                     onOpen={() => setSelectedItem(it)}
                     onRun={() => openRun(it, false)}
                     onSchedule={() => openRun(it, true)}
                     onBreakdown={() => setBreakdownItem(it)}
+                    onViewRun={(runId) => openRightPanel({ type: "run-detail", runId })}
                   />
                 ))}
               </div>
@@ -287,20 +329,34 @@ function FilterPill({
   );
 }
 
+const linkBtn: React.CSSProperties = {
+  fontSize: 11,
+  color: "var(--c-blue)",
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  padding: 0,
+  flexShrink: 0,
+};
+
 function WorkItemCard({
   item,
   scheduled,
+  activeRun,
   onOpen,
   onRun,
   onSchedule,
   onBreakdown,
+  onViewRun,
 }: {
   item: WorkItem;
   scheduled: boolean;
+  activeRun: Run | undefined;
   onOpen: () => void;
   onRun: () => void;
   onSchedule: () => void;
   onBreakdown: () => void;
+  onViewRun: (runId: number) => void;
 }) {
   // Epics group their children — they aren't run directly, but can be broken down.
   const runnable = item.itemType !== "epic";
@@ -312,8 +368,18 @@ function WorkItemCard({
     fn();
   };
 
+  const runState = cardRunState(activeRun);
+  const securityBlocked = activeRun?.securityGate === "blocked";
+  const borderColor =
+    runState === "running" ? "#1a56db" : runState === "completed" ? "#1a7f4b" : runState === "failed" ? "#e11d48" : "transparent";
+
   return (
-    <div className="bm-board-card" onClick={onOpen} role="button">
+    <div
+      className="bm-board-card"
+      onClick={onOpen}
+      role="button"
+      style={{ borderLeft: `3px solid ${borderColor}`, transition: "border-color 300ms ease" }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
         {item.title?.startsWith("[SECURITY]") && (
           <span title="Aegis security finding" style={{ width: 6, height: 6, borderRadius: 1, background: "var(--c-red)", flexShrink: 0 }} />
@@ -342,6 +408,25 @@ function WorkItemCard({
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--fs-xs)", fontWeight: 600, color: "var(--c-amber)", flexShrink: 0 }}>
             <Clock size={10} />Scheduled
           </span>
+        ) : runState === "running" ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#1a56db", flexShrink: 0 }}>
+            <Loader2 className="animate-spin" size={10} />Running…
+          </span>
+        ) : runState === "completed" ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 500, color: "#1a7f4b" }}>
+              <Check size={10} strokeWidth={3} />Complete
+            </span>
+            <button onClick={stop(() => activeRun && onViewRun(activeRun.id))} style={linkBtn}>View →</button>
+          </div>
+        ) : runState === "failed" ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 500, color: "#e11d48" }}>
+              <X size={10} strokeWidth={3} />{securityBlocked ? "Security blocked" : "Failed"}
+            </span>
+            <button onClick={stop(() => activeRun && onViewRun(activeRun.id))} style={{ ...linkBtn, color: "var(--c-ink-4)" }}>View →</button>
+            {runnable && <button onClick={stop(onRun)} style={linkBtn}>Retry</button>}
+          </div>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
             {breakable && (
@@ -365,6 +450,13 @@ function WorkItemCard({
           </div>
         )}
       </div>
+
+      {/* Indeterminate progress bar while a run is in flight. */}
+      {runState === "running" && (
+        <div style={{ height: 3, background: "#e2e5e9", borderRadius: 2, overflow: "hidden", marginTop: 8 }}>
+          <div style={{ height: "100%", width: "40%", background: "#1a56db", borderRadius: 2, animation: "indeterminate 1.5s ease-in-out infinite" }} />
+        </div>
+      )}
     </div>
   );
 }
