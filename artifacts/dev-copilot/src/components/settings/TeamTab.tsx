@@ -270,6 +270,22 @@ export default function TeamTab() {
     }
   };
 
+  // Aegis "security finding type" preference (Jira only). Hidden for ADO-only teams.
+  const aegisPref = (integrations.find((i) => i.key === "AEGIS_JIRA_ISSUE_TYPE")?.value ?? "smart") as
+    | "bug"
+    | "subtask"
+    | "smart";
+  const isAdoOnly = setKeys.has("AZURE_DEVOPS_ORG") && !setKeys.has("JIRA_DOMAIN");
+  const saveAegisPref = async (value: "bug" | "subtask" | "smart") => {
+    try {
+      await setTeamIntegration(teamId, "AEGIS_JIRA_ISSUE_TYPE", value);
+      toast({ title: "Security finding type updated" });
+      loadIntegrations();
+    } catch (err) {
+      toast({ title: "Could not save", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
+    }
+  };
+
   return (
     <div>
       {!isAdmin && (
@@ -289,6 +305,43 @@ export default function TeamTab() {
           onSaved={loadIntegrations}
         />
       ))}
+
+      {/* Aegis security-finding type (Jira only) */}
+      {!isAdoOnly && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={groupLabel}>
+            Security finding type{" "}
+            <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--c-ink-4)", fontWeight: 400 }}>
+              · How Aegis findings are created in Jira
+            </span>
+          </div>
+          <div className="flex flex-col gap-2.5 rounded-md border bg-card p-4">
+            {([
+              ["bug", "Bug", "Standalone issue on the board (recommended for High/Critical)"],
+              ["subtask", "Sub-task", "Child of the original story (recommended for Medium/Low)"],
+              ["smart", "Smart", "Bug for High/Critical, Sub-task for Medium/Low (default)"],
+            ] as const).map(([value, label, desc]) => (
+              <label
+                key={value}
+                style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: isAdmin ? "pointer" : "default", opacity: isAdmin ? 1 : 0.7 }}
+              >
+                <input
+                  type="radio"
+                  name="aegis-issue-type"
+                  checked={aegisPref === value}
+                  disabled={!isAdmin}
+                  onChange={() => saveAegisPref(value)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  <span className="text-xs font-medium text-foreground">{label}</span>
+                  <span className="block text-[11px] text-muted-foreground">{desc}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Members */}
       <div style={{ marginBottom: 24 }}>

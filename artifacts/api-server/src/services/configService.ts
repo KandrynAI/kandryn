@@ -25,6 +25,9 @@ export const CONFIG_KEYS = [
   "CONFLUENCE_SPACE_KEY",
   "NOTION_API_TOKEN",
   "NOTION_PARENT_PAGE",
+  // Team preference (not a credential): how Aegis files findings in Jira —
+  // "bug" | "subtask" | "smart". Stored team-level; read team-first.
+  "AEGIS_JIRA_ISSUE_TYPE",
 ] as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
