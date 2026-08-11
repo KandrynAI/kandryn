@@ -165,10 +165,10 @@ function TeamCredGroup({
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/config/test/${group.testKey}?teamId=${teamId}`, {
+      const res = await fetch(`/api/config/test/${group.testKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ teamId }),
       });
       const data = (await res.json()) as { ok: boolean; message: string };
       setTestResult(data);
