@@ -356,6 +356,11 @@ function WorkItemCard({
                 <button className="bm-run" onClick={stop(onRun)} title="Run agents">Run</button>
               </>
             )}
+            {!runnable && (
+              <span style={{ fontSize: 11, color: "var(--c-ink-4)", padding: "2px 8px", background: "var(--c-surface)", borderRadius: 4, whiteSpace: "nowrap" }}>
+                Break into stories to run
+              </span>
+            )}
           </div>
         )}
       </div>
