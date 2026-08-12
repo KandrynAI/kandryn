@@ -299,6 +299,7 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
         req.userId,
         { plmProvider: project.plmProvider, plmProjectKey: project.plmProjectKey },
         { ...tc, parentExternalId: workItem.externalId },
+        req.teamId ?? null,
       );
       // Mirror locally as a test_case under the parent. externalId set so a
       // later sync upserts rather than duplicates.

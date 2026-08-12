@@ -311,12 +311,13 @@ export async function createSecurityFindingItem(
   userId: string,
   project: { plmProvider: PlmProvider; plmProjectKey: string | null },
   input: SecurityFindingInput,
+  teamId: number | null = null,
 ): Promise<PlmCreateResult> {
   if (!project.plmProjectKey) {
     throw new PlmError("This project has no PLM project bound.", "not_connected");
   }
   if (project.plmProvider === "jira") {
-    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"]);
+    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"], teamId);
     if (!c.JIRA_DOMAIN || !c.JIRA_EMAIL || !c.JIRA_API_TOKEN) {
       throw new PlmError("Jira is not connected. Add your Jira credentials in Integrations.", "not_connected");
     }
@@ -327,7 +328,7 @@ export async function createSecurityFindingItem(
     );
   }
   // Azure DevOps: always a Bug, with the existing parent (hierarchy) relation.
-  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"]);
+  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"], teamId);
   if (!c.AZURE_DEVOPS_ORG || !c.AZURE_DEVOPS_PAT) {
     throw new PlmError("Azure DevOps is not connected. Add your Azure DevOps credentials in Integrations.", "not_connected");
   }
@@ -460,12 +461,13 @@ export async function createPlmTestCase(
   userId: string,
   project: { plmProvider: PlmProvider; plmProjectKey: string | null },
   input: PlmTestCaseInput,
+  teamId: number | null = null,
 ): Promise<PlmCreateResult> {
   if (!project.plmProjectKey) {
     throw new PlmError("This project has no PLM project bound.", "not_connected");
   }
   if (project.plmProvider === "jira") {
-    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"]);
+    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"], teamId);
     if (!c.JIRA_DOMAIN || !c.JIRA_EMAIL || !c.JIRA_API_TOKEN) {
       throw new PlmError("Jira is not connected. Add your Jira credentials in Integrations.", "not_connected");
     }
@@ -475,7 +477,7 @@ export async function createPlmTestCase(
       input,
     );
   }
-  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"]);
+  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"], teamId);
   if (!c.AZURE_DEVOPS_ORG || !c.AZURE_DEVOPS_PAT) {
     throw new PlmError("Azure DevOps is not connected. Add your Azure DevOps credentials in Integrations.", "not_connected");
   }
@@ -492,13 +494,14 @@ export async function createPlmWorkItem(
   userId: string,
   project: { plmProvider: PlmProvider; plmProjectKey: string | null },
   input: PlmCreateInput,
+  teamId: number | null = null,
 ): Promise<PlmCreateResult> {
   if (!project.plmProjectKey) {
     throw new PlmError("This project has no PLM project bound.", "not_connected");
   }
 
   if (project.plmProvider === "jira") {
-    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"]);
+    const c = await getConfigs(userId, ["JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN"], teamId);
     if (!c.JIRA_DOMAIN || !c.JIRA_EMAIL || !c.JIRA_API_TOKEN) {
       throw new PlmError("Jira is not connected. Add your Jira credentials in Integrations.", "not_connected");
     }
@@ -509,7 +512,7 @@ export async function createPlmWorkItem(
     );
   }
 
-  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"]);
+  const c = await getConfigs(userId, ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"], teamId);
   if (!c.AZURE_DEVOPS_ORG || !c.AZURE_DEVOPS_PAT) {
     throw new PlmError("Azure DevOps is not connected. Add your Azure DevOps credentials in Integrations.", "not_connected");
   }

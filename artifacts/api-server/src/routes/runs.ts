@@ -567,6 +567,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
           repositoryId: project.repositoryId,
           parentTaskId: workItem.id,
           issueType: resolveIssueType(issueTypePref, finding.severity),
+          teamId: project.teamId,
         });
         if (ticket) {
           finding.plmTicketUrl = ticket.ticketUrl;
@@ -876,6 +877,7 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
         repositoryId: project.repositoryId,
         parentTaskId: workItem?.id ?? null,
         issueType,
+        teamId: project.teamId,
       });
       if (!ticket) {
         res.status(502).json({ error: "Could not create PLM ticket. Check your tracker credentials." });
