@@ -192,7 +192,12 @@ export async function executeRun(runId: number): Promise<void> {
       }
     }
   } catch (err) {
-    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 1000);
+    // Drizzle wraps the driver error and its message is just "Failed query: …";
+    // append the underlying cause (e.g. the pg message) so the run error is
+    // actually diagnosable in the UI.
+    const base = err instanceof Error ? err.message : String(err);
+    const cause = err instanceof Error && err.cause instanceof Error ? ` — ${err.cause.message}` : "";
+    const msg = `${base}${cause}`.slice(0, 1000);
     logger.error({ runId, err }, "Run failed");
     await db.update(runsTable).set({ status: "failed", finishedAt: new Date(), error: msg }).where(eq(runsTable.id, runId));
     if (run.trigger === "scheduled") {
