@@ -929,8 +929,12 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
           userId: req.userId,
           projectId: project.id,
           workItemId: internalTaskId,
-          status: "queued",
-          trigger: "manual",
+          // Scheduled for immediate pickup by the cron dispatcher, which runs it
+          // inline within its own (awaited) request — reliable on serverless,
+          // unlike a fire-and-forget executeRun after this response returns.
+          status: "scheduled",
+          scheduledAt: new Date(),
+          trigger: "scheduled",
           triggerContext: "remediation",
           parentRunId: runId,
           refinePrompt: buildRemediationPrompt(finding),
@@ -959,9 +963,8 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
         userAgent: req.headers["user-agent"],
       });
 
-      // executeRun(runId) loads everything by id (scoped to run.userId) and never
-      // throws — kick it off in the background so the response returns immediately.
-      void executeRun(newRun.id).catch((err) => req.log.error({ err, newRunId }, "Remediation run failed"));
+      // The cron dispatcher (/api/internal/dispatch-runs, every 5 min) claims this
+      // scheduled row and runs executeRun inline within its own request.
     } catch (runErr) {
       req.log.error({ runErr, findingId }, "Failed to create remediation run");
       // Non-fatal — ticket exists; the run can be started from the board.
@@ -975,7 +978,7 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
     action,
     message:
       action === "remediate-now"
-        ? `Ticket ${ticketKey} created and remediation run ${newRunId ? `#${newRunId} started` : "queued"}.`
+        ? `Ticket ${ticketKey} created. Remediation run ${newRunId ? `#${newRunId} ` : ""}queued — it starts automatically within a few minutes.`
         : `Ticket ${ticketKey} created and synced to board.`,
   });
 });

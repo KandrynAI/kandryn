@@ -133,6 +133,26 @@ export default function RunDetailPage() {
     };
   }, [data, load]);
 
+  // In-app completion notification: when a run we're watching (e.g. a background
+  // remediation run started while this page is open) transitions out of an
+  // in-progress state, toast the outcome.
+  const prevStatus = useRef<RunStatus | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const s = data.run.status;
+    const was = prevStatus.current;
+    if (was && IN_PROGRESS.includes(was) && !IN_PROGRESS.includes(s)) {
+      if (s === "succeeded") {
+        toast({ title: `Run #${data.run.id} complete`, description: "The run finished successfully." });
+      } else if (s === "failed") {
+        toast({ title: `Run #${data.run.id} failed`, description: data.run.error ?? undefined, variant: "destructive" });
+      } else if (s === "canceled") {
+        toast({ title: `Run #${data.run.id} canceled` });
+      }
+    }
+    prevStatus.current = s;
+  }, [data, toast]);
+
   const onReRun = async () => {
     if (!data) return;
     setRerunning(true);
@@ -396,7 +416,17 @@ export default function RunDetailPage() {
         {inProgress ? (
           <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 16 }}>
             {run.status === "scheduled" ? (
-              <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-3)" }}>This run is scheduled and hasn't started yet.</p>
+              <div style={{ border: "1px solid var(--c-border)", borderRadius: 6, background: "var(--c-surface)", padding: "14px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-base)", fontWeight: 600, color: "var(--c-ink)" }}>
+                  <Loader2 size={14} className="animate-spin" style={{ color: "var(--c-blue)" }} />
+                  {run.triggerContext === "remediation" ? "Remediation queued" : "Run scheduled"}
+                </div>
+                <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", marginTop: 6, lineHeight: 1.5 }}>
+                  {run.triggerContext === "remediation"
+                    ? "This fix runs automatically in the background and starts within a few minutes. This page updates live — you'll be notified here the moment it completes. You can also track it in the left panel under Runs → Running / Completed."
+                    : "This run is scheduled and hasn't started yet. It will start automatically at its scheduled time."}
+                </p>
+              </div>
             ) : (
               <>
                 {["claude", "openai"].map((agent) => (
@@ -864,7 +894,7 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
         return n;
       });
       if (action === "remediate-now" && res.newRunId) {
-        toast({ title: `${res.ticketKey} created`, description: `Run #${res.newRunId} started — opening…` });
+        toast({ title: `${res.ticketKey} created`, description: `Remediation run #${res.newRunId} queued — starts in a few minutes. Opening…` });
         setTimeout(() => navigate(`/runs/${res.newRunId}`), 1200);
       } else {
         toast({ title: `${res.ticketKey} created`, description: "Appearing on the board." });
