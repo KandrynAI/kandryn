@@ -19,6 +19,7 @@ export interface AegisTicketInput {
   repositoryId: number | null;
   parentTaskId?: number | null; // internal id of the original work item
   issueType: AegisIssueType; // Jira: Bug (with Relates link) vs Sub-task (child of the story)
+  teamId: number | null; // resolve tracker credentials team-first
 }
 
 /** The team's Aegis issue-type preference (team-first; defaults to "smart"). */
@@ -149,6 +150,7 @@ export async function createAegisPlmTicket(
         parentExternalId: input.parentExternalId || null,
         parentTitle: input.parentTitle,
       },
+      input.teamId,
     );
     const internalTaskId = await ensureFindingTask({
       userId: input.userId,

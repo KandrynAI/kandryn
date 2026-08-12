@@ -508,6 +508,7 @@ router.post("/projects/:id/work-items", async (req, res): Promise<void> => {
         req.userId,
         { plmProvider: project.plmProvider, plmProjectKey: project.plmProjectKey },
         { itemType, title, description, acceptanceCriteria, parentExternalId: parent?.externalId ?? null },
+        req.teamId ?? null,
       );
       externalId = result.externalId;
       plmUrl = result.plmUrl;

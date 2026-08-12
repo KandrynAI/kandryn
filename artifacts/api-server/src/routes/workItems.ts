@@ -239,6 +239,7 @@ router.post("/work-items/:id/push-to-plm", async (req, res): Promise<void> => {
         acceptanceCriteria: item.acceptanceCriteria,
         parentExternalId,
       },
+      req.teamId ?? null,
     );
   } catch (err) {
     if (err instanceof PlmError) {
