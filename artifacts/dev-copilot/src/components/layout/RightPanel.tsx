@@ -73,8 +73,10 @@ function RunListView({
         })
         .catch(() => {});
     load();
-    // Keep the Running list live while the panel is open.
-    const iv = open && view.status === "running" ? setInterval(load, 5000) : null;
+    // Poll while the panel is open so every list (not just Running) stays live
+    // and self-corrects after a transient fetch failure — matching the left
+    // panel's polling, so the two never disagree.
+    const iv = open ? setInterval(load, 5000) : null;
     return () => {
       cancelled = true;
       if (iv) clearInterval(iv);
