@@ -17,6 +17,7 @@ export interface Repository {
   /** @nullable */
   projectId?: number | null;
   needsReconfiguration: boolean;
+  needsVerification: boolean;
   stackProfile: StackProfile;
   createdAt: Date;
 }

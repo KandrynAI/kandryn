@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { db, runsTable, tasksTable, suggestionsTable, projectsTable, repositoriesTable } from "@workspace/db";
+import { db, runsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { executeRun, commitFromSuggestion, RunError } from "../services/runService.js";
 import { getConfigs } from "../services/configService.js";
@@ -14,6 +14,7 @@ import {
   resolveIssueType,
 } from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
+import { getProjectRepository, getRunRepository } from "../services/repoResolver.js";
 import { syncProject } from "../services/syncService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
 import type { AegisScanResult } from "../../../../shared/types/aegisResult.js";
@@ -84,6 +85,14 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
     return;
   }
 
+  // Snapshot the project's repository onto the run so execution and commit act on
+  // one fixed repo (0020). A project with no repo can't run.
+  const runRepo = await getProjectRepository(workItem.projectId, req.userId);
+  if (!runRepo) {
+    res.status(400).json({ error: "No repository is connected to this project. Connect one on the board first." });
+    return;
+  }
+
   const { refinePrompt, autoCommit, scheduledAt } = parsed.data;
 
   // --- Scheduled path -------------------------------------------------------
@@ -114,6 +123,7 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
         userId: req.userId,
         projectId: workItem.projectId,
         workItemId: workItem.id,
+        repositoryId: runRepo.id,
         status: "scheduled",
         trigger: "scheduled",
         refinePrompt: refinePrompt ?? null,
@@ -149,6 +159,7 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
       userId: req.userId,
       projectId: workItem.projectId,
       workItemId: workItem.id,
+      repositoryId: runRepo.id,
       status: "queued",
       trigger: "manual",
       refinePrompt: refinePrompt ?? null,
@@ -522,9 +533,9 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     .select()
     .from(projectsTable)
     .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
-  const repo = project?.repositoryId
-    ? (await db.select().from(repositoriesTable).where(eq(repositoriesTable.id, project.repositoryId)))[0]
-    : undefined;
+  // Resolve the run's repo via the snapshot / project_id (0020), not the
+  // deprecated projects.repository_id.
+  const repo = await getRunRepository(run);
 
   const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]);
   if (!creds.ANTHROPIC_API_KEY) {
@@ -564,7 +575,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
           plmProjectKey: project.plmProjectKey,
           userId: req.userId,
           projectId: project.id,
-          repositoryId: project.repositoryId,
+          repositoryId: repo?.id ?? null,
           parentTaskId: workItem.id,
           issueType: resolveIssueType(issueTypePref, finding.severity),
           teamId: project.teamId,
@@ -681,9 +692,9 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
     .select()
     .from(projectsTable)
     .where(and(eq(projectsTable.id, run.projectId), eq(projectsTable.userId, req.userId)));
-  const repo = project?.repositoryId
-    ? (await db.select().from(repositoriesTable).where(eq(repositoriesTable.id, project.repositoryId)))[0]
-    : undefined;
+  // Resolve the run's repo via the snapshot / project_id (0020), not the
+  // deprecated projects.repository_id.
+  const repo = await getRunRepository(run);
 
   const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
   if (!creds.ANTHROPIC_API_KEY) {
@@ -829,6 +840,8 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
     res.status(409).json({ error: "No project found for this run." });
     return;
   }
+  // The run's repository via snapshot / project_id (0020).
+  const repo = await getRunRepository(run);
   if (project.plmProvider !== "jira" && project.plmProvider !== "azure-devops") {
     res.status(409).json({ error: "This project's tracker doesn't support ticket creation." });
     return;
@@ -851,7 +864,7 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
       internalTaskId = await ensureFindingTask({
         userId: req.userId,
         projectId: project.id,
-        repositoryId: project.repositoryId,
+        repositoryId: repo?.id ?? null,
         parentTaskId: workItem?.id ?? null,
         finding,
         ticketKey,
@@ -874,7 +887,7 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
         plmProjectKey: project.plmProjectKey,
         userId: req.userId,
         projectId: project.id,
-        repositoryId: project.repositoryId,
+        repositoryId: repo?.id ?? null,
         parentTaskId: workItem?.id ?? null,
         issueType,
         teamId: project.teamId,

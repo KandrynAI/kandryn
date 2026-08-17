@@ -40,6 +40,11 @@ export const repositoriesTable = pgTable(
     // Set true when the stored URL failed validation and was cleared (0019). The UI
     // surfaces a reconfiguration banner; a successful URL update clears the flag.
     needsReconfiguration: boolean("needs_reconfiguration").notNull().default(false),
+    // Set true when this row was cloned from a repo shared by multiple projects
+    // during the 0020 split — its URL/stack/graph may have been built from another
+    // project's codebase and must be confirmed. The UI surfaces a verification
+    // banner; confirming (or updating the URL) clears the flag.
+    needsVerification: boolean("needs_verification").notNull().default(false),
     stackProfile: jsonb("stack_profile").notNull(),
     // Graphify knowledge graph (0010). All nullable — populated on upload/index.
     graphJson: jsonb("graph_json").$type<PersistedGraphifyGraph | null>().default(null),

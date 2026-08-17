@@ -1,6 +1,6 @@
 import { useListRepositories, useCreateRepository, getListRepositoriesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,12 @@ const formSchema = z.object({
 });
 
 export default function Repositories() {
-  const { data: repositories, isLoading } = useListRepositories();
+  // Scoped to the current project when opened at /p/:projectId/repositories (0020).
+  const params = useParams<{ projectId?: string }>();
+  const projectId = params.projectId ? Number(params.projectId) : null;
+  const { data: repositories, isLoading } = useListRepositories(
+    projectId != null ? { projectId } : undefined,
+  );
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
@@ -50,20 +55,24 @@ export default function Repositories() {
           <h1 className="text-lg font-semibold tracking-tight">Repositories</h1>
           <p className="text-muted-foreground mt-1 text-xs">Connected codebases and stack profiles</p>
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-create-repo" className="font-mono text-xs">
-              <Plus className="mr-2 h-4 w-4" />
-              Connect Repository
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] border-primary/20 bg-background/95 backdrop-blur-xl">
-            <DialogHeader>
-              <DialogTitle className="font-mono text-lg">Connect Repository</DialogTitle>
-            </DialogHeader>
-            <CreateRepoForm onSuccess={() => setIsCreateOpen(false)} />
-          </DialogContent>
-        </Dialog>
+        {projectId != null ? (
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-create-repo" className="font-mono text-xs">
+                <Plus className="mr-2 h-4 w-4" />
+                Connect Repository
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px] border-primary/20 bg-background/95 backdrop-blur-xl">
+              <DialogHeader>
+                <DialogTitle className="font-mono text-lg">Connect Repository</DialogTitle>
+              </DialogHeader>
+              <CreateRepoForm projectId={projectId} onSuccess={() => setIsCreateOpen(false)} />
+            </DialogContent>
+          </Dialog>
+        ) : (
+          <p className="text-muted-foreground text-xs">Open a project to connect a repository.</p>
+        )}
       </div>
 
       <div className="flex items-center gap-4">
@@ -140,7 +149,7 @@ function StackBadge({ icon: Icon, value }: { icon: any, value: string }) {
   );
 }
 
-function CreateRepoForm({ onSuccess }: { onSuccess: () => void }) {
+function CreateRepoForm({ projectId, onSuccess }: { projectId: number; onSuccess: () => void }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const createRepository = useCreateRepository();
@@ -164,9 +173,10 @@ function CreateRepoForm({ onSuccess }: { onSuccess: () => void }) {
   });
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    createRepository.mutate({ data: values }, {
+    createRepository.mutate({ data: { ...values, projectId } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListRepositoriesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListRepositoriesQueryKey({ projectId }) });
         toast({ title: "Repository connected", description: "The repository has been successfully registered." });
         onSuccess();
       },

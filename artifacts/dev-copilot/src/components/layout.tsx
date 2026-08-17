@@ -476,7 +476,7 @@ function AddRepositoryModal({ onClose, onSuccess }: { onClose: () => void; onSuc
 function StackProfilePanel({ repoId }: { repoId: number }) {
   const queryClient = useQueryClient();
 
-  const { data: repo } = useGetRepository(repoId, {
+  const { data: repo } = useGetRepository(repoId, undefined, {
     query: { queryKey: getGetRepositoryQueryKey(repoId) },
   });
 

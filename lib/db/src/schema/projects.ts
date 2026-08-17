@@ -22,9 +22,13 @@ export const projectsTable = pgTable(
     // Nullable ONLY for legacy/migrated projects; the API enforces non-null on create.
     plmProjectKey: text("plm_project_key"),
     plmProjectName: text("plm_project_name"),
-    repositoryId: integer("repository_id")
-      .notNull()
-      .references(() => repositoriesTable.id, { onDelete: "restrict" }),
+    // @deprecated (0020) — repositories.project_id is the single source of truth
+    // for the project↔repo binding. This column is no longer written and will be
+    // dropped once all read paths are migrated; kept nullable for safety. Resolve
+    // a project's repository via `repositories WHERE project_id = :projectId`.
+    repositoryId: integer("repository_id").references(() => repositoriesTable.id, {
+      onDelete: "restrict",
+    }),
     defaultTarget: text("default_target").$type<"story" | "task">().notNull().default("task"),
     // Multi-tenancy (0017). teamId is a plain int (no Drizzle .references() to
     // avoid a schema import cycle; the FK lives in the SQL migration).

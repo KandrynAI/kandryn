@@ -4,6 +4,7 @@ import { db, projectsTable, repositoriesTable, tasksTable, runsTable } from "@wo
 import { z } from "zod/v4";
 import { listPlmProjects, validatePlmProject, PlmError } from "../services/plmProjects.js";
 import { syncProject } from "../services/syncService.js";
+import { getProjectRepository } from "../services/repoResolver.js";
 import { createPlmWorkItem } from "../services/plmWrite.js";
 import * as audit from "../services/auditService.js";
 
@@ -13,7 +14,9 @@ const CreateProjectBody = z.object({
   name: z.string().min(1, "Project name is required").max(160),
   plmProvider: z.enum(["jira", "azure-devops"]),
   plmProjectKey: z.string().min(1, "A PLM project is required").max(200),
-  repositoryId: z.coerce.number().int().positive(),
+  // Optional (0020): a project can be created with no repository, then have one
+  // connected on the board. When provided, the repo is adopted via project_id.
+  repositoryId: z.coerce.number().int().positive().optional(),
 });
 
 const UpdateProjectBody = z.object({
@@ -55,22 +58,23 @@ async function backfillUserProjects(userId: string) {
     const source = tasksForRepo.find((t) => t.source === "azure-devops")?.source;
     const plmProvider: "jira" | "azure-devops" = source === "azure-devops" ? "azure-devops" : "jira";
 
-    let [proj] = await db
+    const [repo] = await db
       .select()
-      .from(projectsTable)
-      .where(
-        and(
-          eq(projectsTable.userId, userId),
-          eq(projectsTable.repositoryId, repoId),
-          isNull(projectsTable.plmProjectKey),
-        ),
-      );
+      .from(repositoriesTable)
+      .where(and(eq(repositoriesTable.id, repoId), eq(repositoriesTable.userId, userId)));
+
+    // Reuse the project that already owns this repo (repositories.project_id, 0020).
+    let proj:
+      | typeof projectsTable.$inferSelect
+      | undefined = undefined;
+    if (repo?.projectId != null) {
+      [proj] = await db
+        .select()
+        .from(projectsTable)
+        .where(and(eq(projectsTable.id, repo.projectId), isNull(projectsTable.plmProjectKey)));
+    }
 
     if (!proj) {
-      const [repo] = await db
-        .select()
-        .from(repositoriesTable)
-        .where(eq(repositoriesTable.id, repoId));
       [proj] = await db
         .insert(projectsTable)
         .values({
@@ -79,9 +83,13 @@ async function backfillUserProjects(userId: string) {
           plmProvider,
           plmProjectKey: null,
           plmProjectName: null,
-          repositoryId: repoId,
         })
         .returning();
+      // Bind via project_id — projects.repository_id is deprecated (0020).
+      await db
+        .update(repositoriesTable)
+        .set({ projectId: proj.id })
+        .where(and(eq(repositoriesTable.id, repoId), eq(repositoriesTable.userId, userId)));
       created++;
     }
 
@@ -189,14 +197,18 @@ router.post("/projects", async (req, res): Promise<void> => {
     return;
   }
 
-  // Git binding: the repo must exist and belong to this user (validated live at connect time).
-  const [repo] = await db
-    .select()
-    .from(repositoriesTable)
-    .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)));
-  if (!repo) {
-    res.status(422).json({ error: "Repository not found or not yours." });
-    return;
+  // Optional git binding: when a repositoryId is supplied it must belong to this
+  // user; it will be adopted into the project via project_id after creation. A
+  // project may also be created with no repository and have one connected later.
+  if (repositoryId != null) {
+    const [repo] = await db
+      .select({ id: repositoriesTable.id })
+      .from(repositoriesTable)
+      .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)));
+    if (!repo) {
+      res.status(422).json({ error: "Repository not found or not yours." });
+      return;
+    }
   }
 
   // PLM binding: confirm the project is visible with the user's credentials.
@@ -229,19 +241,22 @@ router.post("/projects", async (req, res): Promise<void> => {
         plmProvider,
         plmProjectKey,
         plmProjectName: plmName ?? null,
-        repositoryId,
+        // projects.repository_id is deprecated (0020) — the binding lives on
+        // repositories.project_id, set below. Left null on create.
         // Team context (0017): a new project created by a team member is
         // team-visible; a user with no team keeps it personal.
         teamId: req.teamId ?? null,
         visibility: req.teamId ? "team" : "personal",
       })
       .returning();
-    // Record the owning project on the bound repository (0019). Scoped to the
-    // user; a repo belongs to at most one project at a time.
-    await db
-      .update(repositoriesTable)
-      .set({ projectId: proj.id })
-      .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)));
+    // Adopt the repository into this project (repositories.project_id is the
+    // source of truth). Scoped to the user; a repo belongs to one project.
+    if (repositoryId != null) {
+      await db
+        .update(repositoriesTable)
+        .set({ projectId: proj.id })
+        .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)));
+    }
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
     audit.log({
       userId: req.userId,
@@ -334,20 +349,27 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Only the project owner or a team admin can update this project." });
     return;
   }
-  // Changing the repository: it must be one the caller owns.
-  if (parsed.data.repositoryId != null) {
+  // Changing the repository: it must be one the caller owns. The binding is
+  // adopted via repositories.project_id (0020); projects.repository_id is
+  // deprecated and never written.
+  const { repositoryId: newRepositoryId, ...projectUpdates } = parsed.data;
+  if (newRepositoryId != null) {
     const [repo] = await db
       .select({ id: repositoriesTable.id })
       .from(repositoriesTable)
-      .where(and(eq(repositoriesTable.id, parsed.data.repositoryId), eq(repositoriesTable.userId, req.userId)));
+      .where(and(eq(repositoriesTable.id, newRepositoryId), eq(repositoriesTable.userId, req.userId)));
     if (!repo) {
       res.status(400).json({ error: "Repository not found" });
       return;
     }
+    await db
+      .update(repositoriesTable)
+      .set({ projectId: project.id })
+      .where(and(eq(repositoriesTable.id, newRepositoryId), eq(repositoriesTable.userId, req.userId)));
   }
   const [proj] = await db
     .update(projectsTable)
-    .set(parsed.data)
+    .set(projectUpdates)
     .where(eq(projectsTable.id, project.id))
     .returning();
   res.json(proj);
@@ -529,12 +551,14 @@ router.post("/projects/:id/work-items", async (req, res): Promise<void> => {
     }
   }
 
+  // Mirror the item onto the project's repository (resolved via project_id, 0020).
+  const ownedRepo = await getProjectRepository(project.id, req.userId);
   const [item] = await db
     .insert(tasksTable)
     .values({
       userId: req.userId,
       projectId: project.id,
-      repositoryId: project.repositoryId,
+      repositoryId: ownedRepo?.id ?? null,
       externalId,
       source,
       type: itemType,

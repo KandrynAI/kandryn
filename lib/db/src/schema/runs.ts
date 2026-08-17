@@ -83,6 +83,12 @@ export const runsTable = pgTable(
     workItemId: integer("work_item_id")
       .notNull()
       .references(() => tasksTable.id, { onDelete: "cascade" }),
+    // The repository this run targets, snapshotted at creation from the project's
+    // binding (0020). Plain int (FK in SQL) so execution and commit read one fixed
+    // repo instead of re-deriving — closing the mid-flight rebinding window and
+    // making "which repo did this run touch" answerable from the row. Nullable
+    // only for legacy rows the backfill could not resolve.
+    repositoryId: integer("repository_id"),
     status: text("status").$type<RunStatus>().notNull(),
     trigger: text("trigger").$type<"manual" | "scheduled">().notNull(),
     refinePrompt: text("refine_prompt"),

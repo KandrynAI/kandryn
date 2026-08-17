@@ -17,6 +17,10 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List all repositories
  */
+export const ListRepositoriesQueryParams = zod.object({
+  projectId: zod.coerce.number().optional(),
+});
+
 export const ListRepositoriesResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
@@ -25,6 +29,7 @@ export const ListRepositoriesResponseItem = zod.object({
   defaultBranch: zod.string(),
   projectId: zod.number().nullish(),
   needsReconfiguration: zod.boolean(),
+  needsVerification: zod.boolean(),
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
@@ -121,6 +126,10 @@ export const GetRepositoryParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const GetRepositoryQueryParams = zod.object({
+  projectId: zod.coerce.number().optional(),
+});
+
 export const GetRepositoryResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
@@ -129,6 +138,7 @@ export const GetRepositoryResponse = zod.object({
   defaultBranch: zod.string(),
   projectId: zod.number().nullish(),
   needsReconfiguration: zod.boolean(),
+  needsVerification: zod.boolean(),
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
@@ -231,6 +241,7 @@ export const UpdateRepositoryResponse = zod.object({
   defaultBranch: zod.string(),
   projectId: zod.number().nullish(),
   needsReconfiguration: zod.boolean(),
+  needsVerification: zod.boolean(),
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),

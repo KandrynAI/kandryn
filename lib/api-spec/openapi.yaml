@@ -35,6 +35,12 @@ paths:
       operationId: listRepositories
       tags: [repositories]
       summary: List all repositories
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: integer
       responses:
         "200":
           description: List of repositories
@@ -71,6 +77,11 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: integer
+        - name: projectId
+          in: query
+          required: false
           schema:
             type: integer
       responses:
@@ -368,6 +379,8 @@ components:
           type: ["integer", "null"]
         needsReconfiguration:
           type: boolean
+        needsVerification:
+          type: boolean
         stackProfile:
           $ref: "#/components/schemas/StackProfile"
         createdAt:
@@ -379,6 +392,7 @@ components:
         - provider
         - defaultBranch
         - needsReconfiguration
+        - needsVerification
         - stackProfile
         - createdAt
 

@@ -9,7 +9,7 @@ import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { fetchRepositoryGraphStatus, uploadRepositoryGraph, rebuildRepositoryGraph, fetchProjectWorkItems, ApiError } from "@/services/api";
+import { fetchRepositoryGraphStatus, uploadRepositoryGraph, rebuildRepositoryGraph, fetchProjectWorkItems, verifyRepository, ApiError } from "@/services/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -255,6 +255,43 @@ export default function RepositoryDetail() {
             </div>
             <Button size="sm" className="font-mono text-xs shrink-0" onClick={() => setIsEditOpen(true)}>
               <Edit className="mr-2 h-3.5 w-3.5" /> Fix URL
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {repo.needsVerification && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardContent className="flex items-start gap-3 py-4">
+            <ShieldAlert className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Verify this repository</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                This binding was created when a repository shared by more than one project was split.
+                Its URL, stack profile, and graph index may have been built from another project's
+                codebase. Confirm the URL below is correct for this project, or fix it.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="font-mono text-xs shrink-0"
+              onClick={async () => {
+                try {
+                  await verifyRepository(id);
+                  queryClient.invalidateQueries({ queryKey: [`/api/repositories/${id}`] });
+                  queryClient.invalidateQueries({ queryKey: getListRepositoriesQueryKey() });
+                  toast({ title: "Repository verified" });
+                } catch (err) {
+                  toast({
+                    title: "Could not verify",
+                    description: err instanceof Error ? err.message : undefined,
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              <CheckSquare className="mr-2 h-3.5 w-3.5" /> Looks right
             </Button>
           </CardContent>
         </Card>

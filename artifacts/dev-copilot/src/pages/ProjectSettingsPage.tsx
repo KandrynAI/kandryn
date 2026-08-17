@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
 import {
   fetchProject,
   updateProject,
@@ -28,8 +28,6 @@ export default function ProjectSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [savingName, setSavingName] = useState(false);
-  const [repoId, setRepoId] = useState<number | null>(null);
-  const [savingRepo, setSavingRepo] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -39,11 +37,11 @@ export default function ProjectSettingsPage() {
       .then((p) => {
         setProject(p);
         setName(p.name);
-        setRepoId(p.repositoryId);
       })
       .catch(() => setProject(null))
       .finally(() => setLoading(false));
-    fetchRepositories().then(setRepos).catch(() => {});
+    // The project's repository, resolved via project_id (0020).
+    fetchRepositories(projectId).then(setRepos).catch(() => {});
   }, [projectId]);
 
   const saveName = async () => {
@@ -58,21 +56,6 @@ export default function ProjectSettingsPage() {
       toast({ title: "Could not update name", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
     } finally {
       setSavingName(false);
-    }
-  };
-
-  const saveRepo = async () => {
-    if (repoId == null || repoId === project?.repositoryId) return;
-    setSavingRepo(true);
-    try {
-      const updated = await updateProject(projectId, { repositoryId: repoId });
-      setProject(updated);
-      setRepoId(updated.repositoryId);
-      toast({ title: "Repository updated" });
-    } catch (err) {
-      toast({ title: "Could not change repository", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
-    } finally {
-      setSavingRepo(false);
     }
   };
 
@@ -98,7 +81,7 @@ export default function ProjectSettingsPage() {
     return <div className="mx-auto max-w-2xl px-6 py-6 text-sm text-destructive">Project not found.</div>;
   }
 
-  const currentRepo = repos.find((r) => r.id === project.repositoryId);
+  const currentRepo = repos[0];
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-6">
@@ -145,33 +128,15 @@ export default function ProjectSettingsPage() {
           <div>
             <div className="mb-1.5 text-xs font-medium text-foreground">Connected repository</div>
             <span className="font-mono text-sm text-muted-foreground">
-              {currentRepo ? currentRepo.name : `#${project.repositoryId}`}
+              {currentRepo ? currentRepo.name : "None connected"}
             </span>
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-foreground">Change repository</label>
-            <div className="flex items-center gap-2">
-              <select
-                value={repoId ?? ""}
-                onChange={(e) => setRepoId(Number(e.target.value))}
-                className="h-9 flex-1 rounded-md border bg-background px-2 text-sm"
-              >
-                {repos.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-              <Button
-                size="sm"
-                className="h-9"
-                onClick={saveRepo}
-                disabled={savingRepo || repoId == null || repoId === project.repositoryId}
-              >
-                {savingRepo ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </div>
+          <Link
+            href={`/p/${projectId}/repositories`}
+            className="text-xs font-medium text-primary hover:underline w-fit"
+          >
+            {currentRepo ? "Manage repository →" : "Connect a repository →"}
+          </Link>
         </div>
       </section>
 
