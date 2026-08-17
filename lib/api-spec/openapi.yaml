@@ -333,13 +333,13 @@ components:
           enum: [nodejs, dotnet, java-spring, python]
         database:
           type: string
-          enum: [postgresql, sqlserver, oracle, mysql]
+          enum: [postgresql, sqlserver, oracle, mysql, sqlite, unknown]
         language:
           type: string
           enum: [typescript, javascript, csharp, java, python]
         testFramework:
           type: string
-          enum: [jest, jasmine, xunit, junit, pytest, none]
+          enum: [jest, jasmine, xunit, nunit, mstest, junit, pytest, none]
         packageManager:
           type: string
           enum: [npm, yarn, maven, gradle, nuget, pip]

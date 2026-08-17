@@ -37,6 +37,8 @@ export const StackProfileDatabase = {
   sqlserver: "sqlserver",
   oracle: "oracle",
   mysql: "mysql",
+  sqlite: "sqlite",
+  unknown: "unknown",
 } as const;
 
 export type StackProfileLanguage =
@@ -57,6 +59,8 @@ export const StackProfileTestFramework = {
   jest: "jest",
   jasmine: "jasmine",
   xunit: "xunit",
+  nunit: "nunit",
+  mstest: "mstest",
   junit: "junit",
   pytest: "pytest",
   none: "none",
