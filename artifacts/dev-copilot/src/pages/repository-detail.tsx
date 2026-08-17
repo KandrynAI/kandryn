@@ -20,14 +20,26 @@ import * as z from "zod";
 import { useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 
+const GITHUB_URL_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i;
+
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  url: z
+    .string()
+    .url("Enter a valid repository URL")
+    .refine((u) => {
+      const m = u.match(GITHUB_URL_RE);
+      return !m || m[1].toLowerCase() !== m[2].toLowerCase();
+    }, "That URL points at the owner's profile, not a repository (owner and repo are the same)."),
   defaultBranch: z.string().min(1, "Default branch is required"),
 });
 
 export default function RepositoryDetail() {
   const params = useParams();
   const id = parseInt(params.id || "0", 10);
+  // When reached via /p/:projectId/repositories/:id, keep navigation inside the
+  // project so the active project isn't lost (PART 3).
+  const reposHref = params.projectId ? `/p/${params.projectId}/repositories` : "/repositories";
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -45,6 +57,7 @@ export default function RepositoryDetail() {
     resolver: zodResolver(formSchema),
     values: {
       name: repo?.name || "",
+      url: repo?.url || "",
       defaultBranch: repo?.defaultBranch || ""
     }
   });
@@ -56,6 +69,15 @@ export default function RepositoryDetail() {
         queryClient.invalidateQueries({ queryKey: [`/api/repositories/${id}`] });
         setIsEditOpen(false);
         toast({ title: "Repository updated" });
+      },
+      onError: (err) => {
+        // Surface the server's validation message (e.g. URL not found, owner ===
+        // repo). The generated client's ApiError message already embeds it.
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : "Could not update the repository.",
+          variant: "destructive",
+        });
       }
     });
   };
@@ -65,7 +87,7 @@ export default function RepositoryDetail() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListRepositoriesQueryKey() });
         toast({ title: "Repository deleted" });
-        setLocation("/repositories");
+        setLocation(reposHref);
       }
     });
   };
@@ -85,7 +107,7 @@ export default function RepositoryDetail() {
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
         <Database className="h-12 w-12 opacity-20 mb-4" />
         <h2 className="text-xl font-bold mb-2">Repository Not Found</h2>
-        <Button variant="link" onClick={() => setLocation("/repositories")}>Back to Repositories</Button>
+        <Button variant="link" onClick={() => setLocation(reposHref)}>Back to Repositories</Button>
       </div>
     );
   }
@@ -93,7 +115,7 @@ export default function RepositoryDetail() {
   return (
     <div className="flex flex-col gap-4 px-5 py-4 animate-in fade-in duration-500 pb-8">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/repositories")}>
+        <Button variant="ghost" size="icon" onClick={() => setLocation(reposHref)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -101,10 +123,17 @@ export default function RepositoryDetail() {
             {repo.provider === 'github' ? <SiGithub className="h-5 w-5 text-muted-foreground" /> : <Cloud className="h-5 w-5 text-blue-500" />}
             <h1 className="text-xl font-semibold tracking-tight">{repo.name}</h1>
           </div>
-          <a href={repo.url} target="_blank" rel="noreferrer" className="text-sm font-mono text-primary hover:underline flex items-center gap-1 mt-1 w-fit">
-            <LinkIcon className="h-3 w-3" />
-            {repo.url}
-          </a>
+          {repo.url ? (
+            <a href={repo.url} target="_blank" rel="noreferrer" className="text-sm font-mono text-primary hover:underline flex items-center gap-1 mt-1 w-fit">
+              <LinkIcon className="h-3 w-3" />
+              {repo.url}
+            </a>
+          ) : (
+            <span className="text-sm font-mono text-amber-500 flex items-center gap-1 mt-1 w-fit">
+              <ShieldAlert className="h-3 w-3" />
+              No URL — needs reconfiguration
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
           <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -124,6 +153,17 @@ export default function RepositoryDetail() {
                       <FormItem>
                         <FormLabel className="font-mono text-xs text-muted-foreground">Name</FormLabel>
                         <FormControl><Input {...field} className="font-mono" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="url"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-mono text-xs text-muted-foreground">Repository URL</FormLabel>
+                        <FormControl><Input {...field} placeholder="https://github.com/owner/repo" className="font-mono" /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -202,7 +242,25 @@ export default function RepositoryDetail() {
         </Card>
       </div>
 
-      <AegisSetupNotice repoId={id} provider={repo.provider} url={repo.url} />
+      {(repo.needsReconfiguration || !repo.url) && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardContent className="flex items-start gap-3 py-4">
+            <ShieldAlert className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">This repository needs reconfiguration</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Its URL was cleared because it didn't point at a valid repository. Set a correct
+                <code className="font-mono"> https://github.com/owner/repo </code> URL to use it again.
+              </p>
+            </div>
+            <Button size="sm" className="font-mono text-xs shrink-0" onClick={() => setIsEditOpen(true)}>
+              <Edit className="mr-2 h-3.5 w-3.5" /> Fix URL
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {repo.url && <AegisSetupNotice repoId={id} provider={repo.provider} url={repo.url} />}
 
       <GraphifySection repoId={id} />
 

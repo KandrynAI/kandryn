@@ -11,8 +11,12 @@ export interface Repository {
   id: number;
   name: string;
   provider: string;
-  url: string;
+  /** @nullable */
+  url?: string | null;
   defaultBranch: string;
+  /** @nullable */
+  projectId?: number | null;
+  needsReconfiguration: boolean;
   stackProfile: StackProfile;
   createdAt: Date;
 }

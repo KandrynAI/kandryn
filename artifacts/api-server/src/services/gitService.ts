@@ -415,6 +415,11 @@ export class GitService {
       .where(eq(repositoriesTable.id, repoId));
 
     if (!repo) throw new Error(`Repository ${repoId} not found`);
+    if (!repo.url) {
+      throw new Error(
+        `Repository ${repoId} has no URL — it needs reconfiguration. Set a valid repository URL and try again.`,
+      );
+    }
 
     const provider = (process.env.GIT_PROVIDER ?? repo.provider) as "github" | "azure-repos";
     const client =

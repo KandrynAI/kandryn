@@ -101,6 +101,10 @@ export function ContextPanel() {
   }, [activeProject]);
   const activeRepoId = activeRepository?.id ?? repos[0]?.id ?? null;
 
+  // Keep repository navigation scoped to the current project so the active
+  // project isn't lost when viewing a repo (PART 3).
+  const repoHref = (path: string) => (activeProject ? `/p/${activeProject.id}${path}` : path);
+
   // Board + bug counts from the project's work items. Bugs are excluded from the
   // board columns and counted separately for the BUGS section.
   useEffect(() => {
@@ -391,12 +395,16 @@ export function ContextPanel() {
           <div
             className={`cp-repo${activeRepoId != null ? " clickable" : ""}`}
             title={activeRepository?.name ?? repos[0]?.name ?? "No repository"}
-            onClick={activeRepoId != null ? () => navigate(`/repositories/${activeRepoId}`) : undefined}
+            onClick={
+              activeRepoId != null
+                ? () => navigate(repoHref(`/repositories/${activeRepoId}`))
+                : undefined
+            }
             role={activeRepoId != null ? "button" : undefined}
           >
             {activeRepository?.name ?? repos[0]?.name ?? "—"}
           </div>
-          <button className="cp-manage" onClick={() => navigate("/repositories")}>Manage</button>
+          <button className="cp-manage" onClick={() => navigate(repoHref("/repositories"))}>Manage</button>
         </div>
 
         <div className="cp-spacer" />

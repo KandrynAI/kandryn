@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, jsonb, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, jsonb, integer, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -28,8 +28,18 @@ export const repositoriesTable = pgTable(
     userId: text("user_id").notNull(),
     name: text("name").notNull(),
     provider: text("provider").notNull(),
-    url: text("url").notNull(),
+    // Nullable so a repository flagged as needing reconfiguration (its URL failed
+    // validation, e.g. owner === repo) can have its URL cleared without deleting
+    // the record (0019).
+    url: text("url"),
     defaultBranch: text("default_branch").notNull().default("main"),
+    // Owning project (0019). Plain int, no Drizzle .references() to avoid a schema
+    // import cycle (projects already imports repositories); the FK lives in the SQL
+    // migration. Populated when a project binds this repo.
+    projectId: integer("project_id"),
+    // Set true when the stored URL failed validation and was cleared (0019). The UI
+    // surfaces a reconfiguration banner; a successful URL update clears the flag.
+    needsReconfiguration: boolean("needs_reconfiguration").notNull().default(false),
     stackProfile: jsonb("stack_profile").notNull(),
     // Graphify knowledge graph (0010). All nullable — populated on upload/index.
     graphJson: jsonb("graph_json").$type<PersistedGraphifyGraph | null>().default(null),

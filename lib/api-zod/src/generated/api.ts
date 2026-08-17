@@ -21,8 +21,10 @@ export const ListRepositoriesResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
   provider: zod.string(),
-  url: zod.string(),
+  url: zod.string().nullish(),
   defaultBranch: zod.string(),
+  projectId: zod.number().nullish(),
+  needsReconfiguration: zod.boolean(),
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
@@ -63,6 +65,7 @@ export const CreateRepositoryBody = zod.object({
   provider: zod.string(),
   url: zod.string(),
   defaultBranch: zod.string(),
+  projectId: zod.number().nullish(),
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
@@ -104,8 +107,10 @@ export const GetRepositoryResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   provider: zod.string(),
-  url: zod.string(),
+  url: zod.string().nullish(),
   defaultBranch: zod.string(),
+  projectId: zod.number().nullish(),
+  needsReconfiguration: zod.boolean(),
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
@@ -149,6 +154,7 @@ export const UpdateRepositoryBody = zod.object({
   provider: zod.string().optional(),
   url: zod.string().optional(),
   defaultBranch: zod.string().optional(),
+  projectId: zod.number().nullish(),
   stackProfile: zod
     .object({
       frontend: zod.enum(["react", "angular", "vue", "none"]),
@@ -185,8 +191,10 @@ export const UpdateRepositoryResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   provider: zod.string(),
-  url: zod.string(),
+  url: zod.string().nullish(),
   defaultBranch: zod.string(),
+  projectId: zod.number().nullish(),
+  needsReconfiguration: zod.boolean(),
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),

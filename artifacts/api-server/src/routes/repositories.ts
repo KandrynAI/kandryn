@@ -25,6 +25,56 @@ const router: IRouter = Router();
 
 const RepoIdParam = z.object({ repoId: z.coerce.number().int().positive() });
 
+// https://github.com/{owner}/{repo}, tolerating a www. prefix, a .git suffix,
+// and a trailing slash. Anchored so nothing but owner/repo may follow the host.
+const GITHUB_URL_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i;
+
+type UrlCheck = { ok: true; defaultBranch: string } | { ok: false; error: string };
+
+/**
+ * Validate and verify a GitHub repository URL before it is persisted (PART 1):
+ * parse owner/repo, reject owner === repo (that points at the owner's profile,
+ * not a repo), then confirm the repository exists and is readable with the
+ * user's token via GET /repos/{owner}/{repo}. Only GitHub URLs are verified.
+ */
+async function verifyGithubUrl(url: string, token: string | undefined): Promise<UrlCheck> {
+  const match = url.match(GITHUB_URL_RE);
+  if (!match) {
+    return { ok: false, error: "Enter a GitHub repository URL like https://github.com/owner/repo." };
+  }
+  const [, owner, repo] = match;
+  if (owner.toLowerCase() === repo.toLowerCase()) {
+    return {
+      ok: false,
+      error:
+        "That URL points at the owner's profile, not a repository (the owner and repository names are identical). Enter the full https://github.com/owner/repo URL.",
+    };
+  }
+  let res: Response;
+  try {
+    res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "blue-mantis",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  } catch {
+    return { ok: false, error: "Could not reach GitHub to verify the repository. Try again." };
+  }
+  if (res.status === 404) {
+    return {
+      ok: false,
+      error: "Repository not found, or your GitHub token can't access it. Check the URL and your token in Settings.",
+    };
+  }
+  if (!res.ok) {
+    return { ok: false, error: `GitHub could not verify the repository (HTTP ${res.status}).` };
+  }
+  const data = (await res.json()) as { default_branch?: string };
+  return { ok: true, defaultBranch: data.default_branch ?? "main" };
+}
+
 // Graphify graph.json upload (developer runs Graphify locally, uploads here).
 const GraphUploadBody = z.object({
   graph: z.object({
@@ -74,6 +124,10 @@ router.get("/repositories/:repoId/stack", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Repository not found" });
     return;
   }
+  if (!repo.url) {
+    res.status(400).json({ error: "Repository needs reconfiguration — set a valid repository URL first." });
+    return;
+  }
 
   const gitCreds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
   req.log.info({ repoId: repo.id, provider: repo.provider }, "Fetching file list for stack detection");
@@ -110,6 +164,17 @@ router.post("/repositories", async (req, res): Promise<void> => {
     return;
   }
 
+  // Verify a GitHub URL before saving so a non-repository URL (e.g. owner ===
+  // repo) can never be persisted (PART 1). Azure Repos URLs are not verified.
+  if (parsed.data.provider === "github") {
+    const { GITHUB_TOKEN } = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
+    const check = await verifyGithubUrl(parsed.data.url, GITHUB_TOKEN);
+    if (!check.ok) {
+      res.status(400).json({ error: check.error });
+      return;
+    }
+  }
+
   const [repo] = await db
     .insert(repositoriesTable)
     .values({
@@ -137,7 +202,7 @@ router.post("/repositories", async (req, res): Promise<void> => {
 
   // Trigger async Graphify indexing if the microservice is configured
   // (Phase 2). Fire-and-forget — never blocks the response.
-  if (isGraphifyConfigured()) {
+  if (isGraphifyConfigured() && updated.url) {
     const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
     triggerRepoIndex({ repoUrl: updated.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: updated.id, log: req.log });
   }
@@ -185,18 +250,68 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  const [existing] = await db
+    .select()
+    .from(repositoriesTable)
+    .where(and(eq(repositoriesTable.id, params.data.id), eq(repositoriesTable.userId, req.userId)));
+  if (!existing) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+
+  const provider = parsed.data.provider ?? existing.provider;
+  const urlChanged = parsed.data.url != null && parsed.data.url !== existing.url;
+
+  // Verify a changed GitHub URL before saving (PART 1).
+  if (urlChanged && provider === "github") {
+    const { GITHUB_TOKEN } = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
+    const check = await verifyGithubUrl(parsed.data.url as string, GITHUB_TOKEN);
+    if (!check.ok) {
+      res.status(400).json({ error: check.error });
+      return;
+    }
+  }
+
+  const updates: Partial<typeof repositoriesTable.$inferInsert> = {
+    ...(parsed.data as Partial<typeof repositoriesTable.$inferInsert>),
+  };
+  // A new URL invalidates the detected stack and clears the reconfiguration flag;
+  // the stack is re-detected below.
+  if (urlChanged) {
+    updates.stackProfile = {};
+    updates.needsReconfiguration = false;
+  }
+
   const [repo] = await db
     .update(repositoriesTable)
-    .set(parsed.data as Partial<typeof repositoriesTable.$inferInsert>)
-    .where(
-      and(eq(repositoriesTable.id, params.data.id), eq(repositoriesTable.userId, req.userId)),
-    )
+    .set(updates)
+    .where(and(eq(repositoriesTable.id, params.data.id), eq(repositoriesTable.userId, req.userId)))
     .returning();
   if (!repo) {
     res.status(404).json({ error: "Repository not found" });
     return;
   }
-  res.json(UpdateRepositoryResponse.parse(repo));
+
+  // Re-detect the stack against the new URL (best-effort; mirrors connect). With
+  // stackProfile cleared above, GitService.forRepo re-runs detection.
+  if (urlChanged) {
+    try {
+      const creds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+      await GitService.forRepo(repo.id, {
+        githubToken: creds.GITHUB_TOKEN,
+        azureReposToken: creds.AZURE_REPOS_TOKEN,
+      });
+    } catch (err) {
+      req.log.warn({ repoId: repo.id, err }, "Stack re-detection after URL change failed");
+    }
+  }
+
+  const [updated] = await db
+    .select()
+    .from(repositoriesTable)
+    .where(eq(repositoriesTable.id, repo.id));
+  res.json(UpdateRepositoryResponse.parse(updated));
 });
 
 // ---------------------------------------------------------------------------
@@ -283,6 +398,10 @@ router.post("/repositories/:repoId/graph/rebuild", async (req, res): Promise<voi
     .where(and(eq(repositoriesTable.id, params.data.repoId), eq(repositoriesTable.userId, req.userId)));
   if (!repo) {
     res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+  if (!repo.url) {
+    res.status(400).json({ error: "Repository needs reconfiguration — set a valid repository URL first." });
     return;
   }
   if (!isGraphifyConfigured()) {
