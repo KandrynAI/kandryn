@@ -18,18 +18,10 @@ import { useToast } from "@/hooks/use-toast";
 import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
 
-const GITHUB_URL_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i;
-
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
   provider: z.enum(["github", "azure-repos"]),
-  url: z
-    .string()
-    .url("Must be a valid URL")
-    .refine((u) => {
-      const m = u.match(GITHUB_URL_RE);
-      return !m || m[1].toLowerCase() !== m[2].toLowerCase();
-    }, "That URL points at the owner's profile, not a repository (owner and repo are the same)."),
+  url: z.string().url("Must be a valid URL"),
   defaultBranch: z.string().min(1, "Default branch is required"),
   stackProfile: z.object({
     frontend: z.enum(["react", "angular", "vue", "none"]),
