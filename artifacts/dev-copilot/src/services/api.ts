@@ -21,8 +21,11 @@ export interface Repository {
   id: number;
   name: string;
   provider: string;
-  url: string;
+  url: string | null;
   defaultBranch: string;
+  projectId: number | null;
+  needsReconfiguration: boolean;
+  needsVerification: boolean;
   stackProfile: StackProfile | null;
   createdAt: string;
 }
@@ -102,8 +105,9 @@ export function rebuildRepositoryGraph(
   return request(`/api/repositories/${repoId}/graph/rebuild`, { method: 'POST' });
 }
 
-export function fetchRepositories(): Promise<Repository[]> {
-  return request<Repository[]>('/api/repositories');
+export function fetchRepositories(projectId?: number): Promise<Repository[]> {
+  const q = projectId != null ? `?projectId=${projectId}` : '';
+  return request<Repository[]>(`/api/repositories${q}`);
 }
 
 export function connectRepository(data: {
@@ -111,12 +115,19 @@ export function connectRepository(data: {
   provider: string;
   url: string;
   defaultBranch: string;
+  projectId: number;
 }): Promise<Repository> {
   return request<Repository>('/api/repositories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+}
+
+// Clear a repository's needs_verification flag once the user confirms a
+// migration-cloned repo points at the right codebase (0020).
+export function verifyRepository(id: number): Promise<Repository> {
+  return request<Repository>(`/api/repositories/${id}/verify`, { method: 'POST' });
 }
 
 export function redetectStack(repoId: number): Promise<StackProfile> {
@@ -157,7 +168,8 @@ export interface Project {
   plmProvider: PlmProvider;
   plmProjectKey: string | null;
   plmProjectName: string | null;
-  repositoryId: number;
+  /** @deprecated (0020) — resolve a project's repo via GET /repositories?projectId. */
+  repositoryId: number | null;
   defaultTarget: 'story' | 'task';
   lastSyncedAt: string | null;
   createdAt: string;
@@ -225,7 +237,7 @@ export function createProject(data: {
   name: string;
   plmProvider: PlmProvider;
   plmProjectKey: string;
-  repositoryId: number;
+  repositoryId?: number;
 }): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
@@ -274,6 +286,8 @@ export interface Run {
   userId: string;
   projectId: number;
   workItemId: number;
+  /** Repository this run targets, snapshotted at creation (0020). */
+  repositoryId: number | null;
   status: RunStatus;
   trigger: 'manual' | 'scheduled';
   refinePrompt: string | null;

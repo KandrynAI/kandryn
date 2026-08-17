@@ -97,6 +97,7 @@ export interface Repository {
   /** @nullable */
   projectId?: number | null;
   needsReconfiguration: boolean;
+  needsVerification: boolean;
   stackProfile: StackProfile;
   createdAt: string;
 }
@@ -196,6 +197,14 @@ export interface SourceCount {
   source: string;
   count: number;
 }
+
+export type ListRepositoriesParams = {
+  projectId?: number;
+};
+
+export type GetRepositoryParams = {
+  projectId?: number;
+};
 
 export type ListTasksParams = {
   /**

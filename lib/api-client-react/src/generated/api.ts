@@ -20,7 +20,9 @@ import type {
   CreateRepositoryBody,
   CreateTaskBody,
   DashboardStats,
+  GetRepositoryParams,
   HealthStatus,
+  ListRepositoriesParams,
   ListTasksParams,
   Repository,
   SourceCount,
@@ -118,41 +120,60 @@ export function useHealthCheck<
 /**
  * @summary List all repositories
  */
-export const getListRepositoriesUrl = () => {
-  return `/api/repositories`;
+export const getListRepositoriesUrl = (params?: ListRepositoriesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/repositories?${stringifiedParams}`
+    : `/api/repositories`;
 };
 
 export const listRepositories = async (
+  params?: ListRepositoriesParams,
   options?: RequestInit,
 ): Promise<Repository[]> => {
-  return customFetch<Repository[]>(getListRepositoriesUrl(), {
+  return customFetch<Repository[]>(getListRepositoriesUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListRepositoriesQueryKey = () => {
-  return [`/api/repositories`] as const;
+export const getListRepositoriesQueryKey = (
+  params?: ListRepositoriesParams,
+) => {
+  return [`/api/repositories`, ...(params ? [params] : [])] as const;
 };
 
 export const getListRepositoriesQueryOptions = <
   TData = Awaited<ReturnType<typeof listRepositories>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listRepositories>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListRepositoriesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRepositories>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListRepositoriesQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getListRepositoriesQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof listRepositories>>
-  > = ({ signal }) => listRepositories({ signal, ...requestOptions });
+  > = ({ signal }) => listRepositories(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listRepositories>>,
@@ -173,15 +194,18 @@ export type ListRepositoriesQueryError = ErrorType<unknown>;
 export function useListRepositories<
   TData = Awaited<ReturnType<typeof listRepositories>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listRepositories>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListRepositoriesQueryOptions(options);
+>(
+  params?: ListRepositoriesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRepositories>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListRepositoriesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -279,22 +303,41 @@ export const useCreateRepository = <
 /**
  * @summary Get a repository by ID
  */
-export const getGetRepositoryUrl = (id: number) => {
-  return `/api/repositories/${id}`;
+export const getGetRepositoryUrl = (
+  id: number,
+  params?: GetRepositoryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/repositories/${id}?${stringifiedParams}`
+    : `/api/repositories/${id}`;
 };
 
 export const getRepository = async (
   id: number,
+  params?: GetRepositoryParams,
   options?: RequestInit,
 ): Promise<Repository> => {
-  return customFetch<Repository>(getGetRepositoryUrl(id), {
+  return customFetch<Repository>(getGetRepositoryUrl(id, params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetRepositoryQueryKey = (id: number) => {
-  return [`/api/repositories/${id}`] as const;
+export const getGetRepositoryQueryKey = (
+  id: number,
+  params?: GetRepositoryParams,
+) => {
+  return [`/api/repositories/${id}`, ...(params ? [params] : [])] as const;
 };
 
 export const getGetRepositoryQueryOptions = <
@@ -302,6 +345,7 @@ export const getGetRepositoryQueryOptions = <
   TError = ErrorType<void>,
 >(
   id: number,
+  params?: GetRepositoryParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getRepository>>,
@@ -313,11 +357,12 @@ export const getGetRepositoryQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetRepositoryQueryKey(id);
+  const queryKey =
+    queryOptions?.queryKey ?? getGetRepositoryQueryKey(id, params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getRepository>>> = ({
     signal,
-  }) => getRepository(id, { signal, ...requestOptions });
+  }) => getRepository(id, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -345,6 +390,7 @@ export function useGetRepository<
   TError = ErrorType<void>,
 >(
   id: number,
+  params?: GetRepositoryParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getRepository>>,
@@ -354,7 +400,7 @@ export function useGetRepository<
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetRepositoryQueryOptions(id, options);
+  const queryOptions = getGetRepositoryQueryOptions(id, params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

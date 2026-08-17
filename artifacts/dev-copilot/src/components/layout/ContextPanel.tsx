@@ -9,7 +9,9 @@ import {
   fetchProjects,
   fetchProjectWorkItems,
   fetchRuns,
+  fetchRepositories,
   type Project,
+  type Repository,
 } from "@/services/api";
 import {
   DropdownMenu,
@@ -66,7 +68,7 @@ export function ContextPanel() {
   const [location, navigate] = useLocation();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const { activeRepository, repos } = useRepo();
+  const { setActiveRepository } = useRepo();
   const { isAzureConnected, isJiraConnected } = useConfig();
   const { team, role, isAdmin, loading: teamLoading } = useTeam();
   const { open: openRightPanel } = useRightPanel();
@@ -99,7 +101,29 @@ export function ContextPanel() {
   useEffect(() => {
     if (activeProject) localStorage.setItem(ACTIVE_PROJECT_KEY, String(activeProject.id));
   }, [activeProject]);
-  const activeRepoId = activeRepository?.id ?? repos[0]?.id ?? null;
+  // Resolve the repository from the active project (repositories.project_id,
+  // 0020) rather than the first of the user's repos. Sync it to RepoContext so
+  // the shared active repository / stack profile follow the project.
+  const [projectRepo, setProjectRepo] = useState<Repository | null>(null);
+  useEffect(() => {
+    if (!activeProject) {
+      setProjectRepo(null);
+      setActiveRepository(null);
+      return;
+    }
+    let cancelled = false;
+    fetchRepositories(activeProject.id)
+      .then((rs) => {
+        if (cancelled) return;
+        const repo = rs[0] ?? null;
+        setProjectRepo(repo);
+        setActiveRepository(repo);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject, setActiveRepository]);
 
   // Keep repository navigation scoped to the current project so the active
   // project isn't lost when viewing a repo (PART 3).
@@ -389,20 +413,22 @@ export function ContextPanel() {
           ))}
         </div>
 
-        {/* REPOSITORY */}
+        {/* REPOSITORY — resolved from the active project (0020). */}
         <div className="cp-section" style={{ marginTop: 12 }}>
           <div className="cp-label">Repository</div>
           <div
-            className={`cp-repo${activeRepoId != null ? " clickable" : ""}`}
-            title={activeRepository?.name ?? repos[0]?.name ?? "No repository"}
+            className={`cp-repo${projectRepo != null ? " clickable" : ""}`}
+            title={projectRepo?.name ?? "No repository connected"}
             onClick={
-              activeRepoId != null
-                ? () => navigate(repoHref(`/repositories/${activeRepoId}`))
-                : undefined
+              projectRepo != null
+                ? () => navigate(repoHref(`/repositories/${projectRepo.id}`))
+                : activeProject
+                  ? () => navigate(repoHref("/repositories"))
+                  : undefined
             }
-            role={activeRepoId != null ? "button" : undefined}
+            role={projectRepo != null || activeProject ? "button" : undefined}
           >
-            {activeRepository?.name ?? repos[0]?.name ?? "—"}
+            {projectRepo?.name ?? (activeProject ? "Connect repository…" : "—")}
           </div>
           <button className="cp-manage" onClick={() => navigate(repoHref("/repositories"))}>Manage</button>
         </div>

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, repositoriesTable } from "@workspace/db";
+import { db, repositoriesTable, projectsTable } from "@workspace/db";
 import {
   CreateRepositoryBody,
   UpdateRepositoryBody,
@@ -142,10 +142,18 @@ router.get("/repositories/:repoId/stack", async (req, res): Promise<void> => {
 });
 
 router.get("/repositories", async (req, res): Promise<void> => {
+  // Repositories are project-owned (repositories.project_id). When a projectId is
+  // supplied the list is scoped to that project; otherwise all of the user's
+  // repositories are returned (legacy/admin views).
+  const projectId = z.coerce.number().int().positive().optional().safeParse(req.query.projectId);
+  const where =
+    projectId.success && projectId.data != null
+      ? and(eq(repositoriesTable.userId, req.userId), eq(repositoriesTable.projectId, projectId.data))
+      : eq(repositoriesTable.userId, req.userId);
   const repos = await db
     .select()
     .from(repositoriesTable)
-    .where(eq(repositoriesTable.userId, req.userId))
+    .where(where)
     .orderBy(repositoriesTable.createdAt);
   res.json(ListRepositoriesResponse.parse(repos));
 });
@@ -155,6 +163,22 @@ router.post("/repositories", async (req, res): Promise<void> => {
   if (!parsed.success) {
     req.log.warn({ errors: parsed.error.message }, "Invalid request body");
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // A repository is connected inside a project (repositories.project_id is the
+  // source of truth for the binding). projectId is required and must be a project
+  // the user owns.
+  if (parsed.data.projectId == null) {
+    res.status(400).json({ error: "projectId is required — connect a repository from within a project." });
+    return;
+  }
+  const [project] = await db
+    .select({ id: projectsTable.id })
+    .from(projectsTable)
+    .where(and(eq(projectsTable.id, parsed.data.projectId), eq(projectsTable.userId, req.userId)));
+  if (!project) {
+    res.status(404).json({ error: "Project not found." });
     return;
   }
 
@@ -176,6 +200,7 @@ router.post("/repositories", async (req, res): Promise<void> => {
     .values({
       ...(parsed.data as typeof repositoriesTable.$inferInsert),
       userId: req.userId,
+      projectId: project.id,
       defaultBranch: verifiedBranch ?? parsed.data.defaultBranch,
       stackProfile: {},
     })
@@ -233,6 +258,34 @@ router.get("/repositories/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Repository not found" });
     return;
   }
+  // When opened under a project (/p/:projectId/repositories/:id), the repo must
+  // belong to that project — otherwise a repo is reachable through a project that
+  // doesn't own it. 404 on mismatch.
+  const scopeProjectId = z.coerce.number().int().positive().optional().safeParse(req.query.projectId);
+  if (scopeProjectId.success && scopeProjectId.data != null && repo.projectId !== scopeProjectId.data) {
+    res.status(404).json({ error: "Repository not found in this project" });
+    return;
+  }
+  res.json(GetRepositoryResponse.parse(repo));
+});
+
+// POST /repositories/:id/verify — clear the needs_verification flag once the
+// user has confirmed a migration-cloned repo points at the right codebase.
+router.post("/repositories/:id/verify", async (req, res): Promise<void> => {
+  const params = GetRepositoryParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [repo] = await db
+    .update(repositoriesTable)
+    .set({ needsVerification: false })
+    .where(and(eq(repositoriesTable.id, params.data.id), eq(repositoriesTable.userId, req.userId)))
+    .returning();
+  if (!repo) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
   res.json(GetRepositoryResponse.parse(repo));
 });
 
@@ -275,11 +328,12 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
   const updates: Partial<typeof repositoriesTable.$inferInsert> = {
     ...(parsed.data as Partial<typeof repositoriesTable.$inferInsert>),
   };
-  // A new URL invalidates the detected stack and clears the reconfiguration flag;
-  // the stack is re-detected below. Adopt the verified default branch.
+  // A new URL invalidates the detected stack and clears the reconfiguration and
+  // verification flags; the stack is re-detected below. Adopt the verified branch.
   if (urlChanged) {
     updates.stackProfile = {};
     updates.needsReconfiguration = false;
+    updates.needsVerification = false;
     if (verifiedBranch) updates.defaultBranch = verifiedBranch;
   }
 

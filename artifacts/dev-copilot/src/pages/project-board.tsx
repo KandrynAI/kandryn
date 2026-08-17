@@ -13,6 +13,7 @@ import {
   fetchProject,
   fetchProjectWorkItems,
   fetchRuns,
+  fetchRepositories,
   syncProject,
   ApiError,
   type Project,
@@ -55,6 +56,8 @@ export default function ProjectBoard() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [items, setItems] = useState<WorkItem[] | null>(null);
+  // null = unknown/loading; false = project has no repository connected (0020).
+  const [hasRepo, setHasRepo] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -90,6 +93,9 @@ export default function ProjectBoard() {
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load the project."))
       .finally(() => setLoading(false));
+    fetchRepositories(projectId)
+      .then((rs) => setHasRepo(rs.length > 0))
+      .catch(() => setHasRepo(null));
   }, [projectId]);
 
   useEffect(() => {
@@ -209,6 +215,28 @@ export default function ProjectBoard() {
 
   return (
     <div style={{ display: "flex", height: "100%", flexDirection: "column" }}>
+      {/* Connect-repository prompt when the project has no repo bound (0020). */}
+      {hasRepo === false && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "10px 20px",
+            borderBottom: "1px solid var(--c-border)",
+            background: "var(--c-surface)",
+          }}
+        >
+          <span style={{ fontSize: 13, color: "var(--c-ink-2)" }}>
+            No repository is connected to this project yet. Runs need a repository.
+          </span>
+          <Link href={`/p/${projectId}/repositories`} className="bm-primary" style={{ whiteSpace: "nowrap" }}>
+            Connect repository
+          </Link>
+        </div>
+      )}
+
       {/* Epic filter */}
       {epics.length > 0 && (
         <div style={{ display: "flex", gap: 6, padding: "8px 20px", borderBottom: "1px solid var(--c-border)", overflowX: "auto" }}>

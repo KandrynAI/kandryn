@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { z } from "zod/v4";
 import { getConfigs } from "../services/configService.js";
+import { getProjectRepository } from "../services/repoResolver.js";
 import { GitService } from "../services/gitService.js";
 import { generateTests, AIFormatError } from "../services/aiService.js";
 import { createPlmTestCase } from "../services/plmWrite.js";
@@ -47,10 +48,8 @@ async function loadContext(userId: string, workItemId: number): Promise<Context>
     .where(eq(projectsTable.id, workItem.projectId));
   if (!project) return { ok: false, status: 404, message: "Project not found." };
 
-  const [repo] = await db
-    .select()
-    .from(repositoriesTable)
-    .where(eq(repositoriesTable.id, project.repositoryId));
+  // Resolve the repo via project_id (0020), not the deprecated projects.repository_id.
+  const repo = await getProjectRepository(project.id, userId);
 
   return { ok: true, workItem, project, repo };
 }
@@ -268,7 +267,7 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
     res.status(ctx.status).json({ error: ctx.message });
     return;
   }
-  const { workItem, project } = ctx;
+  const { workItem, project, repo } = ctx;
   if (!workItem.externalId || (workItem.source !== "jira" && workItem.source !== "azure-devops")) {
     res.status(422).json({ error: "This work item isn't linked to a PLM story, so test cases can't be pushed." });
     return;
@@ -306,7 +305,7 @@ router.post("/work-items/:id/tests/push", async (req, res): Promise<void> => {
       await db.insert(tasksTable).values({
         userId: req.userId,
         projectId: project.id,
-        repositoryId: project.repositoryId,
+        repositoryId: repo?.id ?? null,
         externalId: result.externalId,
         source: project.plmProvider,
         type: "task",

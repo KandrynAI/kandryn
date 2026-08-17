@@ -81,7 +81,12 @@ export default function RunReportPage() {
   if (error || !data || !project) return <div style={{ padding: 40, color: "var(--c-ink-3)" }}>{error ?? "Report not found."}</div>;
 
   const { run, suggestions } = data;
-  const repo = repos.find((r) => r.id === project.repositoryId) ?? null;
+  // Resolve the repo via the run's snapshot, else the project's owned repo
+  // (repositories.project_id, 0020) — projects.repository_id is deprecated.
+  const repo =
+    repos.find((r) => run.repositoryId != null && r.id === run.repositoryId) ??
+    repos.find((r) => r.projectId === project.id) ??
+    null;
   const committed =
     suggestions.find((s) => run.committedSuggestionId != null && s.id === run.committedSuggestionId) ??
     suggestions.find((s) => s.recommendation === "Recommended") ??

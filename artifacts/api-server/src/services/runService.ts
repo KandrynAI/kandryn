@@ -4,11 +4,10 @@ import {
   db,
   runsTable,
   tasksTable,
-  projectsTable,
-  repositoriesTable,
   suggestionsTable,
 } from "@workspace/db";
 import { GitService } from "./gitService.js";
+import { getRunRepository } from "./repoResolver.js";
 import { AIOrchestrator, SynthesisEngine } from "./aiService.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
 import { describeStack } from "./stackPromptBuilder.js";
@@ -58,13 +57,11 @@ export async function executeRun(runId: number): Promise<void> {
   try {
     const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
     if (!workItem) throw new Error("Work item not found");
-    const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, run.projectId));
-    if (!project) throw new Error("Project not found");
-    const [repo] = await db
-      .select()
-      .from(repositoriesTable)
-      .where(eq(repositoriesTable.id, project.repositoryId));
-    if (!repo) throw new Error("Repository not found");
+    // Resolve the repo from the run's snapshot (runs.repository_id), falling back
+    // to the project's binding via repositories.project_id (0020) — never the
+    // deprecated projects.repository_id.
+    const repo = await getRunRepository(run);
+    if (!repo) throw new Error("No repository is connected to this run's project.");
     if (!repo.url) throw new Error("Repository needs reconfiguration — no URL is set. Set a valid repository URL and try again.");
 
     const stack = repo.stackProfile as StackProfile;
@@ -237,13 +234,10 @@ export async function commitFromSuggestion(
 
   const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
   if (!workItem) throw new RunError("Work item not found", 404);
-  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, run.projectId));
-  if (!project) throw new RunError("Project not found", 404);
-  const [repo] = await db
-    .select()
-    .from(repositoriesTable)
-    .where(and(eq(repositoriesTable.id, project.repositoryId), eq(repositoriesTable.userId, userId)));
-  if (!repo) throw new RunError("Repository access denied", 403);
+  // Resolve via the run's repository snapshot (0020), not projects.repository_id,
+  // so the commit lands in the same repo the code was generated against.
+  const repo = await getRunRepository(run);
+  if (!repo) throw new RunError("No repository is connected to this run's project.", 422);
   if (!repo.url) throw new RunError("Repository needs reconfiguration — set a valid repository URL and try again.", 400);
 
   const creds = await getConfigs(userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);

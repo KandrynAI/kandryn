@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db, tasksTable, projectsTable, repositoriesTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { getConfigs } from "../services/configService.js";
+import { getProjectRepository } from "../services/repoResolver.js";
 import { PLMService } from "../services/plmService.js";
 import { generateBreakdown, AIFormatError } from "../services/aiService.js";
 import { createPlmWorkItem, type CreatableType, type PlmProvider } from "../services/plmWrite.js";
@@ -126,20 +127,12 @@ router.post("/work-items/:id/breakdown", async (req, res): Promise<void> => {
     return;
   }
 
-  // Best-effort stack for a grounded prompt.
+  // Best-effort stack for a grounded prompt. Resolve the repo via project_id
+  // (0020), not the deprecated projects.repository_id.
   let stack: StackProfile | null = null;
   if (item.projectId != null) {
-    const [project] = await db
-      .select({ repositoryId: projectsTable.repositoryId })
-      .from(projectsTable)
-      .where(eq(projectsTable.id, item.projectId));
-    if (project?.repositoryId != null) {
-      const [repo] = await db
-        .select({ stackProfile: repositoriesTable.stackProfile })
-        .from(repositoriesTable)
-        .where(eq(repositoriesTable.id, project.repositoryId));
-      stack = (repo?.stackProfile as StackProfile) ?? null;
-    }
+    const repo = await getProjectRepository(item.projectId, req.userId);
+    stack = (repo?.stackProfile as StackProfile) ?? null;
   }
 
   try {
