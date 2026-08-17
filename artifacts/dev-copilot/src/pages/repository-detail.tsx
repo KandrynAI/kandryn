@@ -17,7 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 
 const formSchema = z.object({
@@ -415,15 +415,39 @@ function GraphifySection({ repoId }: { repoId: number }) {
   const { data: status, isLoading } = useQuery({
     queryKey: ["repo", repoId, "graph"],
     queryFn: () => fetchRepositoryGraphStatus(repoId),
+    // Poll while a rebuild is in flight so the panel updates itself (and self-
+    // corrects after navigating away and back — the state is server-persisted).
+    refetchInterval: (q) => (q.state.data?.status === "indexing" ? 3000 : false),
   });
+
+  const graphStatus = status?.status ?? "idle";
+  const isIndexing = graphStatus === "indexing";
+
+  // Toast when a rebuild finishes (state transitions out of "indexing").
+  const prevStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const s = status?.status;
+    if (prevStatus.current === "indexing" && s && s !== "indexing") {
+      if (s === "succeeded") {
+        toast({ title: "Graph rebuilt", description: `${status?.nodeCount ?? 0} nodes indexed.` });
+      } else if (s === "failed") {
+        toast({
+          title: "Graph rebuild failed",
+          description: status?.error ?? "The Graphify service reported an error.",
+          variant: "destructive",
+        });
+      }
+    }
+    prevStatus.current = s;
+  }, [status?.status, status?.nodeCount, status?.error, toast]);
 
   const onRebuild = async () => {
     setRebuilding(true);
     try {
       const res = await rebuildRepositoryGraph(repoId);
       toast({ title: "Rebuild started", description: res.message });
-      // Re-index runs in the background; poll the status a moment later.
-      setTimeout(() => qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] }), 4000);
+      // Pick up the "indexing" state immediately; the poll takes over from there.
+      qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] });
     } catch (err) {
       const notConfigured = err instanceof ApiError && err.status === 503;
       toast({
@@ -460,12 +484,26 @@ function GraphifySection({ repoId }: { repoId: number }) {
 
   const built = status?.built ?? false;
   const stale = status?.stale ?? false;
-  const dot = !built ? "#9ba3ac" : stale ? "#d4821a" : "#1a7f4b";
+  const dot = isLoading
+    ? "#9ba3ac"
+    : isIndexing
+      ? "#3b82f6"
+      : graphStatus === "failed"
+        ? "#dc2626"
+        : !built
+          ? "#9ba3ac"
+          : stale
+            ? "#d4821a"
+            : "#1a7f4b";
   const statusText = isLoading
     ? "Checking…"
-    : !built
-      ? "Not loaded"
-      : `Loaded — ${status?.nodeCount ?? 0} nodes${status?.builtAt ? `, built ${formatDistanceToNow(new Date(status.builtAt))} ago` : ""}${stale ? " · Rebuild recommended" : ""}`;
+    : isIndexing
+      ? "Indexing… this can take a minute"
+      : graphStatus === "failed"
+        ? `Rebuild failed${status?.error ? ` — ${status.error}` : ""}`
+        : !built
+          ? "Not loaded"
+          : `Loaded — ${status?.nodeCount ?? 0} nodes${status?.builtAt ? `, built ${formatDistanceToNow(new Date(status.builtAt))} ago` : ""}${stale ? " · Rebuild recommended" : ""}`;
 
   return (
     <Card>
@@ -478,7 +516,7 @@ function GraphifySection({ repoId }: { repoId: number }) {
           <span>{statusText}</span>
         </div>
 
-        {!built && !isLoading && (
+        {!built && !isLoading && !isIndexing && graphStatus !== "failed" && (
           <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 4, padding: "14px 16px", marginTop: 10 }}>
             <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", marginBottom: 8, fontWeight: 600 }}>Graph context</div>
             <p style={{ fontSize: 13, color: "var(--c-ink-2)", lineHeight: 1.6 }}>
@@ -498,8 +536,8 @@ function GraphifySection({ repoId }: { repoId: number }) {
           <Button variant="outline" size="sm" className="font-mono text-xs" disabled={uploading} onClick={() => fileRef.current?.click()}>
             {uploading ? "Uploading…" : built ? "Re-upload graph.json" : "Upload graph.json"}
           </Button>
-          <Button variant="outline" size="sm" className="font-mono text-xs" disabled={rebuilding} onClick={onRebuild}>
-            {rebuilding ? "Rebuilding…" : "Rebuild graph"}
+          <Button variant="outline" size="sm" className="font-mono text-xs" disabled={rebuilding || isIndexing} onClick={onRebuild}>
+            {rebuilding || isIndexing ? "Indexing…" : "Rebuild graph"}
           </Button>
         </div>
         {built && (

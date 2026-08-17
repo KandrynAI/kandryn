@@ -50,6 +50,14 @@ export const repositoriesTable = pgTable(
     graphJson: jsonb("graph_json").$type<PersistedGraphifyGraph | null>().default(null),
     graphBuiltAt: timestamp("graph_built_at", { withTimezone: true }),
     graphNodeCount: integer("graph_node_count"),
+    // Rebuild lifecycle (0021): idle → indexing (on trigger) → succeeded|failed
+    // (on callback). graphError holds the failure text. Gives the UI a real
+    // completion/failure signal instead of a silent "0 nodes" build.
+    graphStatus: text("graph_status")
+      .$type<"idle" | "indexing" | "succeeded" | "failed">()
+      .notNull()
+      .default("idle"),
+    graphError: text("graph_error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("repositories_user_id_idx").on(t.userId)],

@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import { db, repositoriesTable } from "@workspace/db";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
 export interface GraphifyQueryResult {
@@ -132,6 +134,15 @@ interface TriggerIndexArgs {
 export function triggerRepoIndex({ repoUrl, githubToken, repoId, log }: TriggerIndexArgs): boolean {
   const graphifyUrl = process.env.GRAPHIFY_SERVICE_URL;
   if (!graphifyUrl) return false;
+
+  // Mark the repo as indexing so the UI shows progress and can distinguish an
+  // in-flight rebuild from a finished one (0021). The callback resolves it to
+  // succeeded/failed. Fire-and-forget — never blocks the trigger.
+  void db
+    .update(repositoriesTable)
+    .set({ graphStatus: "indexing", graphError: null })
+    .where(eq(repositoriesTable.id, repoId))
+    .catch((err) => log?.warn({ err }, "Graphify status update to indexing failed"));
 
   const callbackUrl = `${process.env.APP_BASE_URL ?? "https://getbluemantis.com"}/api/internal/graphify-callback`;
   void fetch(`${graphifyUrl}/index`, {

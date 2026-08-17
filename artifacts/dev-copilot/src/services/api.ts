@@ -77,6 +77,8 @@ export interface RepositoryGraphStatus {
   builtAt: string | null;
   nodeCount: number | null;
   stale: boolean;
+  status: 'idle' | 'indexing' | 'succeeded' | 'failed';
+  error: string | null;
 }
 
 export function fetchRepositoryGraphStatus(repoId: number): Promise<RepositoryGraphStatus> {

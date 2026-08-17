@@ -132,10 +132,13 @@ router.post("/internal/graphify-callback", async (req: Request, res: Response): 
 
   if (error || !graph) {
     logger.warn({ repoId, error }, "Graphify indexing failed");
-    // Record the attempt so the UI shows a (failed) build rather than nothing.
+    // Record the failure with its error text so the UI can surface it (0021).
     await db
       .update(repositoriesTable)
-      .set({ graphBuiltAt: new Date(), graphNodeCount: 0 })
+      .set({
+        graphStatus: "failed",
+        graphError: typeof error === "string" ? error.slice(0, 1000) : "Indexing failed.",
+      })
       .where(eq(repositoriesTable.id, repoId));
     res.status(200).json({ received: true });
     return;
@@ -148,6 +151,8 @@ router.post("/internal/graphify-callback", async (req: Request, res: Response): 
       graphJson: graph as typeof repositoriesTable.$inferInsert.graphJson,
       graphBuiltAt: new Date(),
       graphNodeCount: nodeCount,
+      graphStatus: "succeeded",
+      graphError: null,
     })
     .where(eq(repositoriesTable.id, repoId));
 

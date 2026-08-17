@@ -390,6 +390,8 @@ router.get("/repositories/:repoId/graph", async (req, res): Promise<void> => {
     builtAt: repo.graphBuiltAt,
     nodeCount: repo.graphNodeCount,
     stale: repo.graphBuiltAt != null && !isGraphUsable(repo.graphBuiltAt),
+    status: repo.graphStatus,
+    error: repo.graphError,
   });
 });
 
@@ -419,6 +421,8 @@ router.post("/repositories/:repoId/graph", async (req, res): Promise<void> => {
       graphJson: graph as typeof repositoriesTable.$inferInsert.graphJson,
       graphBuiltAt: new Date(),
       graphNodeCount: graph.nodes.length,
+      graphStatus: "succeeded",
+      graphError: null,
     })
     .where(and(eq(repositoriesTable.id, params.data.repoId), eq(repositoriesTable.userId, req.userId)))
     .returning();
