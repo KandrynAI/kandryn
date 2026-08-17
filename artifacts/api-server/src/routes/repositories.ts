@@ -32,10 +32,11 @@ const GITHUB_URL_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+?)(?:\.
 type UrlCheck = { ok: true; defaultBranch: string } | { ok: false; error: string };
 
 /**
- * Validate and verify a GitHub repository URL before it is persisted (PART 1):
- * parse owner/repo, reject owner === repo (that points at the owner's profile,
- * not a repo), then confirm the repository exists and is readable with the
- * user's token via GET /repos/{owner}/{repo}. Only GitHub URLs are verified.
+ * Verify a GitHub repository URL by existence, not shape (PART 1): parse
+ * owner/repo, then confirm GitHub returns the repository for the user's token
+ * via GET /repos/{owner}/{repo}. The URL shape is not the signal — whether
+ * GitHub returns the repo is. (A profile repo like owner/owner is legitimate.)
+ * Only GitHub URLs are verified.
  */
 async function verifyGithubUrl(url: string, token: string | undefined): Promise<UrlCheck> {
   const match = url.match(GITHUB_URL_RE);
@@ -43,13 +44,6 @@ async function verifyGithubUrl(url: string, token: string | undefined): Promise<
     return { ok: false, error: "Enter a GitHub repository URL like https://github.com/owner/repo." };
   }
   const [, owner, repo] = match;
-  if (owner.toLowerCase() === repo.toLowerCase()) {
-    return {
-      ok: false,
-      error:
-        "That URL points at the owner's profile, not a repository (the owner and repository names are identical). Enter the full https://github.com/owner/repo URL.",
-    };
-  }
   let res: Response;
   try {
     res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
@@ -62,11 +56,11 @@ async function verifyGithubUrl(url: string, token: string | undefined): Promise<
   } catch {
     return { ok: false, error: "Could not reach GitHub to verify the repository. Try again." };
   }
+  if (res.status === 401) {
+    return { ok: false, error: "GitHub token is invalid — check Settings → Personal." };
+  }
   if (res.status === 404) {
-    return {
-      ok: false,
-      error: "Repository not found, or your GitHub token can't access it. Check the URL and your token in Settings.",
-    };
+    return { ok: false, error: "Repository not found or the token cannot access it." };
   }
   if (!res.ok) {
     return { ok: false, error: `GitHub could not verify the repository (HTTP ${res.status}).` };
@@ -164,8 +158,9 @@ router.post("/repositories", async (req, res): Promise<void> => {
     return;
   }
 
-  // Verify a GitHub URL before saving so a non-repository URL (e.g. owner ===
-  // repo) can never be persisted (PART 1). Azure Repos URLs are not verified.
+  // Verify the URL by existence before saving so a non-existent or inaccessible
+  // repo can never be persisted (PART 1). Azure Repos URLs are not verified.
+  let verifiedBranch: string | undefined;
   if (parsed.data.provider === "github") {
     const { GITHUB_TOKEN } = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
     const check = await verifyGithubUrl(parsed.data.url, GITHUB_TOKEN);
@@ -173,6 +168,7 @@ router.post("/repositories", async (req, res): Promise<void> => {
       res.status(400).json({ error: check.error });
       return;
     }
+    verifiedBranch = check.defaultBranch;
   }
 
   const [repo] = await db
@@ -180,6 +176,7 @@ router.post("/repositories", async (req, res): Promise<void> => {
     .values({
       ...(parsed.data as typeof repositoriesTable.$inferInsert),
       userId: req.userId,
+      defaultBranch: verifiedBranch ?? parsed.data.defaultBranch,
       stackProfile: {},
     })
     .returning();
@@ -263,7 +260,8 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
   const provider = parsed.data.provider ?? existing.provider;
   const urlChanged = parsed.data.url != null && parsed.data.url !== existing.url;
 
-  // Verify a changed GitHub URL before saving (PART 1).
+  // Verify a changed GitHub URL by existence before saving (PART 1).
+  let verifiedBranch: string | undefined;
   if (urlChanged && provider === "github") {
     const { GITHUB_TOKEN } = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
     const check = await verifyGithubUrl(parsed.data.url as string, GITHUB_TOKEN);
@@ -271,16 +269,18 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
       res.status(400).json({ error: check.error });
       return;
     }
+    verifiedBranch = check.defaultBranch;
   }
 
   const updates: Partial<typeof repositoriesTable.$inferInsert> = {
     ...(parsed.data as Partial<typeof repositoriesTable.$inferInsert>),
   };
   // A new URL invalidates the detected stack and clears the reconfiguration flag;
-  // the stack is re-detected below.
+  // the stack is re-detected below. Adopt the verified default branch.
   if (urlChanged) {
     updates.stackProfile = {};
     updates.needsReconfiguration = false;
+    if (verifiedBranch) updates.defaultBranch = verifiedBranch;
   }
 
   const [repo] = await db

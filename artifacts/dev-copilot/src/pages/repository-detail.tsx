@@ -20,17 +20,9 @@ import * as z from "zod";
 import { useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 
-const GITHUB_URL_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i;
-
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  url: z
-    .string()
-    .url("Enter a valid repository URL")
-    .refine((u) => {
-      const m = u.match(GITHUB_URL_RE);
-      return !m || m[1].toLowerCase() !== m[2].toLowerCase();
-    }, "That URL points at the owner's profile, not a repository (owner and repo are the same)."),
+  url: z.string().url("Enter a valid repository URL"),
   defaultBranch: z.string().min(1, "Default branch is required"),
 });
 
