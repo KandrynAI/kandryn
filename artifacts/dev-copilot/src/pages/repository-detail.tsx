@@ -1,4 +1,4 @@
-import { useGetRepository, useUpdateRepository, useDeleteRepository, getListRepositoriesQueryKey, useListTasks } from "@workspace/api-client-react";
+import { useGetRepository, useUpdateRepository, useDeleteRepository, getListRepositoriesQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { fetchRepositoryGraphStatus, uploadRepositoryGraph, rebuildRepositoryGraph, ApiError } from "@/services/api";
+import { fetchRepositoryGraphStatus, uploadRepositoryGraph, rebuildRepositoryGraph, fetchProjectWorkItems, ApiError } from "@/services/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,13 +31,21 @@ export default function RepositoryDetail() {
   const id = parseInt(params.id || "0", 10);
   // When reached via /p/:projectId/repositories/:id, keep navigation inside the
   // project so the active project isn't lost (PART 3).
-  const reposHref = params.projectId ? `/p/${params.projectId}/repositories` : "/repositories";
+  const projectId = params.projectId ? Number(params.projectId) : null;
+  const reposHref = projectId != null ? `/p/${projectId}/repositories` : "/repositories";
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: repo, isLoading } = useGetRepository(id);
-  const { data: tasks, isLoading: tasksLoading } = useListTasks({ repositoryId: id });
+  // Linked Tasks are scoped to the project this repo is opened under, not the
+  // repository row — a repo shared by two projects otherwise leaks each
+  // project's work items into the other (Issue 2).
+  const { data: tasks, isLoading: tasksLoading } = useQuery({
+    queryKey: ["project", projectId, "work-items"],
+    queryFn: () => fetchProjectWorkItems(projectId as number),
+    enabled: projectId != null,
+  });
   
   const deleteRepo = useDeleteRepository();
   const updateRepo = useUpdateRepository();
@@ -268,7 +276,11 @@ export default function RepositoryDetail() {
           {tasksLoading ? (
             <div className="p-4 space-y-4"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
           ) : !tasks || tasks.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm font-mono">No tasks linked to this repository.</div>
+            <div className="text-center py-8 text-muted-foreground text-sm font-mono">
+              {projectId == null
+                ? "Open this repository from a project to see its work items."
+                : "No work items in this project."}
+            </div>
           ) : (
             <div className="divide-y">
               {tasks.map(task => (
