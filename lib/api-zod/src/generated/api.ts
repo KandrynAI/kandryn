@@ -28,7 +28,14 @@ export const ListRepositoriesResponseItem = zod.object({
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
-    database: zod.enum(["postgresql", "sqlserver", "oracle", "mysql"]),
+    database: zod.enum([
+      "postgresql",
+      "sqlserver",
+      "oracle",
+      "mysql",
+      "sqlite",
+      "unknown",
+    ]),
     language: zod.enum([
       "typescript",
       "javascript",
@@ -40,6 +47,8 @@ export const ListRepositoriesResponseItem = zod.object({
       "jest",
       "jasmine",
       "xunit",
+      "nunit",
+      "mstest",
       "junit",
       "pytest",
       "none",
@@ -69,7 +78,14 @@ export const CreateRepositoryBody = zod.object({
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
-    database: zod.enum(["postgresql", "sqlserver", "oracle", "mysql"]),
+    database: zod.enum([
+      "postgresql",
+      "sqlserver",
+      "oracle",
+      "mysql",
+      "sqlite",
+      "unknown",
+    ]),
     language: zod.enum([
       "typescript",
       "javascript",
@@ -81,6 +97,8 @@ export const CreateRepositoryBody = zod.object({
       "jest",
       "jasmine",
       "xunit",
+      "nunit",
+      "mstest",
       "junit",
       "pytest",
       "none",
@@ -114,7 +132,14 @@ export const GetRepositoryResponse = zod.object({
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
-    database: zod.enum(["postgresql", "sqlserver", "oracle", "mysql"]),
+    database: zod.enum([
+      "postgresql",
+      "sqlserver",
+      "oracle",
+      "mysql",
+      "sqlite",
+      "unknown",
+    ]),
     language: zod.enum([
       "typescript",
       "javascript",
@@ -126,6 +151,8 @@ export const GetRepositoryResponse = zod.object({
       "jest",
       "jasmine",
       "xunit",
+      "nunit",
+      "mstest",
       "junit",
       "pytest",
       "none",
@@ -159,7 +186,14 @@ export const UpdateRepositoryBody = zod.object({
     .object({
       frontend: zod.enum(["react", "angular", "vue", "none"]),
       backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
-      database: zod.enum(["postgresql", "sqlserver", "oracle", "mysql"]),
+      database: zod.enum([
+        "postgresql",
+        "sqlserver",
+        "oracle",
+        "mysql",
+        "sqlite",
+        "unknown",
+      ]),
       language: zod.enum([
         "typescript",
         "javascript",
@@ -171,6 +205,8 @@ export const UpdateRepositoryBody = zod.object({
         "jest",
         "jasmine",
         "xunit",
+        "nunit",
+        "mstest",
         "junit",
         "pytest",
         "none",
@@ -198,7 +234,14 @@ export const UpdateRepositoryResponse = zod.object({
   stackProfile: zod.object({
     frontend: zod.enum(["react", "angular", "vue", "none"]),
     backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
-    database: zod.enum(["postgresql", "sqlserver", "oracle", "mysql"]),
+    database: zod.enum([
+      "postgresql",
+      "sqlserver",
+      "oracle",
+      "mysql",
+      "sqlite",
+      "unknown",
+    ]),
     language: zod.enum([
       "typescript",
       "javascript",
@@ -210,6 +253,8 @@ export const UpdateRepositoryResponse = zod.object({
       "jest",
       "jasmine",
       "xunit",
+      "nunit",
+      "mstest",
       "junit",
       "pytest",
       "none",
@@ -243,12 +288,21 @@ export const DetectRepositoryStackParams = zod.object({
 export const DetectRepositoryStackResponse = zod.object({
   frontend: zod.enum(["react", "angular", "vue", "none"]),
   backend: zod.enum(["nodejs", "dotnet", "java-spring", "python"]),
-  database: zod.enum(["postgresql", "sqlserver", "oracle", "mysql"]),
+  database: zod.enum([
+    "postgresql",
+    "sqlserver",
+    "oracle",
+    "mysql",
+    "sqlite",
+    "unknown",
+  ]),
   language: zod.enum(["typescript", "javascript", "csharp", "java", "python"]),
   testFramework: zod.enum([
     "jest",
     "jasmine",
     "xunit",
+    "nunit",
+    "mstest",
     "junit",
     "pytest",
     "none",

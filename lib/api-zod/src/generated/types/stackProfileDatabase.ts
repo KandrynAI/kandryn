@@ -14,4 +14,6 @@ export const StackProfileDatabase = {
   sqlserver: "sqlserver",
   oracle: "oracle",
   mysql: "mysql",
+  sqlite: "sqlite",
+  unknown: "unknown",
 } as const;

@@ -443,7 +443,9 @@ export class GitService {
 
   async connect(): Promise<StackProfile> {
     const filePaths = await this.client.fetchFilePaths();
-    const stackProfile = await detectStack(filePaths);
+    // Pass a content reader so database + test-framework detection can inspect
+    // signal files (appsettings.json, *.csproj, Program.cs, …), not just names.
+    const stackProfile = await detectStack(filePaths, (p) => this.client.fetchFileContent(p));
 
     await db
       .update(repositoriesTable)
