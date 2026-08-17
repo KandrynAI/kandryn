@@ -87,8 +87,12 @@ export interface Repository {
   id: number;
   name: string;
   provider: string;
-  url: string;
+  /** @nullable */
+  url?: string | null;
   defaultBranch: string;
+  /** @nullable */
+  projectId?: number | null;
+  needsReconfiguration: boolean;
   stackProfile: StackProfile;
   createdAt: string;
 }
@@ -98,6 +102,8 @@ export interface CreateRepositoryBody {
   provider: string;
   url: string;
   defaultBranch: string;
+  /** @nullable */
+  projectId?: number | null;
   stackProfile: StackProfile;
 }
 
@@ -106,6 +112,8 @@ export interface UpdateRepositoryBody {
   provider?: string;
   url?: string;
   defaultBranch?: string;
+  /** @nullable */
+  projectId?: number | null;
   stackProfile?: StackProfile;
 }
 

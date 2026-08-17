@@ -582,7 +582,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
       .where(eq(runsTable.id, runId));
 
     // Post the GitHub commit status check (the stop-gate signal).
-    if (repo && run.commitHash) {
+    if (repo && repo.url && run.commitHash) {
       const gateDesc =
         scan.gateDecision === "blocked"
           ? `Blocked: ${scan.highCount} high, ${scan.criticalCount} critical finding(s)`
@@ -735,7 +735,7 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
     );
 
     let pushedUrl: string | null = null;
-    if (target === "markdown" && repo) {
+    if (target === "markdown" && repo && repo.url) {
       const push = await pushAsMarkdown({
         markdown: result.markdown,
         filePath: `docs/runbooks/${itemKey.toLowerCase()}.md`,

@@ -65,6 +65,7 @@ export async function executeRun(runId: number): Promise<void> {
       .from(repositoriesTable)
       .where(eq(repositoriesTable.id, project.repositoryId));
     if (!repo) throw new Error("Repository not found");
+    if (!repo.url) throw new Error("Repository needs reconfiguration — no URL is set. Set a valid repository URL and try again.");
 
     const stack = repo.stackProfile as StackProfile;
     // Record the stack this run targets (surfaced in the run info strip) and log
@@ -243,6 +244,7 @@ export async function commitFromSuggestion(
     .from(repositoriesTable)
     .where(and(eq(repositoriesTable.id, project.repositoryId), eq(repositoriesTable.userId, userId)));
   if (!repo) throw new RunError("Repository access denied", 403);
+  if (!repo.url) throw new RunError("Repository needs reconfiguration — set a valid repository URL and try again.", 400);
 
   const creds = await getConfigs(userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
   const git = await GitService.forRepo(repo.id, {

@@ -236,6 +236,12 @@ router.post("/projects", async (req, res): Promise<void> => {
         visibility: req.teamId ? "team" : "personal",
       })
       .returning();
+    // Record the owning project on the bound repository (0019). Scoped to the
+    // user; a repo belongs to at most one project at a time.
+    await db
+      .update(repositoriesTable)
+      .set({ projectId: proj.id })
+      .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)));
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
     audit.log({
       userId: req.userId,

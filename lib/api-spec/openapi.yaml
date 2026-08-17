@@ -361,9 +361,13 @@ components:
         provider:
           type: string
         url:
-          type: string
+          type: ["string", "null"]
         defaultBranch:
           type: string
+        projectId:
+          type: ["integer", "null"]
+        needsReconfiguration:
+          type: boolean
         stackProfile:
           $ref: "#/components/schemas/StackProfile"
         createdAt:
@@ -373,8 +377,8 @@ components:
         - id
         - name
         - provider
-        - url
         - defaultBranch
+        - needsReconfiguration
         - stackProfile
         - createdAt
 
@@ -389,6 +393,8 @@ components:
           type: string
         defaultBranch:
           type: string
+        projectId:
+          type: ["integer", "null"]
         stackProfile:
           $ref: "#/components/schemas/StackProfile"
       required:
@@ -409,6 +415,8 @@ components:
           type: string
         defaultBranch:
           type: string
+        projectId:
+          type: ["integer", "null"]
         stackProfile:
           $ref: "#/components/schemas/StackProfile"
 

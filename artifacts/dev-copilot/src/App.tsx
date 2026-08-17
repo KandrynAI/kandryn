@@ -288,6 +288,8 @@ function ProtectedApp() {
           <Route path="/projects/:projectId/settings" component={ProjectSettingsPage} />
           <Route path="/p/:projectId/board" component={ProjectBoard} />
           <Route path="/p/:projectId/runs" component={RunsPage} />
+          <Route path="/p/:projectId/repositories" component={Repositories} />
+          <Route path="/p/:projectId/repositories/:id" component={RepositoryDetail} />
           <Route path="/runs/:runId/report" component={RunReportPage} />
           <Route path="/runs/:runId" component={RunDetailPage} />
           <Route path="/workspace/:taskId" component={WorkspacePage} />

@@ -12,5 +12,7 @@ export interface CreateRepositoryBody {
   provider: string;
   url: string;
   defaultBranch: string;
+  /** @nullable */
+  projectId?: number | null;
   stackProfile: StackProfile;
 }
