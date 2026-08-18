@@ -4,6 +4,8 @@ export * from "./tasks";
 export * from "./runs";
 export * from "./suggestions";
 export * from "./suggestionFiles";
+export * from "./changePlans";
+export * from "./changePlanFiles";
 export * from "./integrationConfigs";
 export * from "./waitlist";
 export * from "./teams";

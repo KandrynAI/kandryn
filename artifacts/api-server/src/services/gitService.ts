@@ -612,6 +612,11 @@ export class GitService {
     return this.client.fetchFileWithSha(path);
   }
 
+  /** The repository's full recursive path list — the planner's directory tree (Phase 2). */
+  async fetchFilePaths(): Promise<string[]> {
+    return this.client.fetchFilePaths();
+  }
+
   private async fetchFileSection(filePath: string, lineStart?: number, lineEnd?: number): Promise<string> {
     const content = await this.getFileContent(filePath);
     if (!content) return "";
