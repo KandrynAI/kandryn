@@ -48,6 +48,7 @@ function hasStackExtension(filePath: string, exts: string[]): boolean {
 interface GitProviderClient {
   fetchFilePaths(): Promise<string[]>;
   fetchFileContent(path: string): Promise<string>;
+  fetchFileWithSha(path: string): Promise<{ content: string; sha: string } | null>;
   createBranch(branchName: string, fromRef: string): Promise<void>;
   getDefaultBranchSha(): Promise<string>;
   getBranchSha(branchName: string): Promise<string>;
@@ -55,10 +56,15 @@ interface GitProviderClient {
   createPullRequest(params: PullRequestParams): Promise<string>;
 }
 
+/**
+ * A file in a commit: content to write (create/edit), or a deletion (Phase 1).
+ */
+export type CommitFile = { path: string; content: string } | { path: string; delete: true };
+
 export interface CommitParams {
   branchName: string;
   message: string;
-  files: Array<{ path: string; content: string }>;
+  files: CommitFile[];
   /**
    * Base commit the new commit is built on. Defaults to the default branch's
    * HEAD (single-commit-per-branch, the original behavior). Pass the branch's
@@ -129,6 +135,27 @@ class GitHubClient implements GitProviderClient {
     return content;
   }
 
+  /** Fetch a file's content and its blob SHA (null if the path is missing). */
+  async fetchFileWithSha(path: string): Promise<{ content: string; sha: string } | null> {
+    try {
+      const { data } = await this.octokit.repos.getContent({
+        owner: this.owner,
+        repo: this.repo,
+        path,
+        ref: this.defaultBranch,
+      });
+      if (Array.isArray(data) || data.type !== "file") return null;
+      const raw = (data as { content?: string; encoding?: string }).content ?? "";
+      const encoding = (data as { encoding?: string }).encoding ?? "base64";
+      const content =
+        encoding === "base64" ? Buffer.from(raw.replace(/\n/g, ""), "base64").toString("utf8") : raw;
+      return { content, sha: (data as { sha: string }).sha };
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) return null;
+      throw err;
+    }
+  }
+
   async getDefaultBranchSha(): Promise<string> {
     const { data } = await this.octokit.git.getRef({
       owner: this.owner,
@@ -170,8 +197,12 @@ class GitHubClient implements GitProviderClient {
   async commitChanges(params: CommitParams): Promise<string> {
     const baseRef = params.baseSha ?? (await this.getDefaultBranchSha());
 
+    // Content files → new blobs; deletions → tree entries with a null sha.
+    const writes = params.files.filter((f): f is { path: string; content: string } => !("delete" in f));
+    const deletes = params.files.filter((f): f is { path: string; delete: true } => "delete" in f);
+
     const blobs = await Promise.all(
-      params.files.map((f) =>
+      writes.map((f) =>
         this.octokit.git.createBlob({
           owner: this.owner,
           repo: this.repo,
@@ -191,12 +222,21 @@ class GitHubClient implements GitProviderClient {
       owner: this.owner,
       repo: this.repo,
       base_tree: baseCommit.tree.sha,
-      tree: blobs.map((b) => ({
-        path: b.path,
-        mode: "100644" as const,
-        type: "blob" as const,
-        sha: b.sha,
-      })),
+      tree: [
+        ...blobs.map((b) => ({
+          path: b.path,
+          mode: "100644" as const,
+          type: "blob" as const,
+          sha: b.sha,
+        })),
+        // A null sha removes the path from the tree (deletion).
+        ...deletes.map((d) => ({
+          path: d.path,
+          mode: "100644" as const,
+          type: "blob" as const,
+          sha: null,
+        })),
+      ],
     });
 
     const { data: commit } = await this.octokit.git.createCommit({
@@ -313,6 +353,18 @@ class AzureReposClient implements GitProviderClient {
     return res.text();
   }
 
+  async fetchFileWithSha(path: string): Promise<{ content: string; sha: string } | null> {
+    try {
+      const data = await this.request<{ objectId?: string; content?: string }>(
+        `/items?path=/${path}&versionDescriptor.version=${this.defaultBranch}&includeContent=true&api-version=7.1`,
+      );
+      if (!data?.objectId) return null;
+      return { content: data.content ?? "", sha: data.objectId };
+    } catch {
+      return null;
+    }
+  }
+
   async getDefaultBranchSha(): Promise<string> {
     const data = await this.request<{ value: Array<{ objectId: string }> }>(
       `/refs?filter=heads/${this.defaultBranch}&api-version=7.1`,
@@ -361,11 +413,15 @@ class AzureReposClient implements GitProviderClient {
       commits: [
         {
           comment: params.message,
-          changes: params.files.map((f) => ({
-            changeType: "edit",
-            item: { path: `/${f.path}` },
-            newContent: { content: f.content, contentType: "rawtext" },
-          })),
+          changes: params.files.map((f) =>
+            "delete" in f
+              ? { changeType: "delete", item: { path: `/${f.path}` } }
+              : {
+                  changeType: "edit",
+                  item: { path: `/${f.path}` },
+                  newContent: { content: f.content, contentType: "rawtext" },
+                },
+          ),
         },
       ],
     };
@@ -549,6 +605,11 @@ export class GitService {
 
   private async getFileContent(filePath: string): Promise<string> {
     return this.client.fetchFileContent(filePath);
+  }
+
+  /** Fetch a file's content + blob SHA (null if missing) — Phase 1 edit apply. */
+  async fetchFileWithSha(path: string): Promise<{ content: string; sha: string } | null> {
+    return this.client.fetchFileWithSha(path);
   }
 
   private async fetchFileSection(filePath: string, lineStart?: number, lineEnd?: number): Promise<string> {

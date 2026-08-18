@@ -149,12 +149,15 @@ router.post("/tasks/:taskId/suggestions", async (req, res): Promise<void> => {
   const gitCreds = await getConfigs(userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
 
   let codeContext = "";
+  let fileReader: ((path: string) => Promise<{ content: string; sha: string } | null>) | undefined;
   try {
     const gitService = await GitService.forRepo(repo.id, {
       githubToken: gitCreds.GITHUB_TOKEN,
       azureReposToken: gitCreds.AZURE_REPOS_TOKEN,
     });
     codeContext = await gitService.fetchFileContext(String(task.id), keywords, stack);
+    // Reader so edit hunks resolve against current source (Phase 1).
+    fileReader = (path) => gitService.fetchFileWithSha(path);
   } catch (gitErr) {
     req.log.warn({ taskId: task.id, err: gitErr }, "Git file context unavailable — proceeding without it");
   }
@@ -172,8 +175,11 @@ router.post("/tasks/:taskId/suggestions", async (req, res): Promise<void> => {
     ...task,
     description: effectiveDescription ?? null,
   });
-  const suggestions = await aiOrchestrator.generateSuggestions(devCopilotTask, codeContext, stack);
-  const ranked = await synthesisEngine.synthesize(suggestions, stack);
+  const suggestions = await aiOrchestrator.generateSuggestions(devCopilotTask, codeContext, stack, fileReader);
+  const ranked = await synthesisEngine.synthesize(
+    suggestions.filter((s) => s.valid),
+    stack,
+  );
 
   req.log.info({ taskId: task.id, count: ranked.length }, "Suggestions generated");
   res.json(ranked);

@@ -5,27 +5,6 @@ export function countLines(content: string): number {
   return content ? content.split("\n").length : 0;
 }
 
-/**
- * Build a one-file change set from a single generated blob (Phase 0 — the model
- * still emits exactly one file). op='create', seq=0.
- */
-export function singleFileChangeSet(filePath: string, content: string): SuggestionFile[] {
-  return [
-    {
-      seq: 0,
-      op: "create",
-      filePath,
-      content,
-      hunks: null,
-      resolved: true,
-      applyStatus: "pending",
-      applyError: null,
-      linesAdded: countLines(content),
-      linesRemoved: 0,
-    },
-  ];
-}
-
 export function statsFor(files: SuggestionFile[]): SuggestionStats {
   return {
     filesChanged: files.length,
@@ -34,14 +13,7 @@ export function statsFor(files: SuggestionFile[]): SuggestionStats {
   };
 }
 
-/** The file(s) to write in a commit — create/edit contribute content; delete is skipped in Phase 0. */
-export function filesToCommit(
-  files: Array<{ op: string; filePath: string; content: string }>,
-): Array<{ path: string; content: string }> {
-  return files.filter((f) => f.op !== "delete").map((f) => ({ path: f.filePath, content: f.content }));
-}
-
-/** The primary (first, by seq) file of a change set — the only file in Phase 0. */
+/** The primary (first, by seq) file of a change set — the only file in Phase 0/1. */
 export function primaryOf<T extends { filePath: string; content: string }>(
   files: T[],
 ): { filePath: string; code: string } | null {

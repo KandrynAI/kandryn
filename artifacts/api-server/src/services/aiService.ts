@@ -4,10 +4,19 @@ import { z } from "zod/v4";
 import { buildPrompt } from "../stack/prompts.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import { logger } from "../lib/logger.js";
-import { singleFileChangeSet, statsFor, primaryOf } from "./suggestionFilesUtil.js";
+import { statsFor, primaryOf, countLines } from "./suggestionFilesUtil.js";
+import { applyHunks, applyErrorMessage } from "./patchService.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
-import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js";
+import type { CodeSuggestion, SuggestionFile } from "../../../../shared/types/codeSuggestion.js";
 import type { StackProfile } from "../stack/detector.js";
+
+/**
+ * Reads a source file (content + blob SHA) so the orchestrator can apply edit
+ * hunks at generation time. Injected by the caller (backed by GitService); when
+ * absent, `edit`/`delete` targets cannot be resolved and the suggestion is
+ * marked invalid.
+ */
+export type FileReader = (path: string) => Promise<{ content: string; sha: string } | null>;
 
 // ---------------------------------------------------------------------------
 // Language detection
@@ -63,11 +72,27 @@ function extractJson<T>(raw: string): T {
 // Suggestion schema from models
 // ---------------------------------------------------------------------------
 
-interface ModelOutput {
-  code: string;
-  explanation: string;
-  filePath: string;
-}
+// Operation-based edits (Phase 1). Generation emits one file, but the shape is
+// N-file so Phase 2 is additive.
+const FileOpSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("create"), path: z.string().min(1), content: z.string() }),
+  z.object({
+    op: z.literal("edit"),
+    path: z.string().min(1),
+    hunks: z
+      .array(z.object({ search: z.string().min(1), replace: z.string() }))
+      .min(1),
+  }),
+  z.object({ op: z.literal("delete"), path: z.string().min(1) }),
+]);
+
+const ModelOutputSchema = z.object({
+  explanation: z.string().default(""),
+  files: z.array(FileOpSchema).min(1),
+});
+
+type FileOp = z.infer<typeof FileOpSchema>;
+type ModelOutput = z.infer<typeof ModelOutputSchema>;
 
 // ---------------------------------------------------------------------------
 // Credentials type
@@ -82,22 +107,143 @@ export interface AICreds {
 // Mock providers
 // ---------------------------------------------------------------------------
 
+function mockExt(stack: StackProfile): string {
+  return stack.language === "python" ? "py" : stack.language === "csharp" ? "cs" : stack.language === "java" ? "java" : "ts";
+}
+
 function mockAntiGravity(stack: StackProfile): ModelOutput {
   const lang = stack.language === "typescript" ? "TypeScript" : stack.language;
   return {
-    code: `// AntiGravity suggestion\n// Stack: ${stack.frontend}/${stack.backend}\nexport function antiGravitySuggestion(): void {\n  console.log('AntiGravity: ${lang} implementation');\n}`,
     explanation: `AntiGravity AI mock suggestion for ${lang} stack.`,
-    filePath: `src/suggestions/antiGravity.${stack.language === "python" ? "py" : stack.language === "csharp" ? "cs" : stack.language === "java" ? "java" : "ts"}`,
+    files: [
+      {
+        op: "create",
+        path: `src/suggestions/antiGravity.${mockExt(stack)}`,
+        content: `// AntiGravity suggestion\n// Stack: ${stack.frontend}/${stack.backend}\nexport function antiGravitySuggestion(): void {\n  console.log('AntiGravity: ${lang} implementation');\n}`,
+      },
+    ],
   };
 }
 
 function mockCopilot(stack: StackProfile): ModelOutput {
   const lang = stack.language === "typescript" ? "TypeScript" : stack.language;
   return {
-    code: `// GitHub Copilot suggestion\n// Stack: ${stack.frontend}/${stack.backend}\nexport function copilotSuggestion(): void {\n  console.log('Copilot: ${lang} implementation');\n}`,
     explanation: `GitHub Copilot mock suggestion for ${lang} stack.`,
-    filePath: `src/suggestions/copilot.${stack.language === "python" ? "py" : stack.language === "csharp" ? "cs" : stack.language === "java" ? "java" : "ts"}`,
+    files: [
+      {
+        op: "create",
+        path: `src/suggestions/copilot.${mockExt(stack)}`,
+        content: `// GitHub Copilot suggestion\n// Stack: ${stack.frontend}/${stack.backend}\nexport function copilotSuggestion(): void {\n  console.log('Copilot: ${lang} implementation');\n}`,
+      },
+    ],
   };
+}
+
+/**
+ * Turn a model's file operations into a resolved change set (Phase 1): create
+ * files carry full content; edits are applied against the current source (fetched
+ * via the reader) and store the resolved content + source blob SHA; deletes carry
+ * the source SHA for staleness. A suggestion is invalid if any file fails to
+ * apply — invalid suggestions never reach Synthesia.
+ */
+async function resolveFileOps(
+  ops: FileOp[],
+  reader?: FileReader,
+): Promise<{ files: SuggestionFile[]; valid: boolean }> {
+  const files: SuggestionFile[] = [];
+  let valid = true;
+  let seq = 0;
+
+  for (const op of ops) {
+    if (op.op === "create") {
+      files.push({
+        seq: seq++,
+        op: "create",
+        filePath: op.path,
+        content: op.content,
+        hunks: null,
+        sourceBlobSha: null,
+        resolved: true,
+        applyStatus: "applied",
+        applyError: null,
+        linesAdded: countLines(op.content),
+        linesRemoved: 0,
+      });
+      continue;
+    }
+
+    const src = reader ? await reader(op.path) : null;
+
+    if (op.op === "delete") {
+      files.push({
+        seq: seq++,
+        op: "delete",
+        filePath: op.path,
+        content: "",
+        hunks: null,
+        sourceBlobSha: src?.sha ?? null,
+        resolved: true,
+        applyStatus: "applied",
+        applyError: null,
+        linesAdded: 0,
+        linesRemoved: src ? countLines(src.content) : 0,
+      });
+      continue;
+    }
+
+    // edit
+    if (!src) {
+      valid = false;
+      files.push({
+        seq: seq++,
+        op: "edit",
+        filePath: op.path,
+        content: "",
+        hunks: op.hunks,
+        sourceBlobSha: null,
+        resolved: false,
+        applyStatus: "failed",
+        applyError: `File not found in the repository: ${op.path}. An edit must target an existing file.`,
+        linesAdded: 0,
+        linesRemoved: 0,
+      });
+      continue;
+    }
+
+    const res = applyHunks(src.content, op.hunks);
+    if (res.ok) {
+      files.push({
+        seq: seq++,
+        op: "edit",
+        filePath: op.path,
+        content: res.content,
+        hunks: op.hunks,
+        sourceBlobSha: src.sha,
+        resolved: true,
+        applyStatus: "applied",
+        applyError: null,
+        linesAdded: op.hunks.reduce((n, h) => n + countLines(h.replace), 0),
+        linesRemoved: op.hunks.reduce((n, h) => n + countLines(h.search), 0),
+      });
+    } else {
+      valid = false;
+      files.push({
+        seq: seq++,
+        op: "edit",
+        filePath: op.path,
+        content: "",
+        hunks: op.hunks,
+        sourceBlobSha: src.sha,
+        resolved: false,
+        applyStatus: "failed",
+        applyError: applyErrorMessage(res, op.path),
+        linesAdded: 0,
+        linesRemoved: 0,
+      });
+    }
+  }
+
+  return { files, valid };
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +263,7 @@ export class AIOrchestrator {
     task: DevCopilotTask,
     codeContext: string,
     stack: StackProfile,
+    fileReader?: FileReader,
   ): Promise<CodeSuggestion[]> {
     const prompt = buildPrompt(
       {
@@ -150,16 +297,18 @@ export class AIOrchestrator {
     for (const [result, agent] of mapped) {
       if (result.status === "fulfilled") {
         const output = result.value;
-        // Generation still emits exactly one file (Phase 0). Wrap it in the
-        // multi-file change-set shape; every suggestion has files.length === 1.
-        const files = singleFileChangeSet(output.filePath, output.code);
+        // Resolve the model's operations into a change set: create files carry
+        // content; edits are applied against current source. Generation emits one
+        // file, but the shape supports N.
+        const { files, valid } = await resolveFileOps(output.files, fileReader);
+        const primaryPath = files[0]?.filePath ?? "";
         suggestions.push({
           agent,
           files,
-          valid: Boolean(output.code && output.filePath),
+          valid,
           stats: statsFor(files),
           explanation: output.explanation,
-          language: detectLanguage(output.filePath),
+          language: detectLanguage(primaryPath),
         });
       } else {
         logger.warn({ agent, err: result.reason }, `${agent} suggestion failed`);
@@ -179,7 +328,7 @@ export class AIOrchestrator {
 
     const block = message.content[0];
     if (block.type !== "text") throw new Error("Claude returned non-text block");
-    return extractJson<ModelOutput>(block.text);
+    return ModelOutputSchema.parse(extractJson<unknown>(block.text));
   }
 
   private async callOpenAI(prompt: string): Promise<ModelOutput> {
@@ -191,14 +340,18 @@ export class AIOrchestrator {
         {
           role: "system",
           content:
-            'You are an expert software engineer. Always respond with valid JSON matching the schema: { "code": string, "explanation": string, "filePath": string }',
+            "You are an expert software engineer. Respond with a single valid JSON object " +
+            'matching: { "explanation": string, "files": FileOp[] } where each FileOp is ' +
+            'one of { "op": "create", "path": string, "content": string }, ' +
+            '{ "op": "edit", "path": string, "hunks": [{ "search": string, "replace": string }] }, ' +
+            'or { "op": "delete", "path": string }. Follow the operation and hunk rules in the user message exactly.',
         },
         { role: "user", content: prompt },
       ],
     });
 
     const text = response.choices[0]?.message?.content ?? "{}";
-    return extractJson<ModelOutput>(text);
+    return ModelOutputSchema.parse(extractJson<unknown>(text));
   }
 }
 

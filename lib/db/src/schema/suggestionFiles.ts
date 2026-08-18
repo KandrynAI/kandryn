@@ -30,8 +30,11 @@ export const suggestionFilesTable = pgTable(
     op: text("op").$type<"create" | "edit" | "delete">().notNull(),
     filePath: text("file_path").notNull(),
     content: text("content").notNull(),
-    // Structured diff hunks — null until a later phase populates them.
-    hunks: jsonb("hunks"),
+    // Search/replace hunks for an edit (Phase 1, 0023). Null for create/delete.
+    hunks: jsonb("hunks").$type<Array<{ search: string; replace: string }> | null>(),
+    // Git blob SHA of the source file read when the edit/delete was resolved
+    // (Phase 1, 0023). Compared before commit to detect a branch that moved.
+    sourceBlobSha: text("source_blob_sha"),
     resolved: boolean("resolved").notNull().default(false),
     applyStatus: text("apply_status")
       .$type<"pending" | "applied" | "failed">()
