@@ -10,8 +10,8 @@ import {
 import { GitService } from "./gitService.js";
 import { getRunRepository } from "./repoResolver.js";
 import { loadSuggestionFiles } from "./suggestionFiles.js";
-import { filesToCommit } from "./suggestionFilesUtil.js";
-import { AIOrchestrator, SynthesisEngine } from "./aiService.js";
+import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
+import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
@@ -106,48 +106,72 @@ export async function executeRun(runId: number): Promise<void> {
       logger.warn({ runId, err: e }, "Run: git file context unavailable — proceeding without it");
     }
 
+    // Reader so the orchestrator can apply edit hunks against current source
+    // (Phase 1). Best-effort — a missing reader just makes edits fail to resolve.
+    let fileReader: FileReader | undefined;
+    try {
+      const gitRead = await GitService.forRepo(repo.id, {
+        githubToken: creds.GITHUB_TOKEN,
+        azureReposToken: creds.AZURE_REPOS_TOKEN,
+      });
+      fileReader = (path) => gitRead.fetchFileWithSha(path);
+    } catch (e) {
+      logger.warn({ runId, err: e }, "Run: file reader unavailable — edits cannot be resolved");
+    }
+
     const orchestrator = new AIOrchestrator({
       anthropicApiKey: creds.ANTHROPIC_API_KEY,
       openaiApiKey: creds.OPENAI_API_KEY,
     });
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
-    const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack);
-    const ranked = await synth.synthesize(raw, stack, {
-      title: devTask.title,
-      acceptanceCriteria: devTask.acceptanceCriteria,
-    });
+    const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader);
 
-    // Persist suggestions and keep the inserted rows so we can record which one
-    // gets committed (index-aligned with `ranked`).
+    // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
+    const validRaw = raw.filter((s) => s.valid);
+    const ranked =
+      validRaw.length > 0
+        ? await synth.synthesize(validRaw, stack, {
+            title: devTask.title,
+            acceptanceCriteria: devTask.acceptanceCriteria,
+          })
+        : [];
+
+    // Persist ALL suggestions (invalid ones too, so the UI can show why they
+    // failed), merging scores back onto the ranked/valid ones by agent. Rows are
+    // index-aligned with `raw`.
+    const scoreByAgent = new Map(ranked.map((r) => [r.agent, r]));
     let inserted: (typeof suggestionsTable.$inferSelect)[] = [];
-    if (ranked.length > 0) {
+    if (raw.length > 0) {
       inserted = await db
         .insert(suggestionsTable)
         .values(
-          ranked.map((s) => ({
-            runId,
-            agent: s.agent,
-            explanation: s.explanation,
-            language: s.language,
-            score: s.score != null ? Math.round(s.score) : null,
-            recommendation: s.recommendation ?? null,
-            scoreBreakdown: s.scoreBreakdown ?? null,
-            scoreNarrative: s.scoreNarrative ?? null,
-          })),
+          raw.map((s) => {
+            const sc = scoreByAgent.get(s.agent);
+            return {
+              runId,
+              agent: s.agent,
+              explanation: s.explanation,
+              language: s.language,
+              score: sc?.score != null ? Math.round(sc.score) : null,
+              recommendation: sc?.recommendation ?? null,
+              scoreBreakdown: sc?.scoreBreakdown ?? null,
+              scoreNarrative: sc?.scoreNarrative ?? null,
+            };
+          }),
         )
         .returning();
 
-      // Persist each suggestion's change set (0022). Phase 0: one file each.
-      // suggestions.code/file_path are deprecated and no longer written.
+      // Persist each suggestion's change set (0022/0023).
       const fileRows = inserted.flatMap((row, i) =>
-        (ranked[i]?.files ?? []).map((f) => ({
+        (raw[i]?.files ?? []).map((f) => ({
           suggestionId: row.id,
           seq: f.seq,
           op: f.op,
           filePath: f.filePath,
           content: f.content,
           hunks: (f.hunks ?? null) as typeof suggestionFilesTable.$inferInsert.hunks,
+          sourceBlobSha: f.sourceBlobSha ?? null,
           resolved: f.resolved,
           applyStatus: f.applyStatus,
           applyError: f.applyError ?? null,
@@ -158,24 +182,41 @@ export async function executeRun(runId: number): Promise<void> {
       if (fileRows.length > 0) await db.insert(suggestionFilesTable).values(fileRows);
     }
 
+    // Both agents produced changes that could not be applied — fail the run with
+    // the specific reasons rather than committing anything (1.4).
+    if (raw.length > 0 && validRaw.length === 0) {
+      const reasons = raw
+        .flatMap((s) => s.files.filter((f) => f.applyStatus === "failed").map((f) => f.applyError))
+        .filter(Boolean)
+        .join("\n\n");
+      throw new Error(`No suggestion could be applied to the repository.\n\n${reasons}`);
+    }
+
     let prUrl: string | null = null;
     let commitHash: string | null = null;
     let committedSuggestionId: number | null = null;
-    if (run.autoCommit) {
-      const topIndex = ranked.findIndex((s) => s.recommendation === "Recommended");
-      const idx = topIndex >= 0 ? topIndex : ranked.length > 0 ? 0 : -1;
-      const top = idx >= 0 ? ranked[idx] : undefined;
+    if (run.autoCommit && ranked.length > 0) {
+      const top = ranked.find((s) => s.recommendation === "Recommended") ?? ranked[0];
+      // `inserted` is aligned with `raw`; find the persisted row for the chosen agent.
+      const insertedIdx = raw.findIndex((s) => s.agent === top.agent);
       if (top) {
         const git = await GitService.forRepo(repo.id, {
           githubToken: creds.GITHUB_TOKEN,
           azureReposToken: creds.AZURE_REPOS_TOKEN,
         });
+        // Re-check staleness against the current branch before committing (1.5).
+        const resolved = await resolveCommitFiles(top.files, (p) => git.fetchFileWithSha(p));
+        if (!resolved.ok) {
+          throw new Error(
+            `${STALE_BRANCH_MESSAGE} ${resolved.path} moved (${resolved.reason}). Re-run to regenerate against the latest code.`,
+          );
+        }
         const branchName = `task/${workItem.id}`;
         await git.createBranch(String(workItem.id));
         commitHash = await git.commitChanges({
           branchName,
           message: `Blue Mantis: ${workItem.title}`,
-          files: filesToCommit(top.files),
+          files: resolved.files,
         });
         prUrl = await git.createPullRequest({
           title: `[Blue Mantis] ${workItem.title}`,
@@ -183,7 +224,7 @@ export async function executeRun(runId: number): Promise<void> {
           head: branchName,
           base: git.defaultBranch,
         });
-        committedSuggestionId = inserted[idx]?.id ?? null;
+        committedSuggestionId = inserted[insertedIdx]?.id ?? null;
         await db.update(tasksTable).set({ status: "review", linkedCommit: commitHash }).where(eq(tasksTable.id, workItem.id));
         // The repo changed — schedule a Graphify re-index so future runs use a
         // fresh graph (Phase 3). Fire-and-forget; no-op if unconfigured.
@@ -254,6 +295,10 @@ export async function commitFromSuggestion(
   // The change set lives in suggestion_files (0022), not sug.code/file_path.
   const sugFiles = await loadSuggestionFiles(sug.id);
   if (sugFiles.length === 0) throw new RunError("Suggestion has no files to commit.", 422);
+  // An invalid suggestion (an edit that didn't apply) can never be committed (1.4).
+  if (sugFiles.some((f) => f.applyStatus === "failed")) {
+    throw new RunError("This suggestion could not be applied to the repository and cannot be committed.", 409);
+  }
 
   const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
   if (!workItem) throw new RunError("Work item not found", 404);
@@ -268,12 +313,20 @@ export async function commitFromSuggestion(
     githubToken: creds.GITHUB_TOKEN,
     azureReposToken: creds.AZURE_REPOS_TOKEN,
   });
+  // Re-check staleness against the current branch before committing (1.5).
+  const resolved = await resolveCommitFiles(sugFiles, (p) => git.fetchFileWithSha(p));
+  if (!resolved.ok) {
+    throw new RunError(
+      `${STALE_BRANCH_MESSAGE} ${resolved.path} moved (${resolved.reason}). Re-run to regenerate against the latest code.`,
+      409,
+    );
+  }
   const branchName = `task/${workItem.id}`;
   await git.createBranch(String(workItem.id));
   const commitHash = await git.commitChanges({
     branchName,
     message: commitMessage ?? `Blue Mantis: ${workItem.title}`,
-    files: filesToCommit(sugFiles),
+    files: resolved.files,
   });
   const prUrl = await git.createPullRequest({
     title: `[Blue Mantis] ${workItem.title}`,
