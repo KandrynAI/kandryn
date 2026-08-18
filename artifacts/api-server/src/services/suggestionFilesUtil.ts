@@ -20,3 +20,19 @@ export function primaryOf<T extends { filePath: string; content: string }>(
   const f = files[0];
   return f ? { filePath: f.filePath, code: f.content } : null;
 }
+
+/**
+ * Render a whole change set (all files, with op + resolved content) for the
+ * synthesis prompts, so a multi-file suggestion is scored on its entire change
+ * — not just its first file (Phase 2).
+ */
+export function renderChangeSet(files: SuggestionFile[], maxCharsPerFile = 4000): string {
+  if (files.length === 0) return "(no files)";
+  return files
+    .map((f) => {
+      const head = `--- ${f.op} ${f.filePath} ---`;
+      if (f.op === "delete") return `${head}\n(file deleted)`;
+      return `${head}\n${(f.content ?? "").slice(0, maxCharsPerFile)}`;
+    })
+    .join("\n\n");
+}

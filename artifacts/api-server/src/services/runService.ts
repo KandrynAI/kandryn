@@ -13,9 +13,10 @@ import { loadSuggestionFiles } from "./suggestionFiles.js";
 import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
 import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
-import { runPlanning } from "./planningService.js";
+import { runPlanning, assemblePlanContext, recordContextTruncation } from "./planningService.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
+import type { ChangePlan } from "../../../../shared/types/changePlan.js";
 import { getConfigs } from "./configService.js";
 import { sendRunCompleted, sendRunFailed } from "./emailService.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
@@ -127,12 +128,14 @@ export async function executeRun(runId: number): Promise<void> {
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
 
-    // Change plan (Phase 2 PR1): plan which files the change touches before
-    // generation. Tree-primary — the graph only enhances candidate quality when
-    // fresh, and its absence is not an error. Best-effort and non-blocking:
-    // planning never fails the run, and generation does not yet consume the plan
-    // (multi-file generation is a later PR). Needs the Anthropic key, so it is
-    // skipped when unset (the run would fail at generation anyway).
+    // Change plan (Phase 2): plan which files the change touches before
+    // generation, then feed the plan + per-file context to BOTH agents so they
+    // implement the same plan (§2.1). Tree-primary — the graph only enhances
+    // candidate quality when fresh, and its absence is not an error. Best-effort
+    // and non-blocking: planning never fails the run; on any failure generation
+    // falls back to the Phase 1 single-file path. Needs the Anthropic key (the
+    // run would fail at generation without it anyway).
+    let planInput: { plan: ChangePlan; context: string } | undefined;
     if (creds.ANTHROPIC_API_KEY) {
       try {
         const gitPlan = await GitService.forRepo(repo.id, {
@@ -158,13 +161,25 @@ export async function executeRun(runId: number): Promise<void> {
           graphBuiltAt: repo.graphBuiltAt ?? null,
           anthropicApiKey: creds.ANTHROPIC_API_KEY,
         });
-        logger.info({ runId, ...plan }, "Change plan produced");
+        logger.info({ runId, ...plan, plan: undefined }, "Change plan produced");
+
+        // Assemble the per-file generation context (full content for edits, a
+        // convention sibling for creates) and hand the plan to both agents.
+        if (plan.status === "ready" && plan.plan && plan.plan.files.length > 0 && fileReader) {
+          const assembled = await assemblePlanContext(plan.plan, fileReader, tree);
+          if (plan.planId && assembled.truncated.length > 0) {
+            await recordContextTruncation(plan.planId, assembled.truncated).catch((err) =>
+              logger.warn({ runId, err }, "Recording context truncation failed"),
+            );
+          }
+          planInput = { plan: plan.plan, context: assembled.context };
+        }
       } catch (e) {
         logger.warn({ runId, err: e }, "Run: change planning failed — proceeding without a plan");
       }
     }
 
-    const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader);
+    const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader, planInput);
 
     // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
     const validRaw = raw.filter((s) => s.valid);
@@ -215,6 +230,7 @@ export async function executeRun(runId: number): Promise<void> {
           resolved: f.resolved,
           applyStatus: f.applyStatus,
           applyError: f.applyError ?? null,
+          deviationReason: f.deviationReason ?? null,
           linesAdded: f.linesAdded,
           linesRemoved: f.linesRemoved,
         })),

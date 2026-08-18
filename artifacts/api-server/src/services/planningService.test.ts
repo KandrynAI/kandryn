@@ -6,7 +6,7 @@ import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 // DATABASE_URL. The pure helpers never touch the pool (node-postgres connects
 // lazily), so a dummy URL lets the module import; no connection is opened.
 process.env.DATABASE_URL ??= "postgres://test:test@localhost:5432/test";
-const { planOrderRank, orderPlannedFiles, validatePlan, rankCandidatePaths, buildCandidatesFromGraph } =
+const { planOrderRank, orderPlannedFiles, validatePlan, rankCandidatePaths, buildCandidatesFromGraph, findSibling, assemblePlanContext } =
   await import("./planningService.js");
 
 const P = "src/PnC.Api";
@@ -104,4 +104,68 @@ test("buildCandidatesFromGraph attaches the symbol names the graph holds per fil
   assert.ok(svc, "PolicyService.cs should be a candidate");
   assert.ok(svc!.symbols.includes("EndorseAsync") && svc!.symbols.includes("CancelAsync"));
   assert.ok(candidates.every((c) => c.source === "graph"));
+});
+
+test("findSibling returns a same-directory, same-extension peer (or null)", () => {
+  const tree = [
+    `${P}/Controllers/ClaimsController.cs`,
+    `${P}/Controllers/PoliciesController.cs`,
+    `${P}/Services/PolicyService.cs`,
+    `${P}/Controllers/README.md`,
+  ];
+  // Creating a new controller → sibling is another .cs in Controllers/.
+  const sib = findSibling(tree, `${P}/Controllers/DocumentsController.cs`);
+  assert.equal(sib, `${P}/Controllers/ClaimsController.cs`); // first sorted .cs peer
+  // No peer in an empty directory.
+  assert.equal(findSibling(tree, "src/Other/Thing.cs"), null);
+  // Extension must match — a .md create doesn't borrow a .cs sibling.
+  assert.equal(findSibling(tree, `${P}/Controllers/NOTES.md`), `${P}/Controllers/README.md`);
+});
+
+const reader = (files: Record<string, string>) => async (path: string) =>
+  path in files ? { content: files[path], sha: `sha-${path}` } : null;
+
+test("assemblePlanContext includes full edit content and a create's sibling example", async () => {
+  const plan = {
+    files: [
+      { op: "edit" as const, path: `${P}/Services/PolicyService.cs`, rationale: "impl" },
+      { op: "create" as const, path: `${P}/Controllers/DocumentsController.cs`, rationale: "new endpoint" },
+    ],
+  };
+  const tree = [`${P}/Controllers/ClaimsController.cs`, `${P}/Services/PolicyService.cs`];
+  const files = {
+    [`${P}/Services/PolicyService.cs`]: "public class PolicyService { }",
+    [`${P}/Controllers/ClaimsController.cs`]: "public class ClaimsController { }",
+  };
+  const { context, truncated } = await assemblePlanContext(plan, reader(files), tree);
+  assert.match(context, /edit .*PolicyService\.cs/);
+  assert.match(context, /public class PolicyService/);
+  // The create pulls ClaimsController.cs as a convention example.
+  assert.match(context, /convention example: .*ClaimsController\.cs/);
+  assert.match(context, /public class ClaimsController/);
+  assert.deepEqual(truncated, []);
+});
+
+test("assemblePlanContext degrades under budget: drop examples, then truncate largest edit", async () => {
+  const big = "X".repeat(4000);
+  const plan = {
+    files: [
+      { op: "edit" as const, path: `${P}/Services/PolicyService.cs`, rationale: "impl" },
+      { op: "create" as const, path: `${P}/Controllers/DocumentsController.cs`, rationale: "new" },
+    ],
+  };
+  const tree = [`${P}/Controllers/ClaimsController.cs`];
+  const files = {
+    [`${P}/Services/PolicyService.cs`]: big,
+    [`${P}/Controllers/ClaimsController.cs`]: "Y".repeat(2000),
+  };
+  const { context, truncated } = await assemblePlanContext(plan, reader(files), tree, 1500);
+  // The example content is dropped first.
+  assert.match(context, /convention example omitted for context budget/);
+  assert.ok(!context.includes("Y".repeat(2000)));
+  // The large edit is then truncated, and recorded.
+  assert.ok(truncated.includes(`${P}/Services/PolicyService.cs`));
+  assert.match(context, /truncated for context budget/);
+  // A planned file is never dropped entirely — its header still appears.
+  assert.match(context, /edit .*PolicyService\.cs/);
 });
