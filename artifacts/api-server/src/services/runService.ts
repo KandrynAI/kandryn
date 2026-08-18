@@ -172,6 +172,7 @@ export async function executeRun(runId: number): Promise<void> {
           content: f.content,
           hunks: (f.hunks ?? null) as typeof suggestionFilesTable.$inferInsert.hunks,
           sourceBlobSha: f.sourceBlobSha ?? null,
+          diff: (f.diff ?? null) as typeof suggestionFilesTable.$inferInsert.diff,
           resolved: f.resolved,
           applyStatus: f.applyStatus,
           applyError: f.applyError ?? null,

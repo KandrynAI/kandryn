@@ -6,6 +6,7 @@ import { describeStack } from "./stackPromptBuilder.js";
 import { logger } from "../lib/logger.js";
 import { statsFor, primaryOf, countLines } from "./suggestionFilesUtil.js";
 import { applyHunks, applyErrorMessage } from "./patchService.js";
+import { computeFileDiff } from "./diffService.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import type { CodeSuggestion, SuggestionFile } from "../../../../shared/types/codeSuggestion.js";
 import type { StackProfile } from "../stack/detector.js";
@@ -156,6 +157,7 @@ async function resolveFileOps(
 
   for (const op of ops) {
     if (op.op === "create") {
+      const d = computeFileDiff("", op.content);
       files.push({
         seq: seq++,
         op: "create",
@@ -163,11 +165,12 @@ async function resolveFileOps(
         content: op.content,
         hunks: null,
         sourceBlobSha: null,
+        diff: d.hunks,
         resolved: true,
         applyStatus: "applied",
         applyError: null,
-        linesAdded: countLines(op.content),
-        linesRemoved: 0,
+        linesAdded: d.linesAdded,
+        linesRemoved: d.linesRemoved,
       });
       continue;
     }
@@ -182,6 +185,7 @@ async function resolveFileOps(
         content: "",
         hunks: null,
         sourceBlobSha: src?.sha ?? null,
+        diff: null,
         resolved: true,
         applyStatus: "applied",
         applyError: null,
@@ -201,6 +205,7 @@ async function resolveFileOps(
         content: "",
         hunks: op.hunks,
         sourceBlobSha: null,
+        diff: null,
         resolved: false,
         applyStatus: "failed",
         applyError: `File not found in the repository: ${op.path}. An edit must target an existing file.`,
@@ -212,6 +217,7 @@ async function resolveFileOps(
 
     const res = applyHunks(src.content, op.hunks);
     if (res.ok) {
+      const d = computeFileDiff(src.content, res.content);
       files.push({
         seq: seq++,
         op: "edit",
@@ -219,11 +225,12 @@ async function resolveFileOps(
         content: res.content,
         hunks: op.hunks,
         sourceBlobSha: src.sha,
+        diff: d.hunks,
         resolved: true,
         applyStatus: "applied",
         applyError: null,
-        linesAdded: op.hunks.reduce((n, h) => n + countLines(h.replace), 0),
-        linesRemoved: op.hunks.reduce((n, h) => n + countLines(h.search), 0),
+        linesAdded: d.linesAdded,
+        linesRemoved: d.linesRemoved,
       });
     } else {
       valid = false;
@@ -234,6 +241,7 @@ async function resolveFileOps(
         content: "",
         hunks: op.hunks,
         sourceBlobSha: src.sha,
+        diff: null,
         resolved: false,
         applyStatus: "failed",
         applyError: applyErrorMessage(res, op.path),

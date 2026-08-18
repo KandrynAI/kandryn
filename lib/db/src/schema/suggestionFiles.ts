@@ -35,6 +35,9 @@ export const suggestionFilesTable = pgTable(
     // Git blob SHA of the source file read when the edit/delete was resolved
     // (Phase 1, 0023). Compared before commit to detect a branch that moved.
     sourceBlobSha: text("source_blob_sha"),
+    // Structured, server-computed diff (Phase 1 PR2, 0024) — full-context hunks
+    // with intraline ranges, so the client renders the diff without the original.
+    diff: jsonb("diff"),
     resolved: boolean("resolved").notNull().default(false),
     applyStatus: text("apply_status")
       .$type<"pending" | "applied" | "failed">()
