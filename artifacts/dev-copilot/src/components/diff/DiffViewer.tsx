@@ -283,6 +283,8 @@ export interface DiffViewerProps {
   reviewing?: boolean;
   /** Renders the collapsible Synthesia score breakdown for the selected suggestion. */
   renderScoreAnalysis?: (s: RunSuggestion) => ReactNode;
+  /** Plan file paths, in plan order — drives pending tabs for planned-but-absent files (§3.4). */
+  plannedPaths?: string[];
 }
 
 export function DiffViewer({
@@ -297,6 +299,7 @@ export function DiffViewer({
   onReview,
   reviewing,
   renderScoreAnalysis,
+  plannedPaths,
 }: DiffViewerProps) {
   const isCommitted = committedId != null;
 
@@ -324,6 +327,8 @@ export function DiffViewer({
   }, [suggestion.id]);
 
   const file = files[Math.min(fileIdx, files.length - 1)] ?? files[0];
+  // Planned files this suggestion didn't produce → pending tabs, in plan order (§3.4).
+  const pendingPaths = plannedPaths ? plannedPaths.filter((p) => !files.some((f) => f.filePath === p)) : [];
   const [wrap, setWrap] = useState(false);
   const [copied, setCopied] = useState(false);
   const [narrow, setNarrow] = useState(false);
@@ -490,11 +495,37 @@ export function DiffViewer({
                   <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: active ? "var(--c-ink)" : "var(--c-ink-3)" }}>{baseName(f.filePath)}</span>
                   <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-diff-add-border)" }}>+{f.linesAdded}</span>
                   <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-diff-del-border)" }}>−{f.linesRemoved}</span>
+                  {f.deviationReason && (
+                    <span title={`Not in the plan — ${f.deviationReason}`} style={{ color: "var(--c-amber)", fontSize: 13, lineHeight: 1 }}>●</span>
+                  )}
                 </button>
               );
             })}
+            {/* Planned files this suggestion didn't generate — pending tabs (§3.4). */}
+            {pendingPaths.map((p) => (
+              <span
+                key={`pending-${p}`}
+                title={`Planned but not generated: ${p}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  flex: "0 0 auto",
+                  padding: "5px 10px",
+                  border: "1px dashed var(--c-border)",
+                  borderRadius: 4,
+                  background: "transparent",
+                  whiteSpace: "nowrap",
+                  opacity: 0.6,
+                }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: "50%", border: "1px solid var(--c-ink-4)" }} />
+                <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", fontStyle: "italic" }}>{baseName(p)}</span>
+                <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>pending</span>
+              </span>
+            ))}
           </div>
-          {files.length > 6 && (
+          {files.length + pendingPaths.length > 6 && (
             <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 28, pointerEvents: "none", background: "linear-gradient(90deg, transparent, var(--c-bg))" }} />
           )}
         </div>

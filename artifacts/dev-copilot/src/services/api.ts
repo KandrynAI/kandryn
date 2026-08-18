@@ -493,11 +493,47 @@ export interface RunWorkItemSummary {
   source: string | null;
 }
 
+export interface RunPlanFile {
+  id: number;
+  seq: number;
+  op: 'create' | 'edit' | 'delete';
+  filePath: string;
+  rationale: string;
+  symbols: string[] | null;
+  addedByUser: boolean;
+  addedSource: 'autocomplete' | 'manual' | null;
+  inCandidates: boolean | null;
+}
+
+/** The change plan for a run (Phase 2). Present once planning has run. */
+export interface RunPlan {
+  id: number;
+  revision: number;
+  status: 'planning' | 'ready' | 'edited' | 'failed';
+  notes: string | null;
+  retrievalMode: 'graph' | 'keyword' | null;
+  graphAgeHours: number | null;
+  error: string | null;
+  files: RunPlanFile[];
+}
+
+/** A file in a plan-revision request (Edit plan). */
+export interface RevisionFileInput {
+  op: 'create' | 'edit' | 'delete';
+  path: string;
+  rationale: string;
+  symbols?: string[];
+  addedByUser?: boolean;
+  addedSource?: 'autocomplete' | 'manual';
+}
+
 export interface RunDetail {
   run: Run;
   suggestions: RunSuggestion[];
   /** Present on GET /runs/:id; used to gate PLM actions (e.g. test-case push). */
   workItem?: RunWorkItemSummary | null;
+  /** The current change plan (Phase 2). Null when the run predates planning. */
+  plan?: RunPlan | null;
 }
 
 /**
@@ -548,6 +584,20 @@ export function fetchRun(runId: number): Promise<RunDetail> {
 
 export function cancelRun(runId: number): Promise<Run> {
   return request<Run>(`/api/runs/${runId}/cancel`, { method: 'POST' });
+}
+
+/** Repository path list for plan-edit autocomplete (Phase 2 PR3). */
+export function fetchRunTree(runId: number): Promise<{ paths: string[] }> {
+  return request<{ paths: string[] }>(`/api/runs/${runId}/tree`);
+}
+
+/** Apply plan edits → new revision → background regeneration (Phase 2 PR3). */
+export function reviseRunPlan(runId: number, files: RevisionFileInput[]): Promise<{ planId: number; revision: number }> {
+  return request<{ planId: number; revision: number }>(`/api/runs/${runId}/plan/revise`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files }),
+  });
 }
 
 /** Trigger the Veria review agent for a committed run. */

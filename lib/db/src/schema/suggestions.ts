@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { runsTable } from "./runs";
@@ -79,6 +79,10 @@ export const suggestionsTable = pgTable(
     testScript: jsonb("test_script").$type<PersistedTestScript | null>(),
     scoreBreakdown: jsonb("score_breakdown").$type<PersistedScoreBreakdown | null>(),
     scoreNarrative: text("score_narrative"),
+    // Superseded by a later plan revision's regeneration (Phase 2 PR3, 0027).
+    // Retained (never deleted) so a prior revision stays readable; the run detail
+    // shows only non-superseded suggestions.
+    superseded: boolean("superseded").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("suggestions_run_id_idx").on(t.runId)],

@@ -13,10 +13,19 @@ import { loadSuggestionFiles } from "./suggestionFiles.js";
 import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
 import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
-import { runPlanning, assemblePlanContext, recordContextTruncation } from "./planningService.js";
+import {
+  runPlanning,
+  assemblePlanContext,
+  recordContextTruncation,
+  loadCurrentPlanRow,
+  createPlanRevision,
+  type RevisionFileInput,
+} from "./planningService.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import type { ChangePlan } from "../../../../shared/types/changePlan.js";
+import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js";
+import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { getConfigs } from "./configService.js";
 import { sendRunCompleted, sendRunFailed } from "./emailService.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
@@ -40,6 +49,87 @@ async function primaryEmail(userId: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Run both agents (optionally against a change plan), rank the valid ones, and
+ * persist every suggestion (invalid ones too, so the UI can show why) with its
+ * change set. Shared by the initial run and the plan-revision regeneration.
+ * New rows are non-superseded; the caller decides commit/all-invalid handling.
+ */
+async function generateAndPersistSuggestions(params: {
+  runId: number;
+  orchestrator: AIOrchestrator;
+  synth: SynthesisEngine;
+  devTask: DevCopilotTask;
+  codeContext: string;
+  stack: StackProfile;
+  fileReader?: FileReader;
+  planInput?: { plan: ChangePlan; context: string };
+}): Promise<{
+  raw: CodeSuggestion[];
+  ranked: CodeSuggestion[];
+  validRaw: CodeSuggestion[];
+  inserted: (typeof suggestionsTable.$inferSelect)[];
+}> {
+  const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput } = params;
+
+  const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader, planInput);
+
+  // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
+  const validRaw = raw.filter((s) => s.valid);
+  const ranked =
+    validRaw.length > 0
+      ? await synth.synthesize(validRaw, stack, { title: devTask.title, acceptanceCriteria: devTask.acceptanceCriteria })
+      : [];
+
+  // Persist ALL suggestions, merging scores back onto the ranked/valid ones by
+  // agent. Rows are index-aligned with `raw`.
+  const scoreByAgent = new Map(ranked.map((r) => [r.agent, r]));
+  let inserted: (typeof suggestionsTable.$inferSelect)[] = [];
+  if (raw.length > 0) {
+    inserted = await db
+      .insert(suggestionsTable)
+      .values(
+        raw.map((s) => {
+          const sc = scoreByAgent.get(s.agent);
+          return {
+            runId,
+            agent: s.agent,
+            explanation: s.explanation,
+            language: s.language,
+            score: sc?.score != null ? Math.round(sc.score) : null,
+            recommendation: sc?.recommendation ?? null,
+            scoreBreakdown: sc?.scoreBreakdown ?? null,
+            scoreNarrative: sc?.scoreNarrative ?? null,
+          };
+        }),
+      )
+      .returning();
+
+    // Persist each suggestion's change set (0022/0023/0024/0026).
+    const fileRows = inserted.flatMap((row, i) =>
+      (raw[i]?.files ?? []).map((f) => ({
+        suggestionId: row.id,
+        seq: f.seq,
+        op: f.op,
+        filePath: f.filePath,
+        content: f.content,
+        hunks: (f.hunks ?? null) as typeof suggestionFilesTable.$inferInsert.hunks,
+        sourceBlobSha: f.sourceBlobSha ?? null,
+        diff: (f.diff ?? null) as typeof suggestionFilesTable.$inferInsert.diff,
+        resolved: f.resolved,
+        applyStatus: f.applyStatus,
+        applyError: f.applyError ?? null,
+        deviationReason: f.deviationReason ?? null,
+        linesAdded: f.linesAdded,
+        linesRemoved: f.linesRemoved,
+      })),
+    );
+    if (fileRows.length > 0) await db.insert(suggestionFilesTable).values(fileRows);
+  }
+
+  return { raw, ranked, validRaw, inserted };
 }
 
 /**
@@ -179,64 +269,16 @@ export async function executeRun(runId: number): Promise<void> {
       }
     }
 
-    const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader, planInput);
-
-    // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
-    const validRaw = raw.filter((s) => s.valid);
-    const ranked =
-      validRaw.length > 0
-        ? await synth.synthesize(validRaw, stack, {
-            title: devTask.title,
-            acceptanceCriteria: devTask.acceptanceCriteria,
-          })
-        : [];
-
-    // Persist ALL suggestions (invalid ones too, so the UI can show why they
-    // failed), merging scores back onto the ranked/valid ones by agent. Rows are
-    // index-aligned with `raw`.
-    const scoreByAgent = new Map(ranked.map((r) => [r.agent, r]));
-    let inserted: (typeof suggestionsTable.$inferSelect)[] = [];
-    if (raw.length > 0) {
-      inserted = await db
-        .insert(suggestionsTable)
-        .values(
-          raw.map((s) => {
-            const sc = scoreByAgent.get(s.agent);
-            return {
-              runId,
-              agent: s.agent,
-              explanation: s.explanation,
-              language: s.language,
-              score: sc?.score != null ? Math.round(sc.score) : null,
-              recommendation: sc?.recommendation ?? null,
-              scoreBreakdown: sc?.scoreBreakdown ?? null,
-              scoreNarrative: sc?.scoreNarrative ?? null,
-            };
-          }),
-        )
-        .returning();
-
-      // Persist each suggestion's change set (0022/0023).
-      const fileRows = inserted.flatMap((row, i) =>
-        (raw[i]?.files ?? []).map((f) => ({
-          suggestionId: row.id,
-          seq: f.seq,
-          op: f.op,
-          filePath: f.filePath,
-          content: f.content,
-          hunks: (f.hunks ?? null) as typeof suggestionFilesTable.$inferInsert.hunks,
-          sourceBlobSha: f.sourceBlobSha ?? null,
-          diff: (f.diff ?? null) as typeof suggestionFilesTable.$inferInsert.diff,
-          resolved: f.resolved,
-          applyStatus: f.applyStatus,
-          applyError: f.applyError ?? null,
-          deviationReason: f.deviationReason ?? null,
-          linesAdded: f.linesAdded,
-          linesRemoved: f.linesRemoved,
-        })),
-      );
-      if (fileRows.length > 0) await db.insert(suggestionFilesTable).values(fileRows);
-    }
+    const { raw, ranked, validRaw, inserted } = await generateAndPersistSuggestions({
+      runId,
+      orchestrator,
+      synth,
+      devTask,
+      codeContext,
+      stack,
+      fileReader,
+      planInput,
+    });
 
     // Both agents produced changes that could not be applied — fail the run with
     // the specific reasons rather than committing anything (1.4).
@@ -399,4 +441,115 @@ export async function commitFromSuggestion(
   // The repo changed — schedule a Graphify re-index (Phase 3). Fire-and-forget.
   triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
   return { commitHash, prUrl };
+}
+
+// ---------------------------------------------------------------------------
+// Plan revision + regeneration (Phase 2 PR3, §3.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Regenerate a run's suggestions against a (user-edited) plan, in the
+ * background. Never throws — a failure lands on the run row. Does not
+ * auto-commit; the user reviews and commits the new suggestions.
+ */
+async function regenerateFromPlan(
+  run: typeof runsTable.$inferSelect,
+  plan: ChangePlan,
+  planId: number,
+): Promise<void> {
+  const runId = run.id;
+  try {
+    const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
+    if (!workItem) throw new Error("Work item not found");
+    const repo = await getRunRepository(run);
+    if (!repo) throw new Error("No repository is connected to this run's project.");
+    const stack = repo.stackProfile as StackProfile;
+    const creds = await getConfigs(run.userId, ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+
+    const git = await GitService.forRepo(repo.id, {
+      githubToken: creds.GITHUB_TOKEN,
+      azureReposToken: creds.AZURE_REPOS_TOKEN,
+    });
+    const fileReader: FileReader = (p) => git.fetchFileWithSha(p);
+    const tree = await git.fetchFilePaths();
+    const assembled = await assemblePlanContext(plan, fileReader, tree);
+    if (assembled.truncated.length > 0) {
+      await recordContextTruncation(planId, assembled.truncated).catch((err) =>
+        logger.warn({ runId, err }, "Recording context truncation failed"),
+      );
+    }
+
+    const effectiveDescription = run.refinePrompt
+      ? `${workItem.description ?? ""}\n\nRefinement request: ${run.refinePrompt}`
+      : workItem.description;
+    const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
+    const orchestrator = new AIOrchestrator({ anthropicApiKey: creds.ANTHROPIC_API_KEY, openaiApiKey: creds.OPENAI_API_KEY });
+    const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
+
+    const { raw, validRaw } = await generateAndPersistSuggestions({
+      runId,
+      orchestrator,
+      synth,
+      devTask,
+      codeContext: assembled.context,
+      stack,
+      fileReader,
+      planInput: { plan, context: assembled.context },
+    });
+
+    if (raw.length > 0 && validRaw.length === 0) {
+      const reasons = raw
+        .flatMap((s) => s.files.filter((f) => f.applyStatus === "failed").map((f) => f.applyError))
+        .filter(Boolean)
+        .join("\n\n");
+      await db
+        .update(runsTable)
+        .set({ status: "failed", finishedAt: new Date(), error: `No suggestion could be applied to the repository.\n\n${reasons}` })
+        .where(eq(runsTable.id, runId));
+      return;
+    }
+    await db.update(runsTable).set({ status: "succeeded", finishedAt: new Date() }).where(eq(runsTable.id, runId));
+  } catch (err) {
+    logger.error({ runId, err }, "Plan regeneration failed");
+    await db
+      .update(runsTable)
+      .set({ status: "failed", finishedAt: new Date(), error: err instanceof Error ? err.message : "Regeneration failed" })
+      .where(eq(runsTable.id, runId));
+  }
+}
+
+/**
+ * Apply a user's plan edits (§3.2): write a new plan revision, supersede the
+ * prior revision's suggestions (retained, not deleted), and regenerate in the
+ * background. Returns immediately with the new revision. Owner-only; refuses a
+ * run that has already been committed.
+ */
+export async function reviseAndRegenerate(
+  runId: number,
+  userId: string,
+  files: RevisionFileInput[],
+): Promise<{ planId: number; revision: number }> {
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
+  if (!run) throw new RunError("Run not found", 404);
+  if (run.userId !== userId) throw new RunError("Access denied.", 403);
+  if (run.committedSuggestionId != null) {
+    throw new RunError("This run has already been committed — its plan can't be edited.", 409);
+  }
+
+  const prior = await loadCurrentPlanRow(runId);
+  if (!prior) throw new RunError("This run has no plan to edit.", 409);
+
+  const { planId, revision, plan } = await createPlanRevision(prior, files);
+
+  // Supersede the current suggestions (retained for the prior revision).
+  await db
+    .update(suggestionsTable)
+    .set({ superseded: true })
+    .where(and(eq(suggestionsTable.runId, runId), eq(suggestionsTable.superseded, false)));
+
+  // Show the regeneration in the UI, then run it in the background.
+  await db.update(runsTable).set({ status: "running", error: null, startedAt: new Date() }).where(eq(runsTable.id, runId));
+  void regenerateFromPlan(run, plan, planId).catch((err) => logger.error({ runId, err }, "Plan regeneration crashed"));
+
+  return { planId, revision };
 }
