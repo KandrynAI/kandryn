@@ -44,6 +44,11 @@ export interface SuggestionFile {
   resolved: boolean;
   applyStatus: SuggestionFileApplyStatus;
   applyError?: string | null;
+  /**
+   * Why this file falls outside the change plan (Phase 2). Null for a planned
+   * file. Captured, not scored in this phase.
+   */
+  deviationReason?: string | null;
   linesAdded: number;
   linesRemoved: number;
 }

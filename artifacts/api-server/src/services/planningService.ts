@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, changePlansTable, changePlanFilesTable } from "@workspace/db";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
@@ -12,6 +13,13 @@ const PLANNER_MODEL = "claude-sonnet-4-5";
 const CANDIDATE_CAP = 25;
 const FILE_CAP = 10; // §1.3 — never plan more than 10 files
 const TREE_CAP = 600; // bound the directory listing sent to the planner
+// Char budget for the per-file context assembled for generation (§2.2). ~48k
+// chars ≈ 12k tokens — comfortably fits a typical multi-file change while
+// bounding worst case well under either model's context window.
+const PLAN_CONTEXT_CHAR_BUDGET = 48_000;
+
+/** Reads a source file (content + blob SHA); injected, backed by GitService. */
+type FileReader = (path: string) => Promise<{ content: string; sha: string } | null>;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for unit tests)
@@ -105,6 +113,102 @@ export function buildCandidatesFromGraph(graph: GraphifyGraph, keywords: string[
     symbols: [...(symbolsByFile.get(r.filePath) ?? [])].slice(0, 40),
     source: "graph" as const,
   }));
+}
+
+/** A sibling file in the same directory with the same extension — a convention
+ *  example for a `create`. Returns null when the directory has no peer. */
+export function findSibling(tree: string[], createPath: string): string | null {
+  const slash = createPath.lastIndexOf("/");
+  const dir = slash >= 0 ? createPath.slice(0, slash + 1) : "";
+  const dot = createPath.lastIndexOf(".");
+  const ext = dot >= 0 ? createPath.slice(dot) : "";
+  const peers = tree.filter(
+    (p) => p !== createPath && p.startsWith(dir) && !p.slice(dir.length).includes("/") && (ext ? p.endsWith(ext) : true),
+  );
+  return peers.sort()[0] ?? null;
+}
+
+export interface AssembledContext {
+  context: string;
+  /** Paths whose content was truncated to fit the budget (§2.2). */
+  truncated: string[];
+}
+
+/**
+ * Assemble the per-file generation context for a plan (§2.2): full current
+ * content for each `edit`/`delete`, and one nearby sibling as a convention
+ * example for each `create`. Degrades to fit the budget — drop the examples
+ * first, then truncate the largest edit files — and never silently drops a
+ * planned file (an unreadable one becomes an empty block, still listed).
+ */
+export async function assemblePlanContext(
+  plan: ChangePlan,
+  reader: FileReader,
+  tree: string[],
+  budget = PLAN_CONTEXT_CHAR_BUDGET,
+): Promise<AssembledContext> {
+  interface Item {
+    path: string;
+    kind: "edit" | "example";
+    header: string;
+    body: string;
+  }
+  const items: Item[] = [];
+  for (const f of plan.files) {
+    if (f.op === "edit" || f.op === "delete") {
+      const src = await reader(f.path).catch(() => null);
+      items.push({ path: f.path, kind: "edit", header: `--- ${f.op} ${f.path} ---`, body: src?.content ?? "" });
+    } else {
+      const sibling = findSibling(tree, f.path);
+      const src = sibling ? await reader(sibling).catch(() => null) : null;
+      items.push({
+        path: f.path,
+        kind: "example",
+        header: `--- create ${f.path}${sibling ? ` (convention example: ${sibling})` : ""} ---`,
+        body: src?.content ?? "",
+      });
+    }
+  }
+
+  const size = (it: Item) => it.header.length + it.body.length + 2;
+  let total = items.reduce((n, it) => n + size(it), 0);
+  const truncated: string[] = [];
+
+  // 1) Drop convention examples first.
+  if (total > budget) {
+    for (const it of items) {
+      if (it.kind === "example" && it.body) {
+        total -= it.body.length;
+        it.body = "(convention example omitted for context budget — follow the repository's existing conventions)";
+        total += it.body.length;
+        if (total <= budget) break;
+      }
+    }
+  }
+
+  // 2) Truncate the largest edit files until under budget.
+  while (total > budget) {
+    const largest = items
+      .filter((it) => it.kind === "edit" && it.body.length > 500)
+      .sort((a, b) => b.body.length - a.body.length)[0];
+    if (!largest) break;
+    const keep = Math.max(500, largest.body.length - (total - budget) - 200);
+    if (keep >= largest.body.length) break;
+    const cut = `${largest.body.slice(0, keep)}\n// … (${largest.body.length - keep} chars truncated for context budget) …`;
+    total += cut.length - largest.body.length;
+    largest.body = cut;
+    if (!truncated.includes(largest.path)) truncated.push(largest.path);
+  }
+
+  return { context: items.map((it) => `${it.header}\n${it.body}`).join("\n\n"), truncated };
+}
+
+/** Append a note to a plan recording that generation context was truncated (§2.2). */
+export async function recordContextTruncation(planId: number, truncated: string[]): Promise<void> {
+  if (truncated.length === 0) return;
+  const [row] = await db.select({ notes: changePlansTable.notes }).from(changePlansTable).where(eq(changePlansTable.id, planId));
+  const merged = [row?.notes, `Context truncated for: ${truncated.join(", ")}.`].filter(Boolean).join(" ");
+  await db.update(changePlansTable).set({ notes: merged }).where(eq(changePlansTable.id, planId));
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +360,8 @@ export interface PlanningSummary {
   planId: number | null;
   status: PlanStatus;
   fileCount: number;
+  /** The ready plan (files + notes) for generation to implement. Null if failed. */
+  plan: ChangePlan | null;
   retrievalMode: RetrievalMode;
   retrievalMs: number;
   planningMs: number;
@@ -346,6 +452,7 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
       planId: planRow?.id ?? null,
       status: result.status,
       fileCount: result.plan?.files.length ?? 0,
+      plan: result.plan,
       retrievalMode,
       retrievalMs,
       planningMs,
@@ -359,6 +466,7 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
       planId: null,
       status: result.status,
       fileCount: result.plan?.files.length ?? 0,
+      plan: result.plan,
       retrievalMode,
       retrievalMs,
       planningMs,

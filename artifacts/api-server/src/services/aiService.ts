@@ -1,14 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { z } from "zod/v4";
-import { buildPrompt } from "../stack/prompts.js";
+import { buildPrompt, buildPlanPrompt } from "../stack/prompts.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import { logger } from "../lib/logger.js";
-import { statsFor, primaryOf, countLines } from "./suggestionFilesUtil.js";
+import { statsFor, countLines, renderChangeSet } from "./suggestionFilesUtil.js";
 import { applyHunks, applyErrorMessage } from "./patchService.js";
 import { computeFileDiff } from "./diffService.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import type { CodeSuggestion, SuggestionFile } from "../../../../shared/types/codeSuggestion.js";
+import type { ChangePlan } from "../../../../shared/types/changePlan.js";
 import type { StackProfile } from "../stack/detector.js";
 
 /**
@@ -75,16 +76,19 @@ function extractJson<T>(raw: string): T {
 
 // Operation-based edits (Phase 1). Generation emits one file, but the shape is
 // N-file so Phase 2 is additive.
+// `deviationReason` (Phase 2 PR2) is set by the model on a file it adds beyond
+// the plan; null/absent for a planned file.
 const FileOpSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("create"), path: z.string().min(1), content: z.string() }),
+  z.object({ op: z.literal("create"), path: z.string().min(1), content: z.string(), deviationReason: z.string().optional() }),
   z.object({
     op: z.literal("edit"),
     path: z.string().min(1),
     hunks: z
       .array(z.object({ search: z.string().min(1), replace: z.string() }))
       .min(1),
+    deviationReason: z.string().optional(),
   }),
-  z.object({ op: z.literal("delete"), path: z.string().min(1) }),
+  z.object({ op: z.literal("delete"), path: z.string().min(1), deviationReason: z.string().optional() }),
 ]);
 
 const ModelOutputSchema = z.object({
@@ -150,12 +154,18 @@ function mockCopilot(stack: StackProfile): ModelOutput {
 async function resolveFileOps(
   ops: FileOp[],
   reader?: FileReader,
+  planPaths?: Set<string>,
 ): Promise<{ files: SuggestionFile[]; valid: boolean }> {
   const files: SuggestionFile[] = [];
   let valid = true;
   let seq = 0;
 
   for (const op of ops) {
+    // A file is a deviation when the model flagged it, or (with a plan) when its
+    // path is not among the planned files. Null for a planned file.
+    const deviationReason =
+      op.deviationReason ?? (planPaths && !planPaths.has(op.path) ? "Added outside the plan." : null);
+
     if (op.op === "create") {
       const d = computeFileDiff("", op.content);
       files.push({
@@ -169,6 +179,7 @@ async function resolveFileOps(
         resolved: true,
         applyStatus: "applied",
         applyError: null,
+        deviationReason,
         linesAdded: d.linesAdded,
         linesRemoved: d.linesRemoved,
       });
@@ -189,6 +200,7 @@ async function resolveFileOps(
         resolved: true,
         applyStatus: "applied",
         applyError: null,
+        deviationReason,
         linesAdded: 0,
         linesRemoved: src ? countLines(src.content) : 0,
       });
@@ -209,6 +221,7 @@ async function resolveFileOps(
         resolved: false,
         applyStatus: "failed",
         applyError: `File not found in the repository: ${op.path}. An edit must target an existing file.`,
+        deviationReason,
         linesAdded: 0,
         linesRemoved: 0,
       });
@@ -229,6 +242,7 @@ async function resolveFileOps(
         resolved: true,
         applyStatus: "applied",
         applyError: null,
+        deviationReason,
         linesAdded: d.linesAdded,
         linesRemoved: d.linesRemoved,
       });
@@ -245,6 +259,7 @@ async function resolveFileOps(
         resolved: false,
         applyStatus: "failed",
         applyError: applyErrorMessage(res, op.path),
+        deviationReason,
         linesAdded: 0,
         linesRemoved: 0,
       });
@@ -272,16 +287,20 @@ export class AIOrchestrator {
     codeContext: string,
     stack: StackProfile,
     fileReader?: FileReader,
+    planInput?: { plan: ChangePlan; context: string },
   ): Promise<CodeSuggestion[]> {
-    const prompt = buildPrompt(
-      {
-        title: task.title,
-        description: task.description,
-        acceptanceCriteria: task.acceptanceCriteria.join("\n"),
-      },
-      codeContext,
-      stack,
-    );
+    const taskFields = {
+      title: task.title,
+      description: task.description,
+      acceptanceCriteria: task.acceptanceCriteria.join("\n"),
+    };
+    // With a ready plan both agents implement the SAME plan (§2.1) — they compete
+    // on implementation quality, not file selection. Without one, fall back to the
+    // Phase 1 single-file prompt.
+    const prompt = planInput
+      ? buildPlanPrompt(taskFields, planInput.plan, planInput.context, stack)
+      : buildPrompt(taskFields, codeContext, stack);
+    const planPaths = planInput ? new Set(planInput.plan.files.map((f) => f.path)) : undefined;
 
     // Real agents. The AntiGravity/Copilot mocks return canned code, so they
     // are gated behind ENABLE_DEMO_AGENTS (default OFF) — persisted runs must
@@ -306,9 +325,9 @@ export class AIOrchestrator {
       if (result.status === "fulfilled") {
         const output = result.value;
         // Resolve the model's operations into a change set: create files carry
-        // content; edits are applied against current source. Generation emits one
-        // file, but the shape supports N.
-        const { files, valid } = await resolveFileOps(output.files, fileReader);
+        // content; edits are applied against current source. With a plan, files
+        // outside it are flagged as deviations (§2.4).
+        const { files, valid } = await resolveFileOps(output.files, fileReader, planPaths);
         const primaryPath = files[0]?.filePath ?? "";
         suggestions.push({
           agent,
@@ -514,18 +533,14 @@ ${ac}
 
 Repository stack: ${describeStack(stack) || "not detected"}
 
-Suggestion A (Raptia):
-File: ${primaryOf(a.files)?.filePath ?? "(none)"}
-
+Suggestion A (Raptia) — ${a.files.length} file(s):
 \`\`\`${a.language}
-${(primaryOf(a.files)?.code ?? "").slice(0, 6000)}
+${renderChangeSet(a.files)}
 \`\`\`
 
-Suggestion B (Fovea):
-File: ${primaryOf(b.files)?.filePath ?? "(none)"}
-
+Suggestion B (Fovea) — ${b.files.length} file(s):
 \`\`\`${b.language}
-${(primaryOf(b.files)?.code ?? "").slice(0, 6000)}
+${renderChangeSet(b.files)}
 \`\`\`
 
 Score each suggestion on five dimensions. For each dimension give:
@@ -797,12 +812,11 @@ function buildSynthesisPrompt(suggestions: CodeSuggestion[], stack: StackProfile
   const suggestionDocs = suggestions
     .map(
       (s, i) => `
-### Suggestion ${i + 1} (${s.agent})
-**File:** ${primaryOf(s.files)?.filePath ?? "(none)"}
+### Suggestion ${i + 1} (${s.agent}) — ${s.files.length} file(s)
 **Language:** ${s.language}
 **Explanation:** ${s.explanation}
 \`\`\`${s.language}
-${primaryOf(s.files)?.code ?? ""}
+${renderChangeSet(s.files)}
 \`\`\``,
     )
     .join("\n");

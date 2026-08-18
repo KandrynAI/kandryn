@@ -58,6 +58,8 @@ export interface SuggestionFile {
   resolved: boolean;
   applyStatus: 'pending' | 'applied' | 'failed';
   applyError?: string | null;
+  /** Why this file falls outside the change plan (Phase 2). Null for a planned file. */
+  deviationReason?: string | null;
   linesAdded: number;
   linesRemoved: number;
 }

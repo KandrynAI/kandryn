@@ -44,6 +44,9 @@ export const suggestionFilesTable = pgTable(
       .notNull()
       .default("pending"),
     applyError: text("apply_error"),
+    // Why this file falls outside the change plan (Phase 2 PR2, 0026). Null for
+    // planned files. Captured, not scored in this phase.
+    deviationReason: text("deviation_reason"),
     linesAdded: integer("lines_added").notNull().default(0),
     linesRemoved: integer("lines_removed").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
