@@ -30,11 +30,31 @@ export interface Repository {
   createdAt: string;
 }
 
+export interface DiffLine {
+  type: 'add' | 'del' | 'context';
+  oldNumber: number | null;
+  newNumber: number | null;
+  content: string;
+  intraline?: Array<[number, number]>;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
 export interface SuggestionFile {
   seq: number;
   op: 'create' | 'edit' | 'delete';
   filePath: string;
   content: string;
+  /** Structured, server-computed diff (Phase 1 PR2). Null for a failed/deleted file. */
+  diff?: DiffHunk[] | null;
+  hunks?: Array<{ search: string; replace: string }> | null;
+  sourceBlobSha?: string | null;
   resolved: boolean;
   applyStatus: 'pending' | 'applied' | 'failed';
   applyError?: string | null;

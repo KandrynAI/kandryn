@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, GitCommit, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, FileCheck, Copy, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network, Upload, Zap } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, FileCheck, Copy, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network, Upload, Zap } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
+import { DiffViewer } from "@/components/diff/DiffViewer";
 import { agentDisplay } from "@/lib/agents";
 import { useTeam } from "@/context/TeamContext";
 
@@ -89,6 +90,7 @@ export default function RunDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [committingId, setCommittingId] = useState<number | null>(null);
+  const [staleError, setStaleError] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [aegisLoading, setAegisLoading] = useState(false);
@@ -190,14 +192,19 @@ export default function RunDetailPage() {
 
   const onCommit = async (s: RunSuggestion) => {
     setCommittingId(s.id);
+    setStaleError(null);
     try {
       const res = await commitRunSuggestion(runId, s.id);
       toast({ title: "Committed & PR opened", description: res.prUrl });
       await load(true);
     } catch (err) {
-      // The API enforces one commit per run (409). If we raced it (e.g. a second
-      // tab), just resync to the committed state instead of erroring.
-      if (err instanceof ApiError && err.status === 409) {
+      // The commit path returns 409 for three cases: the branch moved since the
+      // run (1.5), the suggestion couldn't be applied, or another commit already
+      // landed. Staleness gets its own banner; the rest resync to committed state.
+      if (err instanceof ApiError && err.status === 409 && err.message.startsWith("The branch changed")) {
+        setStaleError(err.message);
+        toast({ title: "Branch changed — re-run to regenerate.", variant: "destructive" });
+      } else if (err instanceof ApiError && err.status === 409) {
         toast({ title: "Already committed — showing committed state." });
         await load(true);
       } else {
@@ -305,7 +312,6 @@ export default function RunDetailPage() {
   const isCommitted = committedId !== null;
   const committedSug = suggestions.find((s) => s.id === committedId) ?? null;
   const ordered = [...suggestions].sort((a, b) => (a.id === committedId ? -1 : b.id === committedId ? 1 : 0));
-  const alternatives = ordered.filter((s) => s.id !== committedId);
   const inProgress = IN_PROGRESS.includes(run.status);
   const infoCells: [string, string][] = [
     ["Status", STATUS_LABEL[run.status]],
@@ -451,61 +457,19 @@ export default function RunDetailPage() {
         ) : (
           <div>
             <ConfidenceStrip suggestions={suggestions} />
-
-            {isCommitted ? (
-              <>
-                <SectionHeading>Committed suggestion</SectionHeading>
-                {committedSug && (
-                  <SuggestionCard
-                    key={committedSug.id}
-                    s={committedSug}
-                    committing={false}
-                    disabled
-                    onCommit={() => onCommit(committedSug)}
-                    isCommitted
-                    isThisCommitted
-                    prUrl={run.prUrl}
-                    onReview={onReview}
-                    reviewing={reviewing}
-                  />
-                )}
-                {alternatives.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 12px" }}>
-                    <div style={{ flex: 1, height: 1, background: "var(--c-border)" }} />
-                    <span style={{ fontSize: "var(--fs-xs)", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", fontWeight: 600 }}>
-                      Alternative{alternatives.length === 1 ? "" : "s"}
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: "var(--c-border)" }} />
-                  </div>
-                )}
-                {alternatives.map((s) => (
-                  <SuggestionCard
-                    key={s.id}
-                    s={s}
-                    committing={false}
-                    disabled
-                    onCommit={() => onCommit(s)}
-                    isCommitted
-                    isThisCommitted={false}
-                  />
-                ))}
-              </>
-            ) : (
-              <>
-                <SectionHeading>Suggestions · {suggestions.length} result{suggestions.length === 1 ? "" : "s"}</SectionHeading>
-                {ordered.map((s) => (
-                  <SuggestionCard
-                    key={s.id}
-                    s={s}
-                    committing={committingId === s.id}
-                    disabled={committingId !== null}
-                    onCommit={() => onCommit(s)}
-                    isCommitted={false}
-                    isThisCommitted={false}
-                  />
-                ))}
-              </>
-            )}
+            <DiffViewer
+              suggestions={ordered}
+              committedId={committedId}
+              committingId={committingId}
+              staleMessage={staleError}
+              onCommit={onCommit}
+              onReRun={onReRun}
+              rerunning={rerunning}
+              prUrl={run.prUrl}
+              onReview={onReview}
+              reviewing={reviewing}
+              renderScoreAnalysis={(s) => (s.scoreBreakdown ? <ScoreAnalysis breakdown={s.scoreBreakdown} /> : null)}
+            />
           </div>
         )}
       </div>
@@ -1156,125 +1120,6 @@ function FindingRow({ f }: { f: ReviewFinding }) {
         <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)", lineHeight: 1.5 }}>{f.detail}</div>
         {f.acRef && <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontStyle: "italic", marginTop: 2 }}>{f.acRef}</div>}
       </div>
-    </div>
-  );
-}
-
-function SectionHeading({ children }: { children: ReactNode }) {
-  return (
-    <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", margin: "12px 0 8px" }}>
-      {children}
-    </div>
-  );
-}
-
-function CommittedBadge() {
-  return (
-    <span style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--c-green-bg)", color: "var(--c-green)", fontSize: "var(--fs-xs)", fontWeight: 700, padding: "4px 10px", borderRadius: 3 }}>
-      <Check size={12} />Committed
-    </span>
-  );
-}
-
-function SuggestionCard({
-  s,
-  committing,
-  disabled,
-  onCommit,
-  isCommitted,
-  isThisCommitted,
-  prUrl,
-  onReview,
-  reviewing,
-}: {
-  s: RunSuggestion;
-  committing: boolean;
-  disabled: boolean;
-  onCommit: () => void;
-  isCommitted: boolean;
-  isThisCommitted: boolean;
-  prUrl?: string | null;
-  onReview?: () => void;
-  reviewing?: boolean;
-}) {
-  const isAlternative = isCommitted && !isThisCommitted;
-  const [altExpanded, setAltExpanded] = useState(false);
-  const scorePct = s.score != null ? Math.max(0, Math.min(100, (s.score / 10) * 100)) : null;
-
-  // Collapsed "alternative" row — the default for a non-committed suggestion
-  // once another has been committed.
-  if (isAlternative && !altExpanded) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--c-border)", background: "var(--c-surface)", borderRadius: 4, padding: "8px 12px", marginBottom: 10, opacity: 0.55 }}>
-        <button onClick={() => setAltExpanded(true)} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: "var(--c-ink-3)", fontSize: "var(--fs-sm)", padding: 0 }} title="Show alternative">
-          <ChevronRight size={12} />Show alternative
-        </button>
-        <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: agentDisplay(s.agent).colour, fontWeight: 600 }}>{agentDisplay(s.agent).name}</span>
-        <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>Alternative · not used</span>
-        {s.score != null && <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>score {s.score}/10</span>}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ border: isThisCommitted ? "1px solid var(--c-green)" : "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-surface)", marginBottom: 12, opacity: isAlternative ? 0.7 : 1, animation: "bmrise 0.3s ease-out both" }}>
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--c-border)", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-base)", color: agentDisplay(s.agent).colour, fontWeight: 600 }}>{agentDisplay(s.agent).name}</span>
-        {isThisCommitted ? (
-          <CommittedBadge />
-        ) : s.recommendation === "Recommended" ? (
-          <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, background: "var(--c-blue)", color: "#fff", padding: "2px 6px", borderRadius: 2, letterSpacing: "0.05em" }}>Recommended</span>
-        ) : null}
-        {s.score != null && <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>score {s.score}/10</span>}
-        <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>{s.files?.[0]?.filePath ?? s.filePath}</span>
-        {!isCommitted && (
-          <button className="bm-primary" onClick={onCommit} disabled={disabled}>
-            {committing ? <Loader2 size={12} className="animate-spin" /> : <GitCommit size={12} />}Commit
-          </button>
-        )}
-        {isAlternative && (
-          <button onClick={() => setAltExpanded(false)} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: "var(--c-ink-4)", fontSize: "var(--fs-xs)", padding: 0 }} title="Hide alternative">
-            <ChevronDown size={12} />Hide alternative
-          </button>
-        )}
-      </div>
-
-      {scorePct != null && (
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--c-border)" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 28px", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>Score</span>
-            <span style={{ height: 3, background: "var(--c-raised)", display: "block" }}>
-              <span style={{ display: "block", height: 3, background: "var(--c-blue)", width: `${scorePct}%` }} />
-            </span>
-            <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontFamily: "var(--mono)", textAlign: "right" }}>{Math.round(scorePct)}%</span>
-          </div>
-        </div>
-      )}
-
-      {s.explanation && (
-        <div style={{ padding: "10px 14px", fontSize: "var(--fs-base)", color: "var(--c-ink-2)", lineHeight: 1.55, borderBottom: "1px solid var(--c-border)" }}>
-          {s.explanation}
-        </div>
-      )}
-
-      <pre style={{ margin: 0, padding: "12px 14px", fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", lineHeight: 1.6, overflow: "auto", background: "var(--c-raised)", color: "var(--c-ink-2)" }}>
-        <code>{s.files?.[0]?.content ?? s.code}</code>
-      </pre>
-
-      {s.scoreBreakdown && <ScoreAnalysis breakdown={s.scoreBreakdown} />}
-
-      {isThisCommitted && (
-        <div style={{ display: "flex", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--c-border)" }}>
-          <button className="bm-ghost" onClick={() => prUrl && window.open(prUrl, "_blank")} disabled={!prUrl}>
-            <ExternalLink size={12} />View PR →
-          </button>
-          {onReview && (
-            <button className="bm-ghost" onClick={onReview} disabled={reviewing}>
-              {reviewing ? <><Loader2 size={12} className="animate-spin" />Running Veria…</> : <><ShieldCheck size={12} />Run Veria</>}
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

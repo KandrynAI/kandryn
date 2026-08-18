@@ -80,6 +80,9 @@
   "dependencies": {
     "@clerk/react": "^6.4.7",
     "@clerk/themes": "^2.4.57",
-    "react-syntax-highlighter": "^16.1.1"
+    "@shikijs/langs": "4.4.3",
+    "@shikijs/themes": "4.4.3",
+    "react-syntax-highlighter": "^16.1.1",
+    "shiki": "^4.4.3"
   }
 }

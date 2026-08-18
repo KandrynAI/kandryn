@@ -137,6 +137,22 @@
   --c-amber:    #92500a;
   --c-amber-bg: #fffbeb;
 
+  /* ---- diff viewer tokens (Phase 1 PR3) — GitHub-like tints; Shiki
+     "github-light" syntax colours sit on top, so the diff surface is a fixed
+     light code pane in both app themes (values below are theme-independent) ---- */
+  --c-diff-surface:       #ffffff;
+  --c-diff-fg:            #1f2328;
+  --c-diff-border:        #d0d7de;
+  --c-diff-add-bg:        #e6ffec;
+  --c-diff-add-bg-strong: #abf2bc;
+  --c-diff-add-border:    #2da44e;
+  --c-diff-del-bg:        #ffebe9;
+  --c-diff-del-bg-strong: #ffc9c4;
+  --c-diff-del-border:    #cf222e;
+  --c-diff-gutter-fg:     #9ba3ac;
+  --c-diff-expand-bg:     #ddf4ff;
+  --c-diff-expand-fg:     #0969da;
+
   /* type scale */
   --fs-2xl:  20px;
   --fs-xl:   16px;
