@@ -33,6 +33,14 @@ export const AUDIT_ACTIONS = [
   'run.failed',
   'run.committed',
 
+  // Change plan (Phase 2)
+  'plan.generated',
+  'plan.edited',
+  'plan.file_removed',
+  'plan.file_added',
+  'plan.regenerated',
+  'plan.failed',
+
   // Post-commit agents
   'veria.review_run',
   'aegis.scan_run',

@@ -6,7 +6,9 @@ import {
   tasksTable,
   suggestionsTable,
   suggestionFilesTable,
+  projectsTable,
 } from "@workspace/db";
+import * as audit from "./auditService.js";
 import { GitService } from "./gitService.js";
 import { getRunRepository } from "./repoResolver.js";
 import { loadSuggestionFiles } from "./suggestionFiles.js";
@@ -18,6 +20,7 @@ import {
   assemblePlanContext,
   recordContextTruncation,
   loadCurrentPlanRow,
+  loadPlanFiles,
   createPlanRevision,
   type RevisionFileInput,
 } from "./planningService.js";
@@ -147,6 +150,11 @@ export async function executeRun(runId: number): Promise<void> {
   if (run.status === "canceled" || run.status === "succeeded") return;
 
   const userId = run.userId;
+  // Team scope for the plan audit entries (null for a personal project).
+  const [proj] = run.projectId
+    ? await db.select({ teamId: projectsTable.teamId }).from(projectsTable).where(eq(projectsTable.id, run.projectId))
+    : [];
+  const teamId = proj?.teamId ?? null;
   await db.update(runsTable).set({ status: "running", startedAt: new Date() }).where(eq(runsTable.id, runId));
 
   try {
@@ -239,6 +247,8 @@ export async function executeRun(runId: number): Promise<void> {
             : null;
         const plan = await runPlanning({
           runId,
+          userId,
+          teamId,
           workItem: {
             title: workItem.title,
             description: effectiveDescription,
@@ -528,6 +538,7 @@ export async function reviseAndRegenerate(
   runId: number,
   userId: string,
   files: RevisionFileInput[],
+  auditCtx?: { teamId: number | null; ipAddress?: string },
 ): Promise<{ planId: number; revision: number }> {
   const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
   if (!run) throw new RunError("Run not found", 404);
@@ -538,6 +549,7 @@ export async function reviseAndRegenerate(
 
   const prior = await loadCurrentPlanRow(runId);
   if (!prior) throw new RunError("This run has no plan to edit.", 409);
+  const priorFiles = await loadPlanFiles(prior.id);
 
   const { planId, revision, plan } = await createPlanRevision(prior, files);
 
@@ -550,6 +562,55 @@ export async function reviseAndRegenerate(
   // Show the regeneration in the UI, then run it in the background.
   await db.update(runsTable).set({ status: "running", error: null, startedAt: new Date() }).where(eq(runsTable.id, runId));
   void regenerateFromPlan(run, plan, planId).catch((err) => logger.error({ runId, err }, "Plan regeneration crashed"));
+
+  // Audit the edit as the diff between revisions (§4.1). Fire-and-forget.
+  // in_candidates distinguishes a retrieval miss (false) from a planner miss
+  // (true) for a user-added file — sourced from the ORIGINAL retrieval set.
+  const teamId = auditCtx?.teamId ?? null;
+  const ipAddress = auditCtx?.ipAddress;
+  const candidatePaths = new Set((prior.candidateFiles ?? []).map((c) => c.path));
+  const newPaths = new Set(files.map((f) => f.path));
+  const priorPaths = new Set(priorFiles.map((f) => f.filePath));
+  for (const f of priorFiles.filter((f) => !newPaths.has(f.filePath))) {
+    audit.log({
+      userId,
+      teamId,
+      ipAddress,
+      action: "plan.file_removed",
+      entityType: "change_plan",
+      entityId: planId,
+      metadata: { runId, revision, filePath: f.filePath, op: f.op, inCandidates: f.inCandidates },
+    });
+  }
+  for (const f of files.filter((f) => !priorPaths.has(f.path))) {
+    audit.log({
+      userId,
+      teamId,
+      ipAddress,
+      action: "plan.file_added",
+      entityType: "change_plan",
+      entityId: planId,
+      metadata: { runId, revision, filePath: f.path, op: f.op, addedSource: f.addedSource ?? "manual", inCandidates: candidatePaths.has(f.path) },
+    });
+  }
+  audit.log({
+    userId,
+    teamId,
+    ipAddress,
+    action: "plan.edited",
+    entityType: "change_plan",
+    entityId: planId,
+    metadata: { runId, revision, priorRevision: prior.revision, fileCount: files.length },
+  });
+  audit.log({
+    userId,
+    teamId,
+    ipAddress,
+    action: "plan.regenerated",
+    entityType: "change_plan",
+    entityId: planId,
+    metadata: { runId, revision },
+  });
 
   return { planId, revision };
 }

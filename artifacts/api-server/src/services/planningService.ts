@@ -8,6 +8,7 @@ import type { ChangePlan, ChangePlanOp, PlannedFile, PlanCandidateFile, Retrieva
 import type { StackProfile } from "../stack/detector.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import { queryGraph, isGraphUsable } from "./graphifyService.js";
+import * as audit from "./auditService.js";
 import { logger } from "../lib/logger.js";
 
 const PLANNER_MODEL = "claude-sonnet-4-5";
@@ -483,6 +484,9 @@ async function callPlanner(
 
 export interface PlanningInput {
   runId: number;
+  /** For the fire-and-forget audit entry (plan.generated / plan.failed). */
+  userId: string;
+  teamId: number | null;
   workItem: { title: string; description?: string | null; acceptanceCriteria?: string[] };
   keywords: string[];
   stack: StackProfile;
@@ -513,7 +517,7 @@ export interface PlanningSummary {
  * graph is an enhancement on the tree-primary path: its absence is not an error.
  */
 export async function runPlanning(input: PlanningInput): Promise<PlanningSummary> {
-  const { runId, workItem, keywords, stack, tree, graph, graphBuiltAt, anthropicApiKey } = input;
+  const { runId, userId, teamId, workItem, keywords, stack, tree, graph, graphBuiltAt, anthropicApiKey } = input;
 
   // Retrieval (tree-primary; graph enhances candidate quality when fresh).
   const tRetrieval = Date.now();
@@ -583,6 +587,38 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
           inCandidates: candidatePaths.has(f.path),
         })),
       );
+    }
+
+    // Fire-and-forget audit entry (§4.1) — cost/latency queryable later.
+    if (result.status === "ready") {
+      audit.log({
+        userId,
+        teamId,
+        action: "plan.generated",
+        entityType: "change_plan",
+        entityId: planRow?.id,
+        metadata: {
+          runId,
+          revision: 1,
+          model: PLANNER_MODEL,
+          fileCount: result.plan?.files.length ?? 0,
+          candidateCount: candidates.length,
+          retrievalMode,
+          retrievalMs,
+          planningMs,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+        },
+      });
+    } else {
+      audit.log({
+        userId,
+        teamId,
+        action: "plan.failed",
+        entityType: "change_plan",
+        entityId: planRow?.id,
+        metadata: { runId, revision: 1, error: result.error, retrievalMode, retrievalMs },
+      });
     }
 
     return {
