@@ -198,7 +198,7 @@ export default function WorkspacePage() {
     if (!acceptedSuggestion) return;
     setIsCommitting(true);
     try {
-      const { commitHash: ch, prUrl: pr } = await commitCode(taskId, acceptedSuggestion.filePath, acceptedSuggestion.code, commitMessage);
+      const { commitHash: ch, prUrl: pr } = await commitCode(taskId, (acceptedSuggestion.files[0]?.filePath ?? ''), (acceptedSuggestion.files[0]?.content ?? ''), commitMessage);
       setCommitHash(ch);
       setPrUrl(pr);
       setCurrentStep(3);
@@ -448,9 +448,9 @@ export default function WorkspacePage() {
 
               {/* File path bar */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', borderBottom: '1px solid var(--hairline)' }}>
-                <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{activeSuggestion.filePath}</span>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{(activeSuggestion.files[0]?.filePath ?? '')}</span>
                 <button
-                  onClick={() => void copyToClipboard(activeSuggestion.filePath, 'path')}
+                  onClick={() => void copyToClipboard((activeSuggestion.files[0]?.filePath ?? ''), 'path')}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: copyFeedback === 'path' ? 'var(--accent-green)' : 'var(--text-muted)', padding: 4 }}
                   title={copyFeedback === 'path' ? 'Copied!' : 'Copy path'}
                 >
@@ -461,7 +461,7 @@ export default function WorkspacePage() {
               {/* Code block */}
               <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
                 <button
-                  onClick={() => void copyToClipboard(activeSuggestion.code, 'code')}
+                  onClick={() => void copyToClipboard((activeSuggestion.files[0]?.content ?? ''), 'code')}
                   style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: 'var(--bg-raised)', border: '1px solid var(--hairline)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: copyFeedback === 'code' ? 'var(--accent-green)' : 'var(--text-muted)', padding: '4px 6px', display: 'flex', alignItems: 'center', gap: 4 }}
                   title={copyFeedback === 'code' ? 'Copied!' : 'Copy code'}
                 >
@@ -469,12 +469,12 @@ export default function WorkspacePage() {
                   <span style={{ fontSize: 11 }}>{copyFeedback === 'code' ? 'Copied!' : 'Copy'}</span>
                 </button>
                 <SyntaxHighlighter
-                  language={langFromPath(activeSuggestion.filePath)}
+                  language={langFromPath((activeSuggestion.files[0]?.filePath ?? ''))}
                   customStyle={CODE_STYLE}
                   showLineNumbers
                   wrapLongLines={false}
                 >
-                  {activeSuggestion.code}
+                  {(activeSuggestion.files[0]?.content ?? '')}
                 </SyntaxHighlighter>
               </div>
 
@@ -539,7 +539,7 @@ export default function WorkspacePage() {
                   <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', background: 'var(--bg-raised)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
                     {side === 'Suggested' ? (
                       <div style={{ borderLeft: '3px solid var(--accent-green)', background: 'rgba(61,214,140,0.08)', paddingLeft: 4 }}>
-                        {acceptedSuggestion.code.split('\n').slice(0, 8).join('\n')}
+                        {(acceptedSuggestion.files[0]?.content ?? '').split('\n').slice(0, 8).join('\n')}
                       </div>
                     ) : (
                       <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>// No existing file</span>
@@ -596,7 +596,7 @@ export default function WorkspacePage() {
             </div>
           )}
           <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {acceptedSuggestion.filePath}
+            {(acceptedSuggestion.files[0]?.filePath ?? '')}
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { buildPrompt } from "../stack/prompts.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import { logger } from "../lib/logger.js";
+import { singleFileChangeSet, statsFor, primaryOf } from "./suggestionFilesUtil.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js";
 import type { StackProfile } from "../stack/detector.js";
@@ -149,11 +150,15 @@ export class AIOrchestrator {
     for (const [result, agent] of mapped) {
       if (result.status === "fulfilled") {
         const output = result.value;
+        // Generation still emits exactly one file (Phase 0). Wrap it in the
+        // multi-file change-set shape; every suggestion has files.length === 1.
+        const files = singleFileChangeSet(output.filePath, output.code);
         suggestions.push({
           agent,
-          code: output.code,
+          files,
+          valid: Boolean(output.code && output.filePath),
+          stats: statsFor(files),
           explanation: output.explanation,
-          filePath: output.filePath,
           language: detectLanguage(output.filePath),
         });
       } else {
@@ -349,17 +354,17 @@ ${ac}
 Repository stack: ${describeStack(stack) || "not detected"}
 
 Suggestion A (Raptia):
-File: ${a.filePath}
+File: ${primaryOf(a.files)?.filePath ?? "(none)"}
 
 \`\`\`${a.language}
-${a.code.slice(0, 6000)}
+${(primaryOf(a.files)?.code ?? "").slice(0, 6000)}
 \`\`\`
 
 Suggestion B (Fovea):
-File: ${b.filePath}
+File: ${primaryOf(b.files)?.filePath ?? "(none)"}
 
 \`\`\`${b.language}
-${b.code.slice(0, 6000)}
+${(primaryOf(b.files)?.code ?? "").slice(0, 6000)}
 \`\`\`
 
 Score each suggestion on five dimensions. For each dimension give:
@@ -632,11 +637,11 @@ function buildSynthesisPrompt(suggestions: CodeSuggestion[], stack: StackProfile
     .map(
       (s, i) => `
 ### Suggestion ${i + 1} (${s.agent})
-**File:** ${s.filePath}
+**File:** ${primaryOf(s.files)?.filePath ?? "(none)"}
 **Language:** ${s.language}
 **Explanation:** ${s.explanation}
 \`\`\`${s.language}
-${s.code}
+${primaryOf(s.files)?.code ?? ""}
 \`\`\``,
     )
     .join("\n");

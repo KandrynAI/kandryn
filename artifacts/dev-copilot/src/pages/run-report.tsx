@@ -340,10 +340,10 @@ function SuggestionSection({ s }: { s: RunSuggestion }) {
         </div>
       )}
 
-      <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginBottom: 6 }}>File: {s.filePath}</div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginBottom: 6 }}>File: {s.files?.[0]?.filePath ?? s.filePath}</div>
 
       <div className="rr-code code-block">
-        {s.code.split("\n").map((line, i) => (
+        {(s.files?.[0]?.content ?? s.code ?? "").split("\n").map((line, i) => (
           <div className="ln" key={i}><pre>{line || " "}</pre></div>
         ))}
       </div>

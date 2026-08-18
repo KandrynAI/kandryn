@@ -5,9 +5,12 @@ import {
   runsTable,
   tasksTable,
   suggestionsTable,
+  suggestionFilesTable,
 } from "@workspace/db";
 import { GitService } from "./gitService.js";
 import { getRunRepository } from "./repoResolver.js";
+import { loadSuggestionFiles } from "./suggestionFiles.js";
+import { filesToCommit } from "./suggestionFilesUtil.js";
 import { AIOrchestrator, SynthesisEngine } from "./aiService.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
 import { describeStack } from "./stackPromptBuilder.js";
@@ -125,9 +128,7 @@ export async function executeRun(runId: number): Promise<void> {
           ranked.map((s) => ({
             runId,
             agent: s.agent,
-            code: s.code,
             explanation: s.explanation,
-            filePath: s.filePath,
             language: s.language,
             score: s.score != null ? Math.round(s.score) : null,
             recommendation: s.recommendation ?? null,
@@ -136,6 +137,25 @@ export async function executeRun(runId: number): Promise<void> {
           })),
         )
         .returning();
+
+      // Persist each suggestion's change set (0022). Phase 0: one file each.
+      // suggestions.code/file_path are deprecated and no longer written.
+      const fileRows = inserted.flatMap((row, i) =>
+        (ranked[i]?.files ?? []).map((f) => ({
+          suggestionId: row.id,
+          seq: f.seq,
+          op: f.op,
+          filePath: f.filePath,
+          content: f.content,
+          hunks: (f.hunks ?? null) as typeof suggestionFilesTable.$inferInsert.hunks,
+          resolved: f.resolved,
+          applyStatus: f.applyStatus,
+          applyError: f.applyError ?? null,
+          linesAdded: f.linesAdded,
+          linesRemoved: f.linesRemoved,
+        })),
+      );
+      if (fileRows.length > 0) await db.insert(suggestionFilesTable).values(fileRows);
     }
 
     let prUrl: string | null = null;
@@ -155,7 +175,7 @@ export async function executeRun(runId: number): Promise<void> {
         commitHash = await git.commitChanges({
           branchName,
           message: `Blue Mantis: ${workItem.title}`,
-          files: [{ path: top.filePath, content: top.code }],
+          files: filesToCommit(top.files),
         });
         prUrl = await git.createPullRequest({
           title: `[Blue Mantis] ${workItem.title}`,
@@ -231,6 +251,9 @@ export async function commitFromSuggestion(
     .from(suggestionsTable)
     .where(and(eq(suggestionsTable.id, suggestionId), eq(suggestionsTable.runId, runId)));
   if (!sug) throw new RunError("Suggestion not found", 404);
+  // The change set lives in suggestion_files (0022), not sug.code/file_path.
+  const sugFiles = await loadSuggestionFiles(sug.id);
+  if (sugFiles.length === 0) throw new RunError("Suggestion has no files to commit.", 422);
 
   const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
   if (!workItem) throw new RunError("Work item not found", 404);
@@ -250,7 +273,7 @@ export async function commitFromSuggestion(
   const commitHash = await git.commitChanges({
     branchName,
     message: commitMessage ?? `Blue Mantis: ${workItem.title}`,
-    files: [{ path: sug.filePath, content: sug.code }],
+    files: filesToCommit(sugFiles),
   });
   const prUrl = await git.createPullRequest({
     title: `[Blue Mantis] ${workItem.title}`,

@@ -30,11 +30,31 @@ export interface Repository {
   createdAt: string;
 }
 
+export interface SuggestionFile {
+  seq: number;
+  op: 'create' | 'edit' | 'delete';
+  filePath: string;
+  content: string;
+  resolved: boolean;
+  applyStatus: 'pending' | 'applied' | 'failed';
+  applyError?: string | null;
+  linesAdded: number;
+  linesRemoved: number;
+}
+
+export interface SuggestionStats {
+  filesChanged: number;
+  added: number;
+  removed: number;
+}
+
 export interface CodeSuggestion {
   agent: 'claude' | 'openai' | 'copilot' | 'antigravity';
-  code: string;
+  /** The suggestion's change set. Phase 0: always exactly one file. */
+  files: SuggestionFile[];
+  valid: boolean;
+  stats: SuggestionStats;
   explanation: string;
-  filePath: string;
   language: string;
   score?: number;
   recommendation?: string;
@@ -429,9 +449,13 @@ export interface RunSuggestion {
   id: number;
   runId: number;
   agent: 'claude' | 'openai' | 'copilot' | 'antigravity';
-  code: string;
+  /** The change set (0022). Phase 0: one file. */
+  files: SuggestionFile[];
+  /** @deprecated (0022) — read `files`. Null for suggestions created after 0022. */
+  code: string | null;
   explanation: string;
-  filePath: string;
+  /** @deprecated (0022) — read `files`. */
+  filePath: string | null;
   language: string;
   score: number | null;
   recommendation: string | null;
