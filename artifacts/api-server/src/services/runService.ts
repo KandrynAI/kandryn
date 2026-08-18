@@ -13,6 +13,7 @@ import { loadSuggestionFiles } from "./suggestionFiles.js";
 import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
 import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
+import { runPlanning } from "./planningService.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import { getConfigs } from "./configService.js";
@@ -125,6 +126,44 @@ export async function executeRun(runId: number): Promise<void> {
     });
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
+
+    // Change plan (Phase 2 PR1): plan which files the change touches before
+    // generation. Tree-primary — the graph only enhances candidate quality when
+    // fresh, and its absence is not an error. Best-effort and non-blocking:
+    // planning never fails the run, and generation does not yet consume the plan
+    // (multi-file generation is a later PR). Needs the Anthropic key, so it is
+    // skipped when unset (the run would fail at generation anyway).
+    if (creds.ANTHROPIC_API_KEY) {
+      try {
+        const gitPlan = await GitService.forRepo(repo.id, {
+          githubToken: creds.GITHUB_TOKEN,
+          azureReposToken: creds.AZURE_REPOS_TOKEN,
+        });
+        const tree = await gitPlan.fetchFilePaths();
+        const graph =
+          repo.graphJson && isGraphUsable(repo.graphBuiltAt)
+            ? (repo.graphJson as unknown as GraphifyGraph)
+            : null;
+        const plan = await runPlanning({
+          runId,
+          workItem: {
+            title: workItem.title,
+            description: effectiveDescription,
+            acceptanceCriteria: devTask.acceptanceCriteria,
+          },
+          keywords,
+          stack,
+          tree,
+          graph,
+          graphBuiltAt: repo.graphBuiltAt ?? null,
+          anthropicApiKey: creds.ANTHROPIC_API_KEY,
+        });
+        logger.info({ runId, ...plan }, "Change plan produced");
+      } catch (e) {
+        logger.warn({ runId, err: e }, "Run: change planning failed — proceeding without a plan");
+      }
+    }
+
     const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader);
 
     // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
