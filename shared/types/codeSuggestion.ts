@@ -30,6 +30,12 @@ export interface SuggestionFile {
   /** The edit's search/replace hunks (Phase 1). Null for create/delete. */
   hunks?: EditHunk[] | null;
   /**
+   * Structured diff between the source and resolved content (Phase 1 PR2),
+   * computed server-side so the client never needs the original file. Null for a
+   * file that failed to apply.
+   */
+  diff?: DiffHunk[] | null;
+  /**
    * Git blob SHA of the source file read when the edit/delete was resolved
    * (Phase 1). Used to detect a branch that changed mid-run. Null for create.
    */
@@ -46,6 +52,27 @@ export interface SuggestionStats {
   filesChanged: number;
   added: number;
   removed: number;
+}
+
+/** One rendered line of a structured diff (Phase 1 PR2, computed server-side). */
+export interface DiffLine {
+  type: 'add' | 'del' | 'context';
+  oldNumber: number | null;
+  newNumber: number | null;
+  content: string;
+  /**
+   * Token-level [start, end) ranges on a changed line, computed with a word diff
+   * between the paired del/add line. Present only when a line was modified.
+   */
+  intraline?: Array<[number, number]>;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
 }
 
 export interface CodeSuggestion {
