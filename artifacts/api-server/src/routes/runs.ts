@@ -338,7 +338,10 @@ router.post("/runs/:id/plan/revise", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const result = await reviseAndRegenerate(params.data.id, req.userId!, body.data.files);
+    const result = await reviseAndRegenerate(params.data.id, req.userId!, body.data.files, {
+      teamId: req.teamId ?? null,
+      ipAddress: audit.getIp(req),
+    });
     res.status(202).json(result);
   } catch (err) {
     if (err instanceof RunError) {

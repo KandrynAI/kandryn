@@ -34,6 +34,12 @@ const ACTION_LABELS: Record<string, string> = {
   "run.committed": "Suggestion committed",
   "run.canceled": "Run canceled",
   "run.failed": "Run failed",
+  "plan.generated": "Plan generated",
+  "plan.edited": "Plan edited",
+  "plan.file_removed": "Plan file removed",
+  "plan.file_added": "Plan file added",
+  "plan.regenerated": "Plan regenerated",
+  "plan.failed": "Planning failed",
   "aegis.scan_run": "Aegis security scan",
   "aegis.finding_pushed": "Security finding pushed",
   "aegis.remediation_started": "Remediation started",
@@ -56,8 +62,15 @@ function categoryColor(action: string): string {
   if (action.includes("credential")) return "#d97706";
   if (action.startsWith("project") || action.startsWith("repository")) return "#0d9488";
   if (action.startsWith("run.")) return action === "run.failed" || action === "run.canceled" ? "#dc2626" : "#16a34a";
+  if (action.startsWith("plan.")) return action === "plan.failed" ? "#dc2626" : "#6366f1";
   if (action.startsWith("aegis") || action.startsWith("narratia") || action.startsWith("veria") || action.startsWith("tests")) return "#7c3aed";
   return "var(--c-ink-4)";
+}
+
+function baseName(v: unknown): string {
+  const s = String(v ?? "");
+  const i = s.lastIndexOf("/");
+  return i >= 0 ? s.slice(i + 1) : s;
 }
 
 function formatMetadata(action: string, meta: Record<string, unknown> | null): string {
@@ -86,6 +99,18 @@ function formatMetadata(action: string, meta: Record<string, unknown> | null): s
       return `gate: ${meta.gateDecision ?? ""}${meta.highCount ? ` · ${meta.highCount} high` : ""}`;
     case "narratia.runbook_generated":
       return `target: ${meta.target ?? ""}${meta.pushedUrl ? " · pushed" : ""}`;
+    case "plan.generated":
+      return `${meta.fileCount ?? 0} files · ${meta.candidateCount ?? 0} candidates · ${meta.retrievalMode ?? "?"} · ${meta.planningMs ?? 0}ms · ${Number(meta.inputTokens ?? 0) + Number(meta.outputTokens ?? 0)} tok`;
+    case "plan.file_removed":
+      return `removed ${baseName(meta.filePath)} · ${meta.inCandidates ? "was retrieved" : "not retrieved"}`;
+    case "plan.file_added":
+      return `added ${baseName(meta.filePath)} · ${meta.addedSource ?? "manual"} · ${meta.inCandidates ? "retrieval hit" : "retrieval miss"}`;
+    case "plan.edited":
+      return `revision ${meta.revision ?? ""} · ${meta.fileCount ?? 0} files`;
+    case "plan.regenerated":
+      return `revision ${meta.revision ?? ""}`;
+    case "plan.failed":
+      return `${meta.error ?? "no plan produced"}`;
     default:
       return Object.entries(meta)
         .slice(0, 3)
