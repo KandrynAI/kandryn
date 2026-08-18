@@ -773,8 +773,10 @@ function AegisFindingRow({
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--c-ink)" }}>{f.title}</div>
         <div style={{ fontSize: 12, color: "var(--c-ink-3)", lineHeight: 1.5, marginTop: 3 }}>{f.detail}</div>
-        {f.lineRef && (
-          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--c-ink-4)", marginTop: 4 }}>📍 {f.lineRef}</div>
+        {(f.filePath || f.lineRef) && (
+          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--c-ink-4)", marginTop: 4 }} title={f.filePath}>
+            📍 {f.filePath ? (f.filePath.split("/").pop() ?? f.filePath) : ""}{f.lineRef ? `:${f.lineRef.replace(/^L/, "")}` : ""}
+          </div>
         )}
         <button className="bm-ghost" onClick={() => setOpen((o) => !o)} style={{ border: "none", padding: "4px 0", color: "var(--c-ink-3)", fontSize: 12 }}>
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}Remediation
@@ -993,6 +995,9 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
   if (status !== "done" || !scan) return null;
 
   const blocked = scan.gateDecision === "blocked";
+  const unscanned = scan.unscannedFiles ?? [];
+  const filesTotal = scan.filesTotal ?? scan.filesScanned ?? undefined;
+  const coverage = filesTotal != null ? `${scan.filesScanned ?? 0}/${filesTotal} file(s) scanned` : null;
   return (
     <div style={{ border: "1px solid var(--c-border)", borderRadius: 4, background: "var(--c-bg)", padding: "10px 14px" }}>
       {header()}
@@ -1005,13 +1010,20 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
           </div>
           <div style={{ fontSize: 13, color: "var(--c-red)", marginTop: 4 }}>{scan.gateReason}</div>
           <div style={{ fontSize: 12, fontFamily: "var(--mono)", color: "var(--c-red)", marginTop: 6 }}>
-            {scan.criticalCount} critical · {scan.highCount} high · resolve to unblock PR
+            {scan.criticalCount} critical · {scan.highCount} high{coverage ? ` · ${coverage}` : ""} · resolve to unblock PR
           </div>
+          {unscanned.length > 0 && (
+            <div style={{ fontSize: 12, color: "var(--c-red)", marginTop: 8, borderTop: "1px solid var(--c-red)", paddingTop: 6 }}>
+              <strong>Could not scan {unscanned.length} file(s)</strong> — an unscanned file is not a clean file, so the gate fails closed. Re-run Aegis to retry:
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, marginTop: 3 }}>{unscanned.join(", ")}</div>
+            </div>
+          )}
         </div>
       ) : (
-        <div style={{ background: "var(--c-green-bg)", border: "1px solid var(--c-green)", padding: "10px 14px", borderRadius: 4, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ background: "var(--c-green-bg)", border: "1px solid var(--c-green)", padding: "10px 14px", borderRadius: 4, marginBottom: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <ShieldCheck size={14} style={{ color: "var(--c-green)" }} />
           <span style={{ fontSize: 13, color: "var(--c-green)" }}>Security gate approved · {scan.findings.length} finding(s)</span>
+          {coverage && <span style={{ fontSize: 12, fontFamily: "var(--mono)", color: "var(--c-green)", marginLeft: "auto" }}>{coverage}</span>}
         </div>
       )}
 

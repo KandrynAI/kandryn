@@ -17,7 +17,7 @@ import {
 } from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
 import { getProjectRepository, getRunRepository } from "../services/repoResolver.js";
-import { suggestionPrimaryFile, loadFilesForSuggestions } from "../services/suggestionFiles.js";
+import { suggestionPrimaryFile, loadFilesForSuggestions, loadSuggestionFiles } from "../services/suggestionFiles.js";
 import { syncProject } from "../services/syncService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
 import type { AegisScanResult } from "../../../../shared/types/aegisResult.js";
@@ -635,16 +635,18 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     return;
   }
 
-  const aegisPrimary = await suggestionPrimaryFile(suggestion.id);
+  // Every changed file is scanned independently (fail-closed gate). Deletions
+  // have no content to scan and are excluded from coverage.
+  const scanFiles = (await loadSuggestionFiles(suggestion.id))
+    .filter((f) => f.op !== "delete" && f.content)
+    .map((f) => ({ filePath: f.filePath, code: f.content }));
   try {
     const scan = await runAegisScan(
       {
         itemTitle: workItem?.title ?? "Untitled work item",
         itemType: workItem?.itemType ?? workItem?.type ?? "task",
         acceptanceCriteria,
-        filePath: aegisPrimary?.filePath ?? "",
-        code: aegisPrimary?.code ?? "",
-        language: suggestion.language ?? undefined,
+        files: scanFiles,
         stackDesc: run.stackDesc ?? undefined,
       },
       { anthropicApiKey: creds.ANTHROPIC_API_KEY },
@@ -684,16 +686,25 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
       .set({ securityScan: scan, securityScanStatus: "done", securityGate: scan.gateDecision })
       .where(eq(runsTable.id, runId));
 
-    // Post the GitHub commit status check (the stop-gate signal).
+    // Post the GitHub commit status check (the stop-gate signal). An unscanned
+    // file blocks and its paths go in the check output — never a silent pass.
     if (repo && repo.url && run.commitHash) {
+      const unscannedNames = scan.unscannedFiles.map((p) => p.split("/").pop()).join(", ");
       const gateDesc =
         scan.gateDecision === "blocked"
-          ? `Blocked: ${scan.highCount} high, ${scan.criticalCount} critical finding(s)`
-          : `Approved: ${scan.findings.length} finding(s), none critical/high`;
+          ? scan.unscannedFiles.length > 0
+            ? `Blocked: could not scan ${scan.unscannedFiles.length}/${scan.filesTotal} file(s): ${unscannedNames}`
+            : `Blocked: ${scan.highCount} high, ${scan.criticalCount} critical across ${scan.filesScanned} file(s)`
+          : `Approved: ${scan.filesScanned}/${scan.filesTotal} file(s) scanned, ${scan.findings.length} finding(s)`;
       await postSecurityStatus(repo.url, run.commitHash, scan.gateDecision, gateDesc, creds.GITHUB_TOKEN);
     }
 
-    req.log.info({ runId, gate: scan.gateDecision, findings: scan.findings.length }, "Aegis scan completed");
+    req.log.info(
+      { runId, gate: scan.gateDecision, findings: scan.findings.length, filesScanned: scan.filesScanned, filesTotal: scan.filesTotal, unscanned: scan.unscannedFiles.length },
+      "Aegis scan completed",
+    );
+    // Coverage is auditable after the fact: filesScanned/filesTotal prove the
+    // control ran on every changed file, not just asserted in the moment.
     audit.log({
       userId: req.userId,
       teamId: req.teamId ?? null,
@@ -704,6 +715,9 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
         gateDecision: scan.gateDecision,
         criticalCount: scan.criticalCount,
         highCount: scan.highCount,
+        filesScanned: scan.filesScanned,
+        filesTotal: scan.filesTotal,
+        unscannedFiles: scan.unscannedFiles,
       },
       ipAddress: audit.getIp(req),
       userAgent: req.headers["user-agent"],
