@@ -7,6 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { DiffViewer } from "@/components/diff/DiffViewer";
+import { PlanPanel } from "@/components/plan/PlanPanel";
+import { EditPlanDialog } from "@/components/plan/EditPlanDialog";
 import { agentDisplay } from "@/lib/agents";
 import { useTeam } from "@/context/TeamContext";
 
@@ -91,6 +93,7 @@ export default function RunDetailPage() {
   const [loading, setLoading] = useState(true);
   const [committingId, setCommittingId] = useState<number | null>(null);
   const [staleError, setStaleError] = useState<string | null>(null);
+  const [editPlanOpen, setEditPlanOpen] = useState(false);
   const [rerunning, setRerunning] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [aegisLoading, setAegisLoading] = useState(false);
@@ -301,6 +304,7 @@ export default function RunDetailPage() {
   }
 
   const { run, suggestions } = data;
+  const plan = data.plan ?? null;
   // Test cases can only be pushed when the work item is linked to a Jira/ADO
   // story (has an externalId + a PLM source). Mirrors the server guard in
   // routes/tests.ts so the Push button is disabled instead of hitting a 422.
@@ -313,6 +317,24 @@ export default function RunDetailPage() {
   const committedSug = suggestions.find((s) => s.id === committedId) ?? null;
   const ordered = [...suggestions].sort((a, b) => (a.id === committedId ? -1 : b.id === committedId ? 1 : 0));
   const inProgress = IN_PROGRESS.includes(run.status);
+  const planReady = plan != null && plan.status !== "failed" && plan.files.length > 0;
+  const planNode = (mode: "full" | "summary") =>
+    planReady ? <PlanPanel plan={plan!} mode={mode} onEdit={() => setEditPlanOpen(true)} editable={!isCommitted} /> : null;
+  const planFailedNode =
+    plan != null && plan.status === "failed" ? (
+      <div style={{ border: "1px solid var(--c-amber)", background: "var(--c-amber-bg)", borderRadius: 6, padding: "10px 14px", marginBottom: 16 }}>
+        <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--c-ink)" }}>Planning did not produce a plan</div>
+        <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-2)", marginTop: 4, lineHeight: 1.5 }}>
+          {plan.error || "The change was generated without a plan."} You can build one by hand or re-run.
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button className="bm-ghost" onClick={() => setEditPlanOpen(true)}><FileText size={12} />Edit plan</button>
+          <button className="bm-ghost" onClick={onReRun} disabled={rerunning}>
+            {rerunning ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}Re-run
+          </button>
+        </div>
+      </div>
+    ) : null;
   const infoCells: [string, string][] = [
     ["Status", STATUS_LABEL[run.status]],
     ["Trigger", run.trigger === "scheduled" ? "Scheduled" : "Manual"],
@@ -420,7 +442,9 @@ export default function RunDetailPage() {
         )}
 
         {inProgress ? (
-          <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {run.status !== "scheduled" && planNode("full")}
+            {run.status !== "scheduled" && planFailedNode}
             {run.status === "scheduled" ? (
               <div style={{ border: "1px solid var(--c-border)", borderRadius: 6, background: "var(--c-surface)", padding: "14px 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-base)", fontWeight: 600, color: "var(--c-ink)" }}>
@@ -434,12 +458,15 @@ export default function RunDetailPage() {
                 </p>
               </div>
             ) : (
-              <>
+              <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 16 }}>
+                {!plan && (
+                  <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", animation: "bmblink 1.4s infinite" }}>Reading repository…</div>
+                )}
                 {["claude", "openai"].map((agent) => (
                   <div key={agent}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                       <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}>{agentDisplay(agent).name}</span>
-                      <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>generating…</span>
+                      <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>{planReady ? "implementing…" : "generating…"}</span>
                     </div>
                     <div style={{ height: 4, background: "var(--c-raised)", borderRadius: 2 }}>
                       <div style={{ height: 4, background: "var(--c-blue)", borderRadius: 2, animation: "bmbar 4s ease-out forwards" }} />
@@ -449,13 +476,17 @@ export default function RunDetailPage() {
                 <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", animation: "bmblink 1.4s infinite", marginTop: 4 }}>
                   Running Raptia and Fovea in parallel…
                 </div>
-              </>
+              </div>
             )}
           </div>
         ) : suggestions.length === 0 ? (
-          <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-4)" }}>No suggestions were produced for this run.</p>
+          <div>
+            {planNode("summary") ?? planFailedNode}
+            <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-4)" }}>No suggestions were produced for this run.</p>
+          </div>
         ) : (
           <div>
+            {planNode("summary")}
             <ConfidenceStrip suggestions={suggestions} />
             <DiffViewer
               suggestions={ordered}
@@ -469,6 +500,7 @@ export default function RunDetailPage() {
               onReview={onReview}
               reviewing={reviewing}
               renderScoreAnalysis={(s) => (s.scoreBreakdown ? <ScoreAnalysis breakdown={s.scoreBreakdown} /> : null)}
+              plannedPaths={planReady ? plan!.files.map((f) => f.filePath) : undefined}
             />
           </div>
         )}
@@ -501,6 +533,16 @@ export default function RunDetailPage() {
             initial={committedSug ? { testCases: committedSug.testCases ?? [], testScript: committedSug.testScript ?? null } : null}
           />
         </div>
+      )}
+
+      {plan && (
+        <EditPlanDialog
+          runId={runId}
+          plan={plan}
+          open={editPlanOpen}
+          onOpenChange={setEditPlanOpen}
+          onSaved={() => load(true)}
+        />
       )}
     </div>
   );

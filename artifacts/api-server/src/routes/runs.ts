@@ -2,7 +2,9 @@ import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, runsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
 import { z } from "zod/v4";
-import { executeRun, commitFromSuggestion, RunError } from "../services/runService.js";
+import { executeRun, commitFromSuggestion, reviseAndRegenerate, RunError } from "../services/runService.js";
+import { loadRunPlanDTO } from "../services/planningService.js";
+import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
 import { runVeriaReview } from "../services/veriaService.js";
 import { runAegisScan } from "../services/aegisService.js";
@@ -253,10 +255,12 @@ router.get("/runs/:id", async (req, res): Promise<void> => {
       return;
     }
   }
+  // Only the current revision's suggestions (superseded ones from an earlier
+  // plan revision are retained but not shown — Phase 2 PR3).
   const suggestions = await db
     .select()
     .from(suggestionsTable)
-    .where(eq(suggestionsTable.runId, run.id))
+    .where(and(eq(suggestionsTable.runId, run.id), eq(suggestionsTable.superseded, false)))
     .orderBy(desc(suggestionsTable.score));
 
   // Minimal work-item summary so the client can gate PLM actions (e.g. pushing
@@ -267,11 +271,82 @@ router.get("/runs/:id", async (req, res): Promise<void> => {
     .where(eq(tasksTable.id, run.workItemId));
 
   const detailFiles = await loadFilesForSuggestions(suggestions.map((s) => s.id));
+  const plan = await loadRunPlanDTO(run.id);
   res.json({
     run,
     suggestions: suggestions.map((s) => ({ ...s, files: detailFiles[s.id] ?? [] })),
     workItem: workItem ?? null,
+    plan,
   });
+});
+
+// ---------------------------------------------------------------------------
+// GET /runs/:id/tree — repository path list, for plan-edit autocomplete (§3.2)
+// ---------------------------------------------------------------------------
+router.get("/runs/:id/tree", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, params.data.id));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (run.userId !== req.userId) {
+    res.status(403).json({ error: "Access denied." });
+    return;
+  }
+  const repo = await getRunRepository(run);
+  if (!repo?.url) {
+    res.json({ paths: [] });
+    return;
+  }
+  const creds = await getConfigs(run.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const git = await GitService.forRepo(repo.id, { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN });
+  const paths = await git.fetchFilePaths();
+  res.json({ paths });
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/plan/revise — apply plan edits → new revision → regenerate (§3.2)
+// ---------------------------------------------------------------------------
+const RevisePlanBody = z.object({
+  files: z
+    .array(
+      z.object({
+        op: z.enum(["create", "edit", "delete"]),
+        path: z.string().min(1),
+        rationale: z.string().min(1),
+        symbols: z.array(z.string()).optional(),
+        addedByUser: z.boolean().optional(),
+        addedSource: z.enum(["autocomplete", "manual"]).optional(),
+      }),
+    )
+    .min(1),
+});
+router.post("/runs/:id/plan/revise", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const body = RevisePlanBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "A plan needs at least one file, each with a path and rationale." });
+    return;
+  }
+  try {
+    const result = await reviseAndRegenerate(params.data.id, req.userId!, body.data.files);
+    res.status(202).json(result);
+  } catch (err) {
+    if (err instanceof RunError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { eq } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, changePlansTable, changePlanFilesTable } from "@workspace/db";
+import type { ChangePlanRow, ChangePlanFileRow } from "@workspace/db";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
-import type { ChangePlan, PlannedFile, PlanCandidateFile, RetrievalMode, PlanStatus } from "../../../../shared/types/changePlan.js";
+import type { ChangePlan, ChangePlanOp, PlannedFile, PlanCandidateFile, RetrievalMode, PlanStatus } from "../../../../shared/types/changePlan.js";
 import type { StackProfile } from "../stack/detector.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import { queryGraph, isGraphUsable } from "./graphifyService.js";
@@ -209,6 +210,142 @@ export async function recordContextTruncation(planId: number, truncated: string[
   const [row] = await db.select({ notes: changePlansTable.notes }).from(changePlansTable).where(eq(changePlansTable.id, planId));
   const merged = [row?.notes, `Context truncated for: ${truncated.join(", ")}.`].filter(Boolean).join(" ");
   await db.update(changePlansTable).set({ notes: merged }).where(eq(changePlansTable.id, planId));
+}
+
+// ---------------------------------------------------------------------------
+// Plan editing (Phase 2 PR3): load the current plan; write a new revision.
+// ---------------------------------------------------------------------------
+
+/** The current (non-superseded, highest-revision) plan row for a run, or null. */
+export async function loadCurrentPlanRow(runId: number): Promise<ChangePlanRow | null> {
+  const [row] = await db
+    .select()
+    .from(changePlansTable)
+    .where(and(eq(changePlansTable.runId, runId), eq(changePlansTable.superseded, false)))
+    .orderBy(desc(changePlansTable.revision))
+    .limit(1);
+  return row ?? null;
+}
+
+/** A plan's files, in dependency (seq) order. */
+export async function loadPlanFiles(planId: number): Promise<ChangePlanFileRow[]> {
+  return db.select().from(changePlanFilesTable).where(eq(changePlanFilesTable.planId, planId)).orderBy(changePlanFilesTable.seq);
+}
+
+export interface RunPlanFileDTO {
+  id: number;
+  seq: number;
+  op: "create" | "edit" | "delete";
+  filePath: string;
+  rationale: string;
+  symbols: string[] | null;
+  addedByUser: boolean;
+  addedSource: "autocomplete" | "manual" | null;
+  inCandidates: boolean | null;
+}
+export interface RunPlanDTO {
+  id: number;
+  revision: number;
+  status: PlanStatus;
+  notes: string | null;
+  retrievalMode: RetrievalMode | null;
+  graphAgeHours: number | null;
+  error: string | null;
+  files: RunPlanFileDTO[];
+}
+
+/** The current plan for a run, serialised for the client (null if none). */
+export async function loadRunPlanDTO(runId: number): Promise<RunPlanDTO | null> {
+  const row = await loadCurrentPlanRow(runId);
+  if (!row) return null;
+  const files = await loadPlanFiles(row.id);
+  return {
+    id: row.id,
+    revision: row.revision,
+    status: row.status,
+    notes: row.notes,
+    retrievalMode: row.retrievalMode,
+    graphAgeHours: row.graphAgeHours,
+    error: row.error,
+    files: files.map((f) => ({
+      id: f.id,
+      seq: f.seq,
+      op: f.op,
+      filePath: f.filePath,
+      rationale: f.rationale,
+      symbols: f.symbols,
+      addedByUser: f.addedByUser,
+      addedSource: f.addedSource,
+      inCandidates: f.inCandidates,
+    })),
+  };
+}
+
+/** One file in a plan-revision request from the client (§3.2 Edit plan). */
+export interface RevisionFileInput {
+  op: ChangePlanOp;
+  path: string;
+  rationale: string;
+  symbols?: string[];
+  addedByUser?: boolean;
+  addedSource?: "autocomplete" | "manual";
+}
+
+/**
+ * Write a new plan revision from user edits (§3.2): supersede the prior plan and
+ * insert revision + 1 (status 'edited'), carrying the retrieval provenance
+ * forward so reporting stays continuous. Returns the new plan for regeneration.
+ * Does NOT touch suggestions — the caller supersedes those.
+ */
+export async function createPlanRevision(
+  prior: ChangePlanRow,
+  files: RevisionFileInput[],
+): Promise<{ planId: number; revision: number; plan: ChangePlan }> {
+  const ordered = orderPlannedFiles(files.map((f) => ({ op: f.op, path: f.path, rationale: f.rationale, symbols: f.symbols })));
+  const metaByPath = new Map(files.map((f) => [f.path, f]));
+
+  await db.update(changePlansTable).set({ superseded: true }).where(eq(changePlansTable.id, prior.id));
+
+  const [planRow] = await db
+    .insert(changePlansTable)
+    .values({
+      runId: prior.runId,
+      revision: prior.revision + 1,
+      superseded: false,
+      status: "edited",
+      model: prior.model,
+      candidateFiles: prior.candidateFiles,
+      notes: null,
+      retrievalMode: prior.retrievalMode,
+      graphBuiltAt: prior.graphBuiltAt,
+      graphAgeHours: prior.graphAgeHours,
+      planningMs: null,
+      retrievalMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      error: null,
+    })
+    .returning();
+
+  const candidatePaths = new Set((prior.candidateFiles ?? []).map((c) => c.path));
+  await db.insert(changePlanFilesTable).values(
+    ordered.map((f, seq) => {
+      const meta = metaByPath.get(f.path);
+      return {
+        planId: planRow.id,
+        seq,
+        op: f.op,
+        filePath: f.path,
+        rationale: f.rationale,
+        symbols: f.symbols ?? null,
+        addedByUser: meta?.addedByUser ?? false,
+        addedSource: meta?.addedSource ?? null,
+        inCandidates: candidatePaths.has(f.path),
+      };
+    }),
+  );
+
+  return { planId: planRow.id, revision: planRow.revision, plan: { files: ordered, notes: undefined } };
 }
 
 // ---------------------------------------------------------------------------
