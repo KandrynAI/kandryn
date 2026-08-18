@@ -11,6 +11,7 @@ import {
 import { z } from "zod/v4";
 import { getConfigs } from "../services/configService.js";
 import { getProjectRepository } from "../services/repoResolver.js";
+import { suggestionPrimaryFile } from "../services/suggestionFiles.js";
 import { GitService } from "../services/gitService.js";
 import { generateTests, AIFormatError } from "../services/aiService.js";
 import { createPlmTestCase } from "../services/plmWrite.js";
@@ -119,6 +120,8 @@ router.post("/work-items/:id/tests/generate", async (req, res): Promise<void> =>
   }
 
   const stack = (repo?.stackProfile as StackProfile) ?? null;
+  // The committed suggestion's code lives in suggestion_files (0022).
+  const committedPrimary = await suggestionPrimaryFile(committed.suggestion.id);
   try {
     const tests = await generateTests(
       {
@@ -126,7 +129,7 @@ router.post("/work-items/:id/tests/generate", async (req, res): Promise<void> =>
         acceptanceCriteria: workItem.acceptanceCriteria
           ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
           : [],
-        suggestionCode: committed.suggestion.code,
+        suggestionCode: committedPrimary?.code ?? "",
         suggestionExplanation: committed.suggestion.explanation,
         framework: stack?.testFramework ?? "",
       },

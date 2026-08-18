@@ -65,9 +65,13 @@ export const suggestionsTable = pgTable(
       .notNull()
       .references(() => runsTable.id, { onDelete: "cascade" }),
     agent: text("agent").$type<"claude" | "openai" | "copilot" | "antigravity">().notNull(),
-    code: text("code").notNull(),
+    // @deprecated (0022) — the change set now lives in suggestion_files (one row
+    // per file). Nullable and no longer written; kept for rollback safety. Read
+    // a suggestion's files via `suggestion_files WHERE suggestion_id=…`.
+    code: text("code"),
     explanation: text("explanation").notNull(),
-    filePath: text("file_path").notNull(),
+    // @deprecated (0022) — see `code`. Resolve the file(s) via suggestion_files.
+    filePath: text("file_path"),
     language: text("language").notNull(),
     score: integer("score"),
     recommendation: text("recommendation"),

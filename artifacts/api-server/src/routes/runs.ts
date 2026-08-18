@@ -15,6 +15,7 @@ import {
 } from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
 import { getProjectRepository, getRunRepository } from "../services/repoResolver.js";
+import { suggestionPrimaryFile, loadFilesForSuggestions } from "../services/suggestionFiles.js";
 import { syncProject } from "../services/syncService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
 import type { AegisScanResult } from "../../../../shared/types/aegisResult.js";
@@ -192,7 +193,11 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
     .from(suggestionsTable)
     .where(eq(suggestionsTable.runId, run.id))
     .orderBy(desc(suggestionsTable.score));
-  res.status(201).json({ run: finished, suggestions });
+  const inlineFiles = await loadFilesForSuggestions(suggestions.map((s) => s.id));
+  res.status(201).json({
+    run: finished,
+    suggestions: suggestions.map((s) => ({ ...s, files: inlineFiles[s.id] ?? [] })),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -261,7 +266,12 @@ router.get("/runs/:id", async (req, res): Promise<void> => {
     .from(tasksTable)
     .where(eq(tasksTable.id, run.workItemId));
 
-  res.json({ run, suggestions, workItem: workItem ?? null });
+  const detailFiles = await loadFilesForSuggestions(suggestions.map((s) => s.id));
+  res.json({
+    run,
+    suggestions: suggestions.map((s) => ({ ...s, files: detailFiles[s.id] ?? [] })),
+    workItem: workItem ?? null,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -353,9 +363,10 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
     );
     req.log.info({ runId: params.data.id, ...result }, "Run suggestion committed");
     const [committedSuggestion] = await db
-      .select({ agent: suggestionsTable.agent, score: suggestionsTable.score, filePath: suggestionsTable.filePath })
+      .select({ agent: suggestionsTable.agent, score: suggestionsTable.score })
       .from(suggestionsTable)
       .where(eq(suggestionsTable.id, parsed.data.suggestionId));
+    const committedPrimary = await suggestionPrimaryFile(parsed.data.suggestionId);
     audit.log({
       userId: req.userId,
       teamId: req.teamId ?? null,
@@ -365,7 +376,7 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
       metadata: {
         agent: committedSuggestion?.agent,
         score: committedSuggestion?.score,
-        filePath: committedSuggestion?.filePath,
+        filePath: committedPrimary?.filePath ?? null,
         prUrl: result.prUrl,
       },
       ipAddress: audit.getIp(req),
@@ -446,6 +457,8 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     return;
   }
 
+  // The change set lives in suggestion_files (0022); use the primary file.
+  const veriaPrimary = await suggestionPrimaryFile(suggestion.id);
   try {
     const review = await runVeriaReview(
       {
@@ -453,8 +466,8 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
         itemType: workItem?.itemType ?? workItem?.type ?? "task",
         acceptanceCriteria,
         suggestionAgent: suggestion.agent,
-        suggestionFilePath: suggestion.filePath,
-        suggestionCode: suggestion.code,
+        suggestionFilePath: veriaPrimary?.filePath ?? "",
+        suggestionCode: veriaPrimary?.code ?? "",
       },
       { anthropicApiKey: creds.ANTHROPIC_API_KEY },
     );
@@ -544,14 +557,15 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     return;
   }
 
+  const aegisPrimary = await suggestionPrimaryFile(suggestion.id);
   try {
     const scan = await runAegisScan(
       {
         itemTitle: workItem?.title ?? "Untitled work item",
         itemType: workItem?.itemType ?? workItem?.type ?? "task",
         acceptanceCriteria,
-        filePath: suggestion.filePath,
-        code: suggestion.code,
+        filePath: aegisPrimary?.filePath ?? "",
+        code: aegisPrimary?.code ?? "",
         language: suggestion.language ?? undefined,
         stackDesc: run.stackDesc ?? undefined,
       },
@@ -721,6 +735,7 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
   const itemKey = workItem?.externalId ?? `RUN-${runId}`;
   const branchName = `task/${run.workItemId}`;
 
+  const narratiaPrimary = await suggestionPrimaryFile(suggestion.id);
   try {
     const result = await runNarratia(
       {
@@ -729,8 +744,8 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
         itemType: workItem?.itemType ?? workItem?.type ?? "task",
         itemDescription: workItem?.description ?? undefined,
         acceptanceCriteria,
-        filePath: suggestion.filePath,
-        code: suggestion.code,
+        filePath: narratiaPrimary?.filePath ?? "",
+        code: narratiaPrimary?.code ?? "",
         language: suggestion.language ?? undefined,
         stackDesc: run.stackDesc ?? undefined,
         branchName,

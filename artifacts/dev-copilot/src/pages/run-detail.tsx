@@ -1226,7 +1226,7 @@ function SuggestionCard({
           <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, background: "var(--c-blue)", color: "#fff", padding: "2px 6px", borderRadius: 2, letterSpacing: "0.05em" }}>Recommended</span>
         ) : null}
         {s.score != null && <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>score {s.score}/10</span>}
-        <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>{s.filePath}</span>
+        <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>{s.files?.[0]?.filePath ?? s.filePath}</span>
         {!isCommitted && (
           <button className="bm-primary" onClick={onCommit} disabled={disabled}>
             {committing ? <Loader2 size={12} className="animate-spin" /> : <GitCommit size={12} />}Commit
@@ -1258,7 +1258,7 @@ function SuggestionCard({
       )}
 
       <pre style={{ margin: 0, padding: "12px 14px", fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", lineHeight: 1.6, overflow: "auto", background: "var(--c-raised)", color: "var(--c-ink-2)" }}>
-        <code>{s.code}</code>
+        <code>{s.files?.[0]?.content ?? s.code}</code>
       </pre>
 
       {s.scoreBreakdown && <ScoreAnalysis breakdown={s.scoreBreakdown} />}
