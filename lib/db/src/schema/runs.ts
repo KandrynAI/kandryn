@@ -43,6 +43,9 @@ export interface PersistedAegisFinding {
   id: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
   owasp: string;
+  /** Changed file this finding is in (assigned from the scanned file). Optional
+   *  so legacy single-file scan rows still parse. */
+  filePath?: string;
   title: string;
   detail: string;
   lineRef?: string;
@@ -63,7 +66,12 @@ export interface PersistedAegisScanResult {
   lowCount: number;
   gateDecision: "approved" | "blocked";
   gateReason: string;
-  scannedFile: string;
+  // Per-file coverage (fail-closed gate). Optional so legacy single-file scan
+  // rows (which stored `scannedFile`) still parse.
+  scannedFiles?: string[];
+  unscannedFiles?: string[];
+  filesTotal?: number;
+  filesScanned?: number;
   generatedAt: string;
 }
 

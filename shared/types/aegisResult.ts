@@ -17,6 +17,10 @@ export interface AegisFinding {
   id: string; // e.g. "aegis-001"
   severity: SecuritySeverity;
   owasp: OwaspCategory;
+  /** The changed file this finding is in — assigned server-side from the file
+   *  that was scanned (never model-tagged), so it always maps to a real file in
+   *  the change set. Empty only on legacy single-file scans. */
+  filePath: string;
   title: string; // max 8 words
   detail: string; // 2-3 sentences, code-specific
   lineRef?: string; // e.g. "src/payments.ts:L42"
@@ -43,6 +47,11 @@ export interface AegisScanResult {
   lowCount: number;
   gateDecision: 'approved' | 'blocked';
   gateReason: string; // one sentence explaining the decision
-  scannedFile: string; // file path that was scanned
+  // Per-file coverage (Phase 2 post-commit): every changed file gets an
+  // independent scan. The gate FAILS CLOSED — an unscanned file blocks.
+  scannedFiles: string[]; // files that scanned cleanly
+  unscannedFiles: string[]; // files whose scan errored/timed out — force a block
+  filesTotal: number; // changed files that should have been scanned
+  filesScanned: number; // == scannedFiles.length
   generatedAt: string; // ISO timestamp
 }

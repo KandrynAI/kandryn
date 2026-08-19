@@ -8,15 +8,27 @@ import type {
   OwaspCategory,
 } from "../../../../shared/types/aegisResult.js";
 
+/** One changed file to scan independently. */
+export interface AegisScanFile {
+  filePath: string;
+  code: string;
+  language?: string;
+}
+
 export interface AegisInput {
   itemTitle: string;
   itemType: string;
   acceptanceCriteria: string[];
-  filePath: string;
-  code: string;
-  language?: string;
+  /** The committed change set — every file is scanned in its own request. */
+  files: AegisScanFile[];
   stackDesc?: string;
 }
+
+// A stop gate must give every changed file independent attention: a per-file
+// scan makes "no findings" mean "examined and clean", never "crowded out of one
+// big prompt". It is also the defensible control statement — every changed file
+// received an independent security scan.
+const PER_FILE_TIMEOUT_MS = 90_000;
 
 const FindingSchema = z.object({
   id: z.string().optional(),
@@ -42,20 +54,20 @@ function extractJson(raw: string): unknown {
   return JSON.parse(cleaned);
 }
 
-const AEGIS_PROMPT = (input: AegisInput): string => `
+const PER_FILE_PROMPT = (item: { itemTitle: string; stackDesc?: string }, file: AegisScanFile): string => `
 You are Aegis, a senior application security engineer.
-Your role is to scan committed code changes for security vulnerabilities.
+Your role is to scan ONE committed file for security vulnerabilities.
 
-Work item: ${input.itemTitle}
-File: ${input.filePath}
-Stack: ${input.stackDesc ?? "unknown"}
+Work item: ${item.itemTitle}
+File: ${file.filePath}
+Stack: ${item.stackDesc ?? "unknown"}
 
 Committed code:
-\`\`\`${input.language ?? ""}
-${input.code.slice(0, 8000)}
+\`\`\`${file.language ?? ""}
+${file.code.slice(0, 8000)}
 \`\`\`
 
-Perform a thorough security review. Check for:
+Perform a thorough security review of THIS FILE ONLY. Check for:
 - Injection vulnerabilities (SQL, NoSQL, command, LDAP, XPath)
 - Authentication and authorisation flaws
 - Hardcoded secrets, API keys, or credentials
@@ -80,50 +92,70 @@ Severity definitions:
 Return ONLY a JSON object. No preamble. No markdown.
 
 {
-  "summary": "2-3 sentences. Overall security posture of this change.",
+  "summary": "1-2 sentences on this file's security posture.",
   "findings": [
     {
-      "id": "aegis-001",
       "severity": "critical|high|medium|low|info",
       "owasp": "A03:Injection",
       "title": "Max 8 words describing the issue",
       "detail": "2-3 sentences. Reference specific code.",
-      "lineRef": "src/file.ts:L42",
+      "lineRef": "L42",
       "remediation": "1-2 sentences. Concrete fix.",
       "cveRef": "CVE-XXXX-XXXX (only if genuinely applicable)"
     }
-  ],
-  "gateDecision": "approved|blocked",
-  "gateReason": "One sentence. Blocked if any critical or high findings exist."
+  ]
 }
 
 Rules:
-- If no vulnerabilities found: return empty findings array and approved gate
-- gateDecision MUST be "blocked" if severity is critical or high
-- gateDecision is "approved" if all findings are medium, low, or info
-- cveRef: omit the field entirely if not applicable (do not guess CVEs)
+- If no vulnerabilities: return an empty findings array.
+- lineRef is a line number within THIS file (e.g. "L42"); omit if unknown.
+- cveRef: omit the field entirely if not applicable (do not guess CVEs).
 - Return valid JSON only. No trailing commas.
 `;
 
-/**
- * Run the Aegis security scan. Uses the user's Anthropic key (per-user creds,
- * like the rest of the pipeline) and the claude-fable-5 model. Throws on an
- * unparseable/invalid response so the route can mark the scan failed. The gate
- * decision is enforced in code regardless of the model's own gateDecision.
- */
-export async function runAegisScan(
-  input: AegisInput,
-  creds: { anthropicApiKey?: string },
-): Promise<AegisScanResult> {
-  const client = new Anthropic({ apiKey: creds.anthropicApiKey });
-
-  const response = await client.messages.create({
-    // claude-fable-5 (Mythos-class) — passed as a string literal; the SDK
-    // accepts arbitrary model ids.
-    model: "claude-fable-5",
-    max_tokens: 2000,
-    messages: [{ role: "user", content: AEGIS_PROMPT(input) }],
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`scan timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
   });
+}
+
+/** The leading path token of a lineRef, if it carries one (for reliability logging). */
+function lineRefPath(lineRef: string | undefined): string | null {
+  if (!lineRef) return null;
+  const head = lineRef.split(":")[0]?.trim() ?? "";
+  return head.includes("/") || /\.[a-z0-9]+$/i.test(head) ? head : null;
+}
+
+export interface PerFileScan {
+  filePath: string;
+  summary: string;
+  findings: Array<Omit<AegisFinding, "id">>;
+}
+
+/** Scan a single file. Throws (→ counted as unscanned) on error/timeout/parse-fail. */
+async function scanOneFile(
+  client: Anthropic,
+  item: { itemTitle: string; stackDesc?: string },
+  file: AegisScanFile,
+): Promise<PerFileScan> {
+  const response = await withTimeout(
+    client.messages.create({
+      model: "claude-fable-5",
+      max_tokens: 2000,
+      messages: [{ role: "user", content: PER_FILE_PROMPT(item, file) }],
+    }),
+    PER_FILE_TIMEOUT_MS,
+  );
 
   const raw = response.content
     .filter((b) => b.type === "text")
@@ -131,45 +163,101 @@ export async function runAegisScan(
     .join("")
     .trim();
 
-  let parsed: z.infer<typeof ScanSchema>;
-  try {
-    parsed = ScanSchema.parse(extractJson(raw));
-  } catch (err) {
-    logger.warn({ err }, "Aegis returned unparseable/invalid JSON");
-    throw new Error(`Aegis returned unparseable JSON: ${raw.slice(0, 200)}`);
-  }
+  const parsed = ScanSchema.parse(extractJson(raw));
 
-  // Assign sequential IDs if the model omitted them.
-  const findings: AegisFinding[] = parsed.findings.map((f, i) => ({
-    id: f.id ?? `aegis-${String(i + 1).padStart(3, "0")}`,
-    severity: f.severity as SecuritySeverity,
-    owasp: f.owasp as OwaspCategory,
-    title: f.title,
-    detail: f.detail,
-    lineRef: f.lineRef,
-    remediation: f.remediation,
-    cveRef: f.cveRef,
-  }));
+  // filePath is assigned from the scanned file — never model-tagged — so a
+  // finding can never be attached to a neighbouring file. lineRef is only
+  // checked to log how reliably the model references its own file.
+  let mismatches = 0;
+  const findings = parsed.findings.map((f) => {
+    const refPath = lineRefPath(f.lineRef);
+    if (refPath && refPath !== file.filePath && !file.filePath.endsWith(refPath)) mismatches++;
+    return {
+      severity: f.severity as SecuritySeverity,
+      owasp: f.owasp as OwaspCategory,
+      filePath: file.filePath,
+      title: f.title,
+      detail: f.detail,
+      lineRef: f.lineRef,
+      remediation: f.remediation,
+      cveRef: f.cveRef,
+    };
+  });
+  if (mismatches > 0) {
+    logger.warn({ filePath: file.filePath, mismatches, total: findings.length }, "Aegis lineRef path disagreed with the scanned file");
+  }
+  return { filePath: file.filePath, summary: parsed.summary, findings };
+}
+
+/**
+ * Run Aegis over a committed change set. Each changed file is scanned in its own
+ * request, in parallel. The gate FAILS CLOSED: any file that errors, times out,
+ * or is otherwise not scanned forces a BLOCK — an unscanned file is not a clean
+ * file. Never throws; a total failure returns a blocked result with every file
+ * listed as unscanned.
+ */
+export async function runAegisScan(
+  input: AegisInput,
+  creds: { anthropicApiKey?: string },
+  // The per-file scanner is injectable so the fail-closed gate can be unit-tested
+  // without the model. Defaults to the real claude-fable-5 scan.
+  deps?: { scanFile?: (file: AegisScanFile) => Promise<PerFileScan> },
+): Promise<AegisScanResult> {
+  const client = new Anthropic({ apiKey: creds.anthropicApiKey });
+  const item = { itemTitle: input.itemTitle, stackDesc: input.stackDesc };
+  const scanFile = deps?.scanFile ?? ((f: AegisScanFile) => scanOneFile(client, item, f));
+  const filesTotal = input.files.length;
+
+  const results = await Promise.allSettled(input.files.map((f) => scanFile(f)));
+
+  const scannedFiles: string[] = [];
+  const unscannedFiles: string[] = [];
+  const summaries: string[] = [];
+  const rawFindings: Array<Omit<AegisFinding, "id">> = [];
+  results.forEach((r, i) => {
+    const path = input.files[i].filePath;
+    if (r.status === "fulfilled") {
+      scannedFiles.push(path);
+      if (r.value.summary) summaries.push(`${path}: ${r.value.summary}`);
+      rawFindings.push(...r.value.findings);
+    } else {
+      unscannedFiles.push(path);
+      logger.warn({ filePath: path, err: r.reason }, "Aegis per-file scan failed — file left unscanned (gate will block)");
+    }
+  });
+
+  // Stable, sequential ids across the union of findings.
+  const findings: AegisFinding[] = rawFindings.map((f, i) => ({ id: `aegis-${String(i + 1).padStart(3, "0")}`, ...f }));
 
   const criticalCount = findings.filter((f) => f.severity === "critical").length;
   const highCount = findings.filter((f) => f.severity === "high").length;
   const mediumCount = findings.filter((f) => f.severity === "medium").length;
   const lowCount = findings.filter((f) => f.severity === "low").length;
 
-  // Enforce the gate rule in code regardless of what the model returned.
-  const gateDecision: "approved" | "blocked" =
-    criticalCount > 0 || highCount > 0 ? "blocked" : "approved";
+  // FAIL CLOSED: unscanned files block regardless of findings.
+  const blockedByCoverage = unscannedFiles.length > 0;
+  const blockedByFindings = criticalCount > 0 || highCount > 0;
+  const gateDecision: "approved" | "blocked" = blockedByCoverage || blockedByFindings ? "blocked" : "approved";
+
+  const gateReason = blockedByCoverage
+    ? `Could not scan ${unscannedFiles.length} of ${filesTotal} file(s): ${unscannedFiles.join(", ")}. Gate blocked (fail-closed).`
+    : blockedByFindings
+      ? `${criticalCount} critical, ${highCount} high finding(s) across ${scannedFiles.length} file(s).`
+      : `${findings.length} finding(s) across ${scannedFiles.length} file(s), none critical/high.`;
 
   return {
-    summary: parsed.summary,
+    summary: summaries.join("\n") || "No security-relevant findings.",
     findings,
     criticalCount,
     highCount,
     mediumCount,
     lowCount,
     gateDecision,
-    gateReason: parsed.gateReason,
-    scannedFile: input.filePath,
+    gateReason,
+    scannedFiles,
+    unscannedFiles,
+    filesTotal,
+    filesScanned: scannedFiles.length,
     generatedAt: new Date().toISOString(),
   };
 }

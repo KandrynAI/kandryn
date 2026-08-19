@@ -400,6 +400,8 @@ export interface AegisFinding {
   id: string;
   severity: SecuritySeverity;
   owasp: string;
+  /** The changed file this finding is in (assigned from the scanned file). */
+  filePath?: string;
   title: string;
   detail: string;
   lineRef?: string;
@@ -421,7 +423,11 @@ export interface AegisScanResult {
   lowCount: number;
   gateDecision: 'approved' | 'blocked';
   gateReason: string;
-  scannedFile: string;
+  /** Per-file coverage (fail-closed gate). Optional for legacy single-file scans. */
+  scannedFiles?: string[];
+  unscannedFiles?: string[];
+  filesTotal?: number;
+  filesScanned?: number;
   generatedAt: string;
 }
 
