@@ -8,9 +8,12 @@ export interface ScoreDimension {
 export interface ScoreBreakdown {
   correctness: ScoreDimension;
   readability: ScoreDimension;
-  minimalDiff: ScoreDimension;
+  minimalDiff: ScoreDimension; // reframed as plan-relative "diff proportionality" (Phase 3)
   conventions: ScoreDimension;
   acCoverage: ScoreDimension; // how well it covers the acceptance criteria
+  // Static cross-file coherence (Phase 3), injected mechanically, not model-scored.
+  // Optional so runs scored before it existed still parse.
+  coherence?: ScoreDimension;
   // Behaviour signals (weight 0 — informational, not part of the overall score).
   // Optional so runs scored before these existed still parse.
   ambiguityHandling?: ScoreDimension; // did it flag ambiguity or silently assume?

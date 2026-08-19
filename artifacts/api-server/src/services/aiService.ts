@@ -10,6 +10,7 @@ import { computeFileDiff } from "./diffService.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import type { CodeSuggestion, SuggestionFile } from "../../../../shared/types/codeSuggestion.js";
 import type { ChangePlan } from "../../../../shared/types/changePlan.js";
+import type { CoherenceResult } from "../../../../shared/types/coherence.js";
 import type { StackProfile } from "../stack/detector.js";
 
 /**
@@ -408,6 +409,9 @@ const ScoreBreakdownSchema = z.object({
   minimalDiff: ScoreDimensionSchema,
   conventions: ScoreDimensionSchema,
   acCoverage: ScoreDimensionSchema,
+  // Static cross-file coherence (Phase 3). Not model-scored — injected
+  // server-side from the mechanical checker. Optional so model output parses.
+  coherence: ScoreDimensionSchema.optional(),
   // Behaviour signals (weight 0 — informational, do not affect the overall
   // score). Optional so a model omission or an older run still parses.
   ambiguityHandling: ScoreDimensionSchema.optional(),
@@ -421,17 +425,55 @@ const ScorePairSchema = z.object({
   suggestionA: ScoreBreakdownSchema,
   suggestionB: ScoreBreakdownSchema,
 });
-type ScoreBreakdownOut = z.infer<typeof ScoreBreakdownSchema>;
+export type ScoreBreakdownOut = z.infer<typeof ScoreBreakdownSchema>;
 
-/** Weighted average of the five 0–100 dimensions → an integer 0–10 overall. */
-function weightedScore10(b: ScoreBreakdownOut): number {
+/**
+ * Weighted average of the 0–100 dimensions → an integer 0–10 overall.
+ * Coherence (Phase 3) is mechanical and carries 15%; when a suggestion has no
+ * coherence result (single-file / non-C# / older run) it defaults to a neutral
+ * 100 so the check neither penalises nor rewards a change it cannot evaluate.
+ */
+export function weightedScore10(b: ScoreBreakdownOut): number {
   const raw =
-    b.correctness.score * 0.35 +
-    b.readability.score * 0.2 +
-    b.minimalDiff.score * 0.15 +
+    b.correctness.score * 0.3 +
+    (b.coherence?.score ?? 100) * 0.15 +
     b.conventions.score * 0.15 +
-    b.acCoverage.score * 0.15;
+    b.acCoverage.score * 0.15 +
+    b.readability.score * 0.15 +
+    b.minimalDiff.score * 0.1;
   return Math.round(Math.max(0, Math.min(100, raw)) / 10);
+}
+
+/**
+ * Turn the mechanical coherence result into a score dimension so it feeds the
+ * weighted overall score. Score is the checker's 0–1 value scaled to 0–100.
+ */
+export function coherenceDimension(result: CoherenceResult): NonNullable<ScoreBreakdownOut["coherence"]> {
+  const score = Math.round(Math.max(0, Math.min(1, result.score)) * 100);
+  const verdict = result.status === "failed" ? "weak" : result.status === "warnings" ? "adequate" : "strong";
+  const errors = result.findings.filter((f) => f.severity === "error").length;
+  const warnings = result.findings.filter((f) => f.severity === "warning").length;
+  const reason =
+    result.findings.length === 0
+      ? "No cross-file coherence issues detected."
+      : `${errors} error(s), ${warnings} warning(s) across the change set.`;
+  return { score, weight: 15, verdict, reason };
+}
+
+/**
+ * Assign Recommended to the highest-scoring suggestion that did NOT fail the
+ * coherence check (Phase 3 exclusion rule). A coherence-failed suggestion is
+ * never Recommended — even the sole suggestion in a run; if every suggestion
+ * failed, none is recommended and all are surfaced as Alternatives. Expects the
+ * list already sorted by score descending.
+ */
+export function assignRecommendation(sorted: CodeSuggestion[]): void {
+  const winner = sorted.find((s) => s.coherence?.status !== "failed");
+  for (const s of sorted) {
+    const rec = s === winner ? "Recommended" : "Alternative";
+    s.recommendation = rec;
+    if (s.scoreBreakdown) s.scoreBreakdown.recommendation = rec;
+  }
 }
 
 export class SynthesisEngine {
@@ -466,6 +508,9 @@ export class SynthesisEngine {
         const result: CodeSuggestion[] = suggestions.map((s, i) => {
           const b = breakdowns[i];
           if (!b) return { ...s, score: 0, recommendation: "Alternative", scoreBreakdown: null, scoreNarrative: null };
+          // Inject the mechanical coherence dimension so it feeds the weighted
+          // score alongside the model-scored dimensions (Phase 3).
+          if (s.coherence) b.coherence = coherenceDimension(s.coherence);
           return {
             ...s,
             score: weightedScore10(b),
@@ -476,11 +521,7 @@ export class SynthesisEngine {
         });
 
         result.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-        result.forEach((s, i) => {
-          const rec = i === 0 ? "Recommended" : "Alternative";
-          s.recommendation = rec;
-          if (s.scoreBreakdown) s.scoreBreakdown.recommendation = rec;
-        });
+        assignRecommendation(result);
         return result;
       } catch (err) {
         logger.warn({ err }, "SynthesisEngine: breakdown scoring failed — falling back to simple scoring");
@@ -510,7 +551,9 @@ export class SynthesisEngine {
       recommendation: scored[i]?.recommendation ?? "",
     }));
     result.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-    if (result.length > 0) result[0].recommendation = "Recommended";
+    // Exclusion rule holds here too — a coherence-failed suggestion is never
+    // Recommended, even when it is the only suggestion in the run (Phase 3).
+    assignRecommendation(result);
     return result;
   }
 }
@@ -545,16 +588,17 @@ ${renderChangeSet(b.files)}
 
 Score each suggestion on five dimensions. For each dimension give:
 - score: 0–100
-- weight: the percentage weight this dimension carries (weights must sum to 100)
+- weight: the percentage weight this dimension carries (use the exact weights below)
 - verdict: "strong" (>=80), "adequate" (50–79), or "weak" (<50)
 - reason: one specific sentence referencing actual code details
 
-Dimensions and weights:
-- correctness (35%): Does the code correctly solve the stated problem? Reference specific logic, conditions, or return values.
-- readability (20%): Is the code clear and maintainable? Reference naming, structure, or complexity.
-- minimalDiff (15%): Does it change only what is necessary? Reference scope of change.
+Dimensions and weights (a separate static coherence dimension carries the
+remaining 15% and is scored mechanically, not by you):
+- correctness (30%): Does the code correctly solve the stated problem? Reference specific logic, conditions, or return values.
 - conventions (15%): Does it follow the conventions of a ${describeStack(stack) || "generic"} codebase? Check framework-specific patterns (${stack.backend || "general"} conventions, naming, structure) for the detected stack.
 - acCoverage (15%): How completely does it address the acceptance criteria? Reference which criteria are and are not covered.
+- readability (15%): Is the code clear and maintainable? Reference naming, structure, or complexity.
+- minimalDiff (10%): Diff proportionality — is the change set proportionate to what the plan requires? Penalise files or edits beyond the plan's scope; do NOT penalise a change simply for spanning several files when the plan calls for them.
 
 Also score two behaviour signals (weight 0 — informational only, they do NOT affect the overall ranking):
 - ambiguityHandling (0%): Did the suggestion acknowledge any ambiguity in the acceptance criteria, or did it silently assume? Score 0-100: 100 = explicitly flagged ambiguity with reasoning; 70 = addressed all criteria without obvious ambiguity; 40 = silently picked one interpretation of an unclear criterion; 10 = ignored criteria that could not be addressed by this change. In the reason, name the ambiguity (or state there was none).
@@ -569,11 +613,11 @@ Then write:
 Return ONLY a JSON object, no markdown fences, with this exact structure:
 {
   "suggestionA": {
-    "correctness": { "score": N, "weight": 35, "verdict": "...", "reason": "..." },
-    "readability": { "score": N, "weight": 20, "verdict": "...", "reason": "..." },
-    "minimalDiff": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "correctness": { "score": N, "weight": 30, "verdict": "...", "reason": "..." },
     "conventions": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
     "acCoverage":  { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "readability": { "score": N, "weight": 15, "verdict": "...", "reason": "..." },
+    "minimalDiff": { "score": N, "weight": 10, "verdict": "...", "reason": "..." },
     "ambiguityHandling": { "score": N, "weight": 0, "verdict": "...", "reason": "..." },
     "surgicalPrecision": { "score": N, "weight": 0, "verdict": "...", "reason": "..." },
     "overallNarrative": "...",

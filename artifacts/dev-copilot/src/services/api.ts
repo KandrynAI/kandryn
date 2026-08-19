@@ -463,9 +463,12 @@ export interface ScoreDimension {
 export interface ScoreBreakdown {
   correctness: ScoreDimension;
   readability: ScoreDimension;
-  minimalDiff: ScoreDimension;
+  minimalDiff: ScoreDimension; // reframed as plan-relative "diff proportionality" (Phase 3)
   conventions: ScoreDimension;
   acCoverage: ScoreDimension;
+  // Static cross-file coherence (Phase 3), injected mechanically. Optional for
+  // older runs / single-file changes.
+  coherence?: ScoreDimension;
   // Behaviour signals (weight 0 — informational). Optional for older runs.
   ambiguityHandling?: ScoreDimension;
   surgicalPrecision?: ScoreDimension;
@@ -474,6 +477,18 @@ export interface ScoreBreakdown {
   confidence: number;
   confidenceReason: string;
 }
+
+/** A cross-file coherence finding (Phase 3), mirrors shared/types/coherence.ts. */
+export interface CoherenceFinding {
+  check: 'interface_impl' | 'type_resolution' | 'caller_callee' | 'imports';
+  severity: 'error' | 'warning';
+  filePath: string;
+  line?: number;
+  message: string;
+  relatedFilePath?: string;
+}
+
+export type CoherenceStatus = 'passed' | 'warnings' | 'failed';
 
 export interface RunSuggestion {
   id: number;
@@ -491,6 +506,11 @@ export interface RunSuggestion {
   recommendation: string | null;
   scoreBreakdown?: ScoreBreakdown | null;
   scoreNarrative?: string | null;
+  // Static coherence check (Phase 3). numeric column → score arrives as a
+  // string; null for older runs / single-file / non-C# changes.
+  coherenceScore?: string | null;
+  coherenceStatus?: CoherenceStatus | null;
+  coherenceFindings?: CoherenceFinding[] | null;
   testCases?: TestCase[];
   testScript?: TestScript | null;
   createdAt: string;
@@ -617,11 +637,15 @@ export function commitRunSuggestion(
   runId: number,
   suggestionId: number,
   commitMessage?: string,
+  override?: boolean,
 ): Promise<{ commitHash: string; prUrl: string }> {
+  const body: { suggestionId: number; commitMessage?: string; override?: boolean } = { suggestionId };
+  if (commitMessage) body.commitMessage = commitMessage;
+  if (override) body.override = true;
   return request<{ commitHash: string; prUrl: string }>(`/api/runs/${runId}/commit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(commitMessage ? { suggestionId, commitMessage } : { suggestionId }),
+    body: JSON.stringify(body),
   });
 }
 

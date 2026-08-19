@@ -14,6 +14,7 @@ import { getRunRepository } from "./repoResolver.js";
 import { loadSuggestionFiles } from "./suggestionFiles.js";
 import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
 import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
+import { checkCoherence, buildRepoSymbolIndex, type RepoSymbolIndex } from "./coherence/index.js";
 import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
 import {
   runPlanning,
@@ -54,6 +55,65 @@ async function primaryEmail(userId: string): Promise<string | null> {
   }
 }
 
+// Cap on how many unchanged sibling files the coherence checker reads for its
+// repo context — a change is coherent with the code around it, and reading the
+// whole repo per run would be both slow and unnecessary.
+const COHERENCE_CONTEXT_CAP = 40;
+
+/**
+ * Build the coherence checker's repo context: the UNCHANGED .cs files that sit
+ * in the same directories as a suggestion's changed .cs files (Phase 3). These
+ * hold the sibling interfaces/services/DTOs a multi-file change must stay
+ * coherent with. Bounded and best-effort — any read failure just yields a
+ * smaller index (the checker skips what it cannot resolve, never guesses).
+ */
+async function buildCoherenceRepoContext(
+  suggestions: CodeSuggestion[],
+  git: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader },
+): Promise<RepoSymbolIndex> {
+  const changed = new Set<string>();
+  for (const s of suggestions) for (const f of s.files) changed.add(f.filePath);
+  const changedCs = [...changed].filter((p) => p.endsWith(".cs"));
+  if (changedCs.length === 0) return buildRepoSymbolIndex([]);
+
+  const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/") + 1);
+  const dirs = new Set(changedCs.map(dirOf));
+
+  let tree: string[];
+  try {
+    tree = await git.fetchFilePaths();
+  } catch {
+    return buildRepoSymbolIndex([]);
+  }
+  const siblings = tree
+    .filter((p) => p.endsWith(".cs") && !changed.has(p) && dirs.has(dirOf(p)))
+    .slice(0, COHERENCE_CONTEXT_CAP);
+
+  const read = await Promise.all(
+    siblings.map(async (p) => {
+      const f = await git.fetchFileWithSha(p).catch(() => null);
+      return f ? { filePath: p, content: f.content } : null;
+    }),
+  );
+  return buildRepoSymbolIndex(read.filter((f): f is { filePath: string; content: string } => f !== null));
+}
+
+/**
+ * Run the static coherence checker over each valid multi-file suggestion and
+ * attach the result to `s.coherence` (Phase 3). Mutates in place — the caller
+ * has already filtered to valid suggestions, which are references into `raw`, so
+ * the result rides through synthesis and persistence. Single-file / non-C# /
+ * repo-context-less runs are clean passes handled inside checkCoherence.
+ */
+async function attachCoherence(
+  suggestions: CodeSuggestion[],
+  git: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader },
+): Promise<void> {
+  if (suggestions.length === 0) return;
+  const repoContext = await buildCoherenceRepoContext(suggestions, git);
+  for (const s of suggestions) s.coherence = checkCoherence(s.files, repoContext);
+}
+
 /**
  * Run both agents (optionally against a change plan), rank the valid ones, and
  * persist every suggestion (invalid ones too, so the UI can show why) with its
@@ -69,18 +129,30 @@ async function generateAndPersistSuggestions(params: {
   stack: StackProfile;
   fileReader?: FileReader;
   planInput?: { plan: ChangePlan; context: string };
+  coherenceGit?: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader };
 }): Promise<{
   raw: CodeSuggestion[];
   ranked: CodeSuggestion[];
   validRaw: CodeSuggestion[];
   inserted: (typeof suggestionsTable.$inferSelect)[];
 }> {
-  const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput } = params;
+  const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput, coherenceGit } = params;
 
   const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader, planInput);
 
   // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
   const validRaw = raw.filter((s) => s.valid);
+  // Static coherence check BEFORE ranking (Phase 3) — Synthesia folds it into
+  // the weighted score and a failed check excludes a suggestion from being
+  // Recommended. Best-effort: a checker/read failure leaves coherence unset,
+  // which the scorer treats as neutral.
+  if (coherenceGit) {
+    try {
+      await attachCoherence(validRaw, coherenceGit);
+    } catch (err) {
+      logger.warn({ runId, err }, "Coherence check failed — proceeding without it");
+    }
+  }
   const ranked =
     validRaw.length > 0
       ? await synth.synthesize(validRaw, stack, { title: devTask.title, acceptanceCriteria: devTask.acceptanceCriteria })
@@ -105,6 +177,11 @@ async function generateAndPersistSuggestions(params: {
             recommendation: sc?.recommendation ?? null,
             scoreBreakdown: sc?.scoreBreakdown ?? null,
             scoreNarrative: sc?.scoreNarrative ?? null,
+            // Static coherence (Phase 3). numeric column → store the 0–1 score
+            // as a string; findings mirror the shared CoherenceFinding shape.
+            coherenceScore: sc?.coherence ? String(sc.coherence.score) : null,
+            coherenceStatus: sc?.coherence?.status ?? null,
+            coherenceFindings: sc?.coherence?.findings ?? null,
           };
         }),
       )
@@ -209,12 +286,16 @@ export async function executeRun(runId: number): Promise<void> {
     // Reader so the orchestrator can apply edit hunks against current source
     // (Phase 1). Best-effort — a missing reader just makes edits fail to resolve.
     let fileReader: FileReader | undefined;
+    // Same GitService, reused by the coherence checker to read unchanged sibling
+    // files for its repo context (Phase 3).
+    let coherenceGit: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader } | undefined;
     try {
       const gitRead = await GitService.forRepo(repo.id, {
         githubToken: creds.GITHUB_TOKEN,
         azureReposToken: creds.AZURE_REPOS_TOKEN,
       });
       fileReader = (path) => gitRead.fetchFileWithSha(path);
+      coherenceGit = { fetchFilePaths: () => gitRead.fetchFilePaths(), fetchFileWithSha: (p) => gitRead.fetchFileWithSha(p) };
     } catch (e) {
       logger.warn({ runId, err: e }, "Run: file reader unavailable — edits cannot be resolved");
     }
@@ -288,6 +369,7 @@ export async function executeRun(runId: number): Promise<void> {
       stack,
       fileReader,
       planInput,
+      coherenceGit,
     });
 
     // Both agents produced changes that could not be applied — fail the run with
@@ -304,10 +386,15 @@ export async function executeRun(runId: number): Promise<void> {
     let commitHash: string | null = null;
     let committedSuggestionId: number | null = null;
     if (run.autoCommit && ranked.length > 0) {
-      const top = ranked.find((s) => s.recommendation === "Recommended") ?? ranked[0];
+      // Only the Recommended suggestion is auto-committed. The coherence
+      // exclusion rule guarantees a failed suggestion is never Recommended, so
+      // when every suggestion failed the check there is no Recommended one and
+      // auto-commit is skipped — even in a single-suggestion run (Phase 3). The
+      // status re-check below is belt-and-suspenders on that guarantee.
+      const top = ranked.find((s) => s.recommendation === "Recommended");
       // `inserted` is aligned with `raw`; find the persisted row for the chosen agent.
-      const insertedIdx = raw.findIndex((s) => s.agent === top.agent);
-      if (top) {
+      const insertedIdx = top ? raw.findIndex((s) => s.agent === top.agent) : -1;
+      if (top && top.coherence?.status !== "failed") {
         const git = await GitService.forRepo(repo.id, {
           githubToken: creds.GITHUB_TOKEN,
           azureReposToken: creds.AZURE_REPOS_TOKEN,
@@ -388,6 +475,7 @@ export async function commitFromSuggestion(
   runId: number,
   suggestionId: number,
   commitMessage?: string,
+  override?: boolean,
 ): Promise<{ commitHash: string; prUrl: string }> {
   const [run] = await db
     .select()
@@ -406,6 +494,15 @@ export async function commitFromSuggestion(
   // An invalid suggestion (an edit that didn't apply) can never be committed (1.4).
   if (sugFiles.some((f) => f.applyStatus === "failed")) {
     throw new RunError("This suggestion could not be applied to the repository and cannot be committed.", 409);
+  }
+  // A suggestion that FAILED the coherence check can only be committed with an
+  // explicit override (Phase 3) — the UI disables the commit button and asks the
+  // user to confirm before sending override.
+  if (sug.coherenceStatus === "failed" && !override) {
+    throw new RunError(
+      "This suggestion failed the coherence check. Review the findings, then confirm to commit anyway.",
+      409,
+    );
   }
 
   const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
@@ -505,6 +602,7 @@ async function regenerateFromPlan(
       stack,
       fileReader,
       planInput: { plan, context: assembled.context },
+      coherenceGit: { fetchFilePaths: () => git.fetchFilePaths(), fetchFileWithSha: (p) => git.fetchFileWithSha(p) },
     });
 
     if (raw.length > 0 && validRaw.length === 0) {

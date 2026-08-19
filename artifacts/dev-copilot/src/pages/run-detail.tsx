@@ -55,12 +55,13 @@ function repoLabel(url: string | null): string {
   return m ? m[1] : "PR";
 }
 
-const DIMENSIONS: { key: keyof Pick<ScoreBreakdown, "correctness" | "readability" | "minimalDiff" | "conventions" | "acCoverage">; label: string }[] = [
+const DIMENSIONS: { key: keyof Pick<ScoreBreakdown, "correctness" | "readability" | "minimalDiff" | "conventions" | "acCoverage" | "coherence">; label: string }[] = [
   { key: "correctness", label: "Correctness" },
-  { key: "readability", label: "Readability" },
-  { key: "minimalDiff", label: "Minimal diff" },
+  { key: "coherence", label: "Coherence" },
   { key: "conventions", label: "Conventions" },
   { key: "acCoverage", label: "AC coverage" },
+  { key: "readability", label: "Readability" },
+  { key: "minimalDiff", label: "Diff proportionality" },
 ];
 
 const VERDICT_STYLE: Record<string, { bg: string; fg: string }> = {
@@ -193,11 +194,11 @@ export default function RunDetailPage() {
     }
   };
 
-  const onCommit = async (s: RunSuggestion) => {
+  const onCommit = async (s: RunSuggestion, override?: boolean) => {
     setCommittingId(s.id);
     setStaleError(null);
     try {
-      const res = await commitRunSuggestion(runId, s.id);
+      const res = await commitRunSuggestion(runId, s.id, undefined, override);
       toast({ title: "Committed & PR opened", description: res.prUrl });
       await load(true);
     } catch (err) {
@@ -207,6 +208,8 @@ export default function RunDetailPage() {
       if (err instanceof ApiError && err.status === 409 && err.message.startsWith("The branch changed")) {
         setStaleError(err.message);
         toast({ title: "Branch changed — re-run to regenerate.", variant: "destructive" });
+      } else if (err instanceof ApiError && err.status === 409 && err.message.startsWith("This suggestion failed the coherence check")) {
+        toast({ title: "Coherence check failed", description: err.message, variant: "destructive" });
       } else if (err instanceof ApiError && err.status === 409) {
         toast({ title: "Already committed — showing committed state." });
         await load(true);
@@ -1201,11 +1204,11 @@ function ScoreAnalysis({ breakdown }: { breakdown: ScoreBreakdown }) {
             </p>
           )}
 
-          {DIMENSIONS.map(({ key, label }, i) => {
-            const d = breakdown[key];
+          {DIMENSIONS.filter(({ key }) => breakdown[key]).map(({ key, label }, i, shown) => {
+            const d = breakdown[key]!;
             const vs = VERDICT_STYLE[d.verdict] ?? VERDICT_STYLE.adequate;
             return (
-              <div key={key} style={{ display: "grid", gridTemplateColumns: "120px 1fr 48px 80px", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: i < DIMENSIONS.length - 1 ? "1px solid var(--c-border)" : "none" }}>
+              <div key={key} style={{ display: "grid", gridTemplateColumns: "120px 1fr 48px 80px", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: i < shown.length - 1 ? "1px solid var(--c-border)" : "none" }}>
                 <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
                 <span style={{ height: 4, background: "var(--c-raised)", display: "block", borderRadius: 2 }}>
                   <span className="score-fill" style={{ display: "block", height: 4, background: "var(--c-blue)", width: `${Math.max(0, Math.min(100, d.score))}%`, borderRadius: 2 }} />
@@ -1234,7 +1237,7 @@ function ScoreAnalysis({ breakdown }: { breakdown: ScoreBreakdown }) {
           )}
 
           <p style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 10 }}>
-            Weights: Correctness 35% · Readability 20% · Minimal diff 15% · Conventions 15% · AC coverage 15%
+            Weights: Correctness 30% · Coherence 15% · Conventions 15% · AC coverage 15% · Readability 15% · Diff proportionality 10%
           </p>
         </div>
       )}

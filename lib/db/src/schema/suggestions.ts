@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, numeric, timestamp, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { runsTable } from "./runs";
@@ -31,6 +31,16 @@ export interface PersistedTestScript {
   framework: string;
 }
 
+/** Mirrors shared/types/coherence.ts CoherenceFinding (0028, local for the composite build). */
+export interface PersistedCoherenceFinding {
+  check: "interface_impl" | "type_resolution" | "caller_callee" | "imports";
+  severity: "error" | "warning";
+  filePath: string;
+  line?: number;
+  message: string;
+  relatedFilePath?: string;
+}
+
 /** Mirrors shared/types/scoreBreakdown.ts (kept local for the composite build). */
 export interface PersistedScoreDimension {
   score: number;
@@ -44,6 +54,8 @@ export interface PersistedScoreBreakdown {
   minimalDiff: PersistedScoreDimension;
   conventions: PersistedScoreDimension;
   acCoverage: PersistedScoreDimension;
+  coherence?: PersistedScoreDimension; // static coherence (Phase 3), injected
+
   // Behaviour signals (weight 0 — informational). Optional for older runs.
   ambiguityHandling?: PersistedScoreDimension;
   surgicalPrecision?: PersistedScoreDimension;
@@ -83,6 +95,11 @@ export const suggestionsTable = pgTable(
     // Retained (never deleted) so a prior revision stays readable; the run detail
     // shows only non-superseded suggestions.
     superseded: boolean("superseded").notNull().default(false),
+    // Static coherence check (Phase 3, 0028). Score 0–1; status passed|warnings|
+    // failed; findings mirror shared/types/coherence.ts CoherenceFinding.
+    coherenceScore: numeric("coherence_score"),
+    coherenceStatus: text("coherence_status").$type<"passed" | "warnings" | "failed" | null>(),
+    coherenceFindings: jsonb("coherence_findings").$type<PersistedCoherenceFinding[] | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("suggestions_run_id_idx").on(t.runId)],
