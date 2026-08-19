@@ -122,7 +122,13 @@ test("interface method with no implementation in the repo → error (impl unchan
   // The interface (changed) adds EndorseAsync; the implementation lives unchanged
   // in the repo WITHOUT that method.
   const repoWithStaleImpl = buildRepoSymbolIndex([
-    { filePath: IMPL, content: `namespace PnC.Api.Services;\npublic class PolicyService : IPolicyService { public Task CancelAsync(int id, CancelPolicyRequest r) { return null; } }` },
+    {
+      filePath: IMPL,
+      // Multi-line body so the existing method is extracted: the impl genuinely
+      // HAS a method (CancelAsync), just not the newly-added EndorseAsync — a
+      // real stale-impl mismatch, distinct from an unparsed single-line body.
+      content: `namespace PnC.Api.Services;\npublic class PolicyService : IPolicyService\n{\n    public Task CancelAsync(int id, CancelPolicyRequest r)\n    {\n        return null;\n    }\n}`,
+    },
   ]);
   const r = checkCoherence([sf(IFACE, ifaceSrc("EndorseAsync")), sf(DTOS, dtosSrc)], repoWithStaleImpl);
   assert.ok(r.findings.some((f) => f.check === "interface_impl" && f.severity === "error" && /EndorseAsync/.test(f.message)));

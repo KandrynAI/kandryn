@@ -13,6 +13,8 @@ export interface SymbolTable {
   implementorsOf(iface: string): Array<{ filePath: string; type: TypeSig }>;
   /** Arities of methods named `method` on any type named `typeName`. null = type unknown. */
   methodArities(typeName: string, method: string): number[] | null;
+  /** True when a type of this name is indexed AND had ≥1 method extracted. */
+  typeHasAnyMethod(name: string): boolean;
 }
 
 /** The pre-built symbol index for the UNCHANGED repo (read by the caller). */
@@ -42,6 +44,7 @@ function buildSymbolTable(fileSymbols: FileSymbols[]): SymbolTable {
       for (const e of entries) for (const m of e.type.methods) if (m.name === method) arities.push(m.arity);
       return arities;
     },
+    typeHasAnyMethod: (name) => (byType.get(name) ?? []).some((e) => e.type.methods.length > 0),
   };
 }
 
@@ -75,6 +78,14 @@ function checkAll(sug: FileSymbols[], combined: SymbolTable, changedPaths: Set<s
         for (const impl of impls) {
           const arities = combined.methodArities(impl.type.name, m.name);
           if (arities == null || arities.length === 0) {
+            // Same fail-open guard as caller_callee: an implementor indexed with
+            // ZERO extracted methods means extraction was incomplete (single-line
+            // body), not proof it doesn't implement the interface — skip instead
+            // of raising a false error.
+            if (impl.type.methods.length === 0) {
+              skipped.push({ filePath: impl.filePath, line: iface.line, reason: "implementor methods not parsed", detail: impl.type.name });
+              continue;
+            }
             findings.push({
               check: "interface_impl",
               severity: "error",
@@ -133,14 +144,23 @@ function checkAll(sug: FileSymbols[], combined: SymbolTable, changedPaths: Set<s
       if (arities == null) {
         skipped.push({ filePath: fs.filePath, line: call.line, reason: "receiver type not indexed", detail: `${recvType}.${call.method}` });
       } else if (arities.length === 0) {
-        findings.push({
-          check: "caller_callee",
-          severity: "error",
-          filePath: fs.filePath,
-          line: call.line,
-          message: `${fs.filePath.split("/").pop()} calls ${call.method}, but ${recvType} declares no such method.`,
-          relatedFilePath: combined.typeFiles(recvType).find((p) => p !== fs.filePath),
-        });
+        // The receiver type is indexed but no method of this name was extracted.
+        // Only an ERROR when we actually parsed methods on the type — a type
+        // indexed with ZERO methods means extraction was incomplete (e.g. a
+        // single-line `interface IFoo { void Bar(); }` body drops its inline
+        // members), so we cannot assert the method is absent. Fail open: skip.
+        if (!combined.typeHasAnyMethod(recvType)) {
+          skipped.push({ filePath: fs.filePath, line: call.line, reason: "receiver type methods not parsed", detail: `${recvType}.${call.method}` });
+        } else {
+          findings.push({
+            check: "caller_callee",
+            severity: "error",
+            filePath: fs.filePath,
+            line: call.line,
+            message: `${fs.filePath.split("/").pop()} calls ${call.method}, but ${recvType} declares no such method.`,
+            relatedFilePath: combined.typeFiles(recvType).find((p) => p !== fs.filePath),
+          });
+        }
       }
     }
   }
