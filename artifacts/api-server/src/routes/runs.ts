@@ -831,7 +831,12 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
   const itemKey = workItem?.externalId ?? `RUN-${runId}`;
   const branchName = `task/${run.workItemId}`;
 
-  const narratiaPrimary = await suggestionPrimaryFile(suggestion.id);
+  // The runbook documents the whole committed change set, not just one file.
+  const narratiaFiles = (await loadSuggestionFiles(suggestion.id)).map((f) => ({
+    filePath: f.filePath,
+    op: f.op,
+    code: f.content,
+  }));
   try {
     const result = await runNarratia(
       {
@@ -840,9 +845,7 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
         itemType: workItem?.itemType ?? workItem?.type ?? "task",
         itemDescription: workItem?.description ?? undefined,
         acceptanceCriteria,
-        filePath: narratiaPrimary?.filePath ?? "",
-        code: narratiaPrimary?.code ?? "",
-        language: suggestion.language ?? undefined,
+        files: narratiaFiles,
         stackDesc: run.stackDesc ?? undefined,
         branchName,
         prUrl: run.prUrl ?? undefined,
