@@ -11,7 +11,7 @@ import {
 import { z } from "zod/v4";
 import { getConfigs } from "../services/configService.js";
 import { getProjectRepository } from "../services/repoResolver.js";
-import { suggestionPrimaryFile } from "../services/suggestionFiles.js";
+import { loadSuggestionFiles } from "../services/suggestionFiles.js";
 import { GitService } from "../services/gitService.js";
 import { generateTests, AIFormatError } from "../services/aiService.js";
 import { createPlmTestCase } from "../services/plmWrite.js";
@@ -120,8 +120,12 @@ router.post("/work-items/:id/tests/generate", async (req, res): Promise<void> =>
   }
 
   const stack = (repo?.stackProfile as StackProfile) ?? null;
-  // The committed suggestion's code lives in suggestion_files (0022).
-  const committedPrimary = await suggestionPrimaryFile(committed.suggestion.id);
+  // Tests exercise the whole committed change set (0022), not just one file.
+  const testFiles = (await loadSuggestionFiles(committed.suggestion.id)).map((f) => ({
+    filePath: f.filePath,
+    op: f.op,
+    code: f.content,
+  }));
   try {
     const tests = await generateTests(
       {
@@ -129,7 +133,7 @@ router.post("/work-items/:id/tests/generate", async (req, res): Promise<void> =>
         acceptanceCriteria: workItem.acceptanceCriteria
           ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
           : [],
-        suggestionCode: committedPrimary?.code ?? "",
+        files: testFiles,
         suggestionExplanation: committed.suggestion.explanation,
         framework: stack?.testFramework ?? "",
       },
