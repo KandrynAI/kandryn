@@ -25,6 +25,8 @@ export interface PersistedReviewFinding {
   detail: string;
   acRef?: string;
   severity?: "low" | "medium" | "high";
+  /** The changed file this finding concerns, when file-specific (Phase 2). */
+  filePath?: string;
 }
 export interface PersistedReviewResult {
   summary: string;

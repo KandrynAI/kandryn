@@ -3,13 +3,20 @@ import { z } from "zod/v4";
 import { logger } from "../lib/logger.js";
 import type { ReviewResult } from "../../../../shared/types/reviewResult.js";
 
+/** One file in the committed change set Veria reviews. */
+export interface VeriaFile {
+  filePath: string;
+  op: "create" | "edit" | "delete";
+  code: string;
+}
+
 export interface VeriaInput {
   itemTitle: string;
   itemType: string;
   acceptanceCriteria: string[];
   suggestionAgent: string;
-  suggestionFilePath: string;
-  suggestionCode: string;
+  /** The whole committed change set — Veria judges coherence across all files. */
+  files: VeriaFile[];
 }
 
 const ReviewFindingSchema = z.object({
@@ -18,6 +25,7 @@ const ReviewFindingSchema = z.object({
   detail: z.string().default(""),
   acRef: z.string().optional(),
   severity: z.enum(["low", "medium", "high"]).optional(),
+  filePath: z.string().optional(),
 });
 const ReviewSchema = z.object({
   summary: z.string().min(1),
@@ -38,11 +46,24 @@ function extractJson(raw: string): unknown {
   return JSON.parse(cleaned);
 }
 
+const MAX_CHARS_PER_FILE = 3500;
+
+function renderFiles(files: VeriaFile[]): string {
+  if (files.length === 0) return "(no files)";
+  return files
+    .map((f) => {
+      if (f.op === "delete") return `--- delete ${f.filePath} ---\n(file deleted)`;
+      return `--- ${f.op} ${f.filePath} ---\n${f.code.slice(0, MAX_CHARS_PER_FILE)}`;
+    })
+    .join("\n\n");
+}
+
 function buildVeriaPrompt(input: VeriaInput): string {
   const ac =
     input.acceptanceCriteria.length > 0
       ? input.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")
       : "No acceptance criteria provided — review the code quality generally.";
+  const paths = input.files.map((f) => f.filePath).join(", ");
   return `You are Veria, a senior code reviewer for Blue Mantis. You review
 committed code changes against the original acceptance criteria.
 
@@ -52,16 +73,23 @@ Type: ${input.itemType}
 Acceptance criteria:
 ${ac}
 
-Committed code change:
-File: ${input.suggestionFilePath}
-Agent: ${input.suggestionAgent}
-\`\`\`
-${input.suggestionCode.slice(0, 8000)}
-\`\`\`
+Committed change set (${input.files.length} file(s), by ${input.suggestionAgent}):
+${renderFiles(input.files)}
 
-Review this code against the acceptance criteria. Be specific — reference actual
-function names, variable names, error types, and line-level observations from the
-code above. Do not write generic praise or generic warnings.
+Review this change set against the acceptance criteria. Judge the change AS A
+WHOLE, not file by file. Be specific — reference actual function names, variable
+names, error types, and line-level observations from the code above. Do not write
+generic praise or generic warnings.
+
+CROSS-FILE COHERENCE (the most important check for a multi-file change): decide
+whether the files agree with each other. A method an interface declares must be
+defined by its implementation and called correctly by its callers; DTO / record
+shapes must match how they are constructed and consumed; method names, parameter
+lists, routes, and types must line up across the files. If anything does not
+line up — a call to a method that no file defines, a signature mismatch between
+interface and implementation, a DTO field used but never declared — list it as a
+'risk' finding titled 'Cross-file mismatch' naming the exact disagreement and the
+files involved. If the files are coherent, say so as a 'strength'.
 
 Additionally, check for these specific issues:
 
@@ -90,9 +118,9 @@ Return ONLY a JSON object. No preamble, no markdown fences.
     "partial":  ["Quote each AC criterion partially addressed — append what is missing in parentheses"]
   },
   "findings": [
-    { "type": "strength", "title": "6 words max", "detail": "1-2 sentences. Reference specific code.", "acRef": "Which AC item this supports (optional)" },
-    { "type": "gap", "title": "6 words max", "detail": "What is missing and why it matters.", "acRef": "Which AC item this relates to (optional)", "severity": "low | medium | high" },
-    { "type": "risk", "title": "6 words max", "detail": "What could fail in production or code review.", "severity": "low | medium | high" }
+    { "type": "strength", "title": "6 words max", "detail": "1-2 sentences. Reference specific code.", "acRef": "Which AC item this supports (optional)", "filePath": "the file this concerns (optional)" },
+    { "type": "gap", "title": "6 words max", "detail": "What is missing and why it matters.", "acRef": "Which AC item this relates to (optional)", "severity": "low | medium | high", "filePath": "the file this concerns (optional)" },
+    { "type": "risk", "title": "6 words max", "detail": "What could fail in production or code review.", "severity": "low | medium | high", "filePath": "the file this concerns (optional)" }
   ],
   "reviewerNote": "One sentence only: what the human reviewer should focus on most."
 }
@@ -101,6 +129,7 @@ Rules:
 - Include 2-3 strengths.
 - Include 1-3 gaps or risks (omit if genuinely none found).
 - acCoverage arrays may be empty if all criteria fall in one bucket.
+- filePath: when a finding is about one specific file, set it to that file's exact path (one of: ${paths}). For a finding that spans the whole change (e.g. cross-file coherence), omit filePath.
 - Return only valid JSON. No trailing commas. No comments inside JSON.`;
 }
 
@@ -135,5 +164,28 @@ export async function runVeriaReview(
     throw new Error(`Veria returned unparseable JSON: ${raw.slice(0, 200)}`);
   }
 
-  return { ...parsed, generatedAt: new Date().toISOString() };
+  return {
+    ...parsed,
+    findings: validateFindingPaths(parsed.findings, input.files.map((f) => f.filePath)),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * A finding's filePath is model-tagged (unlike Aegis, which scans per file), so
+ * validate it against the change set: a path not in the set is dropped and the
+ * finding kept as change-spanning — never silently attached to a wrong file.
+ */
+export function validateFindingPaths<T extends { filePath?: string }>(findings: T[], paths: string[]): T[] {
+  const set = new Set(paths);
+  let dropped = 0;
+  const out = findings.map((f) => {
+    if (f.filePath && !set.has(f.filePath)) {
+      dropped++;
+      return { ...f, filePath: undefined };
+    }
+    return f;
+  });
+  if (dropped > 0) logger.warn({ dropped, total: findings.length }, "Veria finding filePath not in the change set — dropped");
+  return out;
 }

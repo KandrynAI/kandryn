@@ -1172,7 +1172,10 @@ function FindingRow({ f }: { f: ReviewFinding }) {
       <div>
         <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--c-ink)", marginBottom: 2 }}>{f.title}</div>
         <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)", lineHeight: 1.5 }}>{f.detail}</div>
-        {f.acRef && <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontStyle: "italic", marginTop: 2 }}>{f.acRef}</div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
+          {f.filePath && <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }} title={f.filePath}>📄 {f.filePath.split("/").pop()}</span>}
+          {f.acRef && <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontStyle: "italic" }}>{f.acRef}</span>}
+        </div>
       </div>
     </div>
   );
