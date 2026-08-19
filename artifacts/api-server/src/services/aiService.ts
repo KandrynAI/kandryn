@@ -707,12 +707,27 @@ export type GeneratedTestCase = z.infer<typeof TestCaseSchema>;
 export type GeneratedTestScript = z.infer<typeof TestScriptSchema>;
 export type GeneratedTests = z.infer<typeof TestGenSchema>;
 
+/** One file in the committed change set the tests exercise. */
+export interface TestGenFile {
+  filePath: string;
+  op: "create" | "edit" | "delete";
+  code: string;
+}
+
 export interface TestGenInput {
   title: string;
   acceptanceCriteria: string[];
-  suggestionCode: string;
+  /** The whole committed change set — tests exercise the behaviour it implements. */
+  files: TestGenFile[];
   suggestionExplanation: string;
   framework: string;
+}
+
+function renderTestFiles(files: TestGenFile[]): string {
+  if (files.length === 0) return "(no files)";
+  return files
+    .map((f) => (f.op === "delete" ? `--- delete ${f.filePath} ---\n(file deleted)` : `--- ${f.op} ${f.filePath} ---\n${f.code.slice(0, 4000)}`))
+    .join("\n\n");
 }
 
 function buildTestPrompt(input: TestGenInput, stack: StackProfile | null, strict: boolean): string {
@@ -724,18 +739,20 @@ Work item: ${input.title}
 Acceptance criteria:
 ${input.acceptanceCriteria.length ? input.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n") : "(none provided)"}
 
-## Implemented change
+## Implemented change (${input.files.length} file(s))
 ${input.suggestionExplanation}
 
-\`\`\`
-${input.suggestionCode.slice(0, 6000)}
-\`\`\`
+${renderTestFiles(input.files)}
 
 ## Task
 Generate DETAILED test cases. For each acceptance criterion, write at minimum one
-happy-path case and one edge/failure case. Then write one runnable automated test
-file using ${fw} in ${lang}, matching the project's conventions, at a sensible
-filePath next to the code under test.
+happy-path case and one edge/failure case. The change may span several files (e.g.
+a controller, a service, an interface, and a DTO) — test the BEHAVIOUR they
+implement together (the endpoint / service method), not each file in isolation;
+a DTO or interface has nothing to test on its own. Then write one runnable
+automated test file using ${fw} in ${lang}, matching the project's conventions,
+at a sensible filePath next to the code under test (prefer the entry point — the
+controller or service that ties the change together).
 
 Rules:
 - Each test case must be specific and executable — not generic.
