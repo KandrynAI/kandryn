@@ -441,6 +441,8 @@ export interface ReviewFinding {
   detail: string;
   acRef?: string;
   severity?: 'low' | 'medium' | 'high';
+  /** The changed file this finding concerns, when file-specific. */
+  filePath?: string;
 }
 
 export interface ReviewResult {

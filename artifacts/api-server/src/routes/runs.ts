@@ -535,8 +535,13 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     return;
   }
 
-  // The change set lives in suggestion_files (0022); use the primary file.
-  const veriaPrimary = await suggestionPrimaryFile(suggestion.id);
+  // Veria judges the whole committed change set in one context so it can catch
+  // cross-file incoherence (interface/impl/caller/DTO disagreement).
+  const veriaFiles = (await loadSuggestionFiles(suggestion.id)).map((f) => ({
+    filePath: f.filePath,
+    op: f.op,
+    code: f.content,
+  }));
   try {
     const review = await runVeriaReview(
       {
@@ -544,8 +549,7 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
         itemType: workItem?.itemType ?? workItem?.type ?? "task",
         acceptanceCriteria,
         suggestionAgent: suggestion.agent,
-        suggestionFilePath: veriaPrimary?.filePath ?? "",
-        suggestionCode: veriaPrimary?.code ?? "",
+        files: veriaFiles,
       },
       { anthropicApiKey: creds.ANTHROPIC_API_KEY },
     );

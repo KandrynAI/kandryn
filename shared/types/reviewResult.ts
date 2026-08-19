@@ -4,6 +4,9 @@ export interface ReviewFinding {
   detail:    string           // 1-2 sentences, specific
   acRef?:    string           // which AC item this relates to (optional)
   severity?: 'low' | 'medium' | 'high'  // gaps and risks only
+  filePath?: string           // the changed file this finding concerns, when file-specific
+                              // (validated against the change set; a coherence
+                              // finding spanning files omits it)
 }
 
 export interface ReviewResult {
