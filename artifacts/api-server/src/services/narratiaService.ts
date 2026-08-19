@@ -5,6 +5,13 @@ import type {
   RunbookSection,
 } from "../../../../shared/types/narratiaResult.js";
 
+/** One file in the committed change set the runbook documents. */
+export interface NarratiaFile {
+  filePath: string;
+  op: "create" | "edit" | "delete";
+  code: string;
+}
+
 export interface NarratiaInput {
   itemKey: string; // e.g. "PAY-214"
   itemTitle: string;
@@ -12,9 +19,8 @@ export interface NarratiaInput {
   itemDescription?: string;
   acceptanceCriteria: string[];
 
-  filePath: string;
-  code: string;
-  language?: string;
+  /** The whole committed change set — the runbook documents every file. */
+  files: NarratiaFile[];
   stackDesc?: string;
   branchName: string; // e.g. "task/214"
   prUrl?: string;
@@ -27,6 +33,18 @@ export interface NarratiaInput {
   testCases?: Array<{ title: string; given: string; when: string; then: string; assertion: string }>;
 
   target: RunbookTarget;
+}
+
+const MAX_CHARS_PER_FILE = 3500;
+
+function renderFiles(files: NarratiaFile[]): string {
+  if (files.length === 0) return "(no files)";
+  return files
+    .map((f) => {
+      if (f.op === "delete") return `--- delete ${f.filePath} ---\n(file deleted)`;
+      return `--- ${f.op} ${f.filePath} ---\n${f.code.slice(0, MAX_CHARS_PER_FILE)}`;
+    })
+    .join("\n\n");
 }
 
 const NARRATIA_PROMPT = (input: NarratiaInput): string => `
@@ -46,11 +64,8 @@ ${input.acceptanceCriteria.length > 0 ? input.acceptanceCriteria.map((c, i) => `
 Description:
 ${input.itemDescription ?? "None provided"}
 
-Committed code change:
-File: ${input.filePath}
-\`\`\`${input.language ?? ""}
-${input.code.slice(0, 8000)}
-\`\`\`
+Committed change set (${input.files.length} file(s)):
+${renderFiles(input.files)}
 
 ${input.synthesiaVerdict ? `AI recommendation: ${input.synthesiaVerdict}` : ""}
 ${input.aegisGate ? `Security gate: ${input.aegisGate}` : ""}
@@ -67,7 +82,10 @@ The runbook must contain exactly these sections in this order:
 2-3 sentences. What changed, why, and what it enables.
 
 ## What changed
-Bullet list of specific changes made. Reference actual code.
+Bullet list of specific changes made, covering EVERY file in the change set —
+name each file and what changed in it, and how the files relate (e.g. the
+endpoint added to the controller calls the new service method declared on the
+interface). Reference actual code.
 
 ## Deployment steps
 Numbered list of steps to deploy this change. Include environment
