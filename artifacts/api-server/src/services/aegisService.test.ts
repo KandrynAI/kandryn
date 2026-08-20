@@ -65,6 +65,42 @@ test("empty change set → approved, nothing to scan", async () => {
   assert.equal(scan.filesScanned, 0);
 });
 
+test("AEGIS_FORCE_FAIL_PATH forces a fail-closed block on the matched file", async () => {
+  // Deterministic fault injection: even with a scanner that would succeed for
+  // every file, the matched path is forced to fail and blocks the gate — the
+  // reproducible on-record equivalent of run #19's natural .csproj failure.
+  const prev = process.env.AEGIS_FORCE_FAIL_PATH;
+  process.env.AEGIS_FORCE_FAIL_PATH = "PnC.Api.csproj";
+  try {
+    const scan = await runAegisScan(
+      { ...base, files: [file("src/PnC.Api/Controllers/Policies.cs"), file("src/PnC.Api/Services/PolicyService.cs"), file("src/PnC.Api/PnC.Api.csproj")] },
+      {},
+      { scanFile: async (f) => clean(f.filePath) }, // scanner succeeds for all — the hook overrides
+    );
+    assert.equal(scan.gateDecision, "blocked");
+    assert.equal(scan.filesTotal, 3);
+    assert.equal(scan.filesScanned, 2);
+    assert.deepEqual(scan.unscannedFiles, ["src/PnC.Api/PnC.Api.csproj"]);
+    assert.match(scan.gateReason, /Could not scan 1 of 3/);
+  } finally {
+    if (prev === undefined) delete process.env.AEGIS_FORCE_FAIL_PATH;
+    else process.env.AEGIS_FORCE_FAIL_PATH = prev;
+  }
+});
+
+test("AEGIS_FORCE_FAIL_PATH unset → no effect (default off)", async () => {
+  const prev = process.env.AEGIS_FORCE_FAIL_PATH;
+  delete process.env.AEGIS_FORCE_FAIL_PATH;
+  try {
+    const scan = await runAegisScan({ ...base, files: [file("A.cs"), file("PnC.Api.csproj")] }, {}, { scanFile: async (f) => clean(f.filePath) });
+    assert.equal(scan.gateDecision, "approved");
+    assert.equal(scan.filesScanned, 2);
+    assert.deepEqual(scan.unscannedFiles, []);
+  } finally {
+    if (prev !== undefined) process.env.AEGIS_FORCE_FAIL_PATH = prev;
+  }
+});
+
 test("findings from multiple files are unioned and re-numbered", async () => {
   const scan = await runAegisScan(
     { ...base, files: [file("A.cs"), file("B.cs")] },

@@ -239,6 +239,7 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 | `RESEND_API_KEY` / `WAITLIST_FROM_EMAIL` | ⚠️ | Email; without the key, email is a no-op |
 | `APP_BASE_URL` | ❌ | Email link origin (default `https://getbluemantis.com`) |
 | `ENABLE_DEMO_AGENTS` | ❌ | `true` adds mock agents (default off) |
+| `AEGIS_FORCE_FAIL_PATH` | ❌ | Diagnostic fault-injection (default **unset**). When set, any changed file whose path contains this substring is forced to fail its Aegis scan → lands in `unscannedFiles` → **fail-closed block**. For reproducing the fail-closed gate on a real run; never set in normal prod. |
 | `GRAPHIFY_SERVICE_URL` | ❌ | Graphify microservice base URL (optional; enables server-side auto-indexing) |
 | `GRAPHIFY_SERVICE_SECRET` | ❌ | Shared secret for Graphify microservice auth (`x-service-secret`) |
 | `SESSION_SECRET` | ❌ | Session signing |
