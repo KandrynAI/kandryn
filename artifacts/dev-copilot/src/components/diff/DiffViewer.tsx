@@ -31,6 +31,64 @@ function baseName(path: string): string {
   return i >= 0 ? path.slice(i + 1) : path;
 }
 
+/** Small coherence status pill on an agent tab (Phase 3). Null when passed/absent. */
+function coherenceTabBadge(s: RunSuggestion): ReactNode {
+  const status = s.coherenceStatus;
+  if (!status || status === "passed") return null;
+  const failed = status === "failed";
+  const n = s.coherenceFindings?.length ?? 0;
+  return (
+    <span
+      title={failed ? "Failed the cross-file coherence check" : "Cross-file coherence warnings"}
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: "0.04em",
+        padding: "1px 5px",
+        borderRadius: 2,
+        background: failed ? "var(--c-red-bg)" : "var(--c-amber-bg)",
+        color: failed ? "var(--c-red)" : "var(--c-amber)",
+      }}
+    >
+      COHERENCE{n ? ` ${n}` : ""}
+    </span>
+  );
+}
+
+/** Inline list of a suggestion's coherence findings (Phase 3), shown for failed/warnings. */
+function CoherenceFindings({ s }: { s: RunSuggestion }): ReactNode {
+  const findings = s.coherenceFindings ?? [];
+  if (findings.length === 0 || s.coherenceStatus === "passed" || !s.coherenceStatus) return null;
+  const failed = s.coherenceStatus === "failed";
+  const accent = failed ? "var(--c-red)" : "var(--c-amber)";
+  const bg = failed ? "var(--c-red-bg)" : "var(--c-amber-bg)";
+  return (
+    <div style={{ marginTop: 10, border: `1px solid ${accent}`, background: bg, borderRadius: 6, padding: "10px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <AlertTriangle size={14} style={{ color: accent }} />
+        <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: accent }}>
+          {failed ? "Coherence check failed — review before committing" : "Coherence warnings"}
+        </span>
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+        {findings.map((f, i) => (
+          <li key={i} style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-2)", lineHeight: 1.5 }}>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: f.severity === "error" ? "var(--c-red)" : "var(--c-amber)", marginRight: 6 }}>
+              {f.severity}
+            </span>
+            {f.message}
+            <span style={{ color: "var(--c-ink-4)", marginLeft: 6, fontFamily: "var(--mono)" }}>
+              {baseName(f.filePath)}
+              {f.line ? `:${f.line}` : ""}
+              {f.relatedFilePath ? ` ↔ ${baseName(f.relatedFilePath)}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Reconstruct one side of the file from the full-context diff (line N ⇒ index N-1). */
 function reconstruct(hunks: DiffHunk[], side: "old" | "new"): string {
   const arr: string[] = [];
@@ -275,7 +333,8 @@ export interface DiffViewerProps {
   committingId: number | null;
   /** Set by the parent when a commit failed because the branch moved (1.5). */
   staleMessage?: string | null;
-  onCommit: (s: RunSuggestion) => void;
+  /** `override` forces a commit past a failed coherence check (Phase 3). */
+  onCommit: (s: RunSuggestion, override?: boolean) => void;
   onReRun?: () => void;
   rerunning?: boolean;
   prUrl?: string | null;
@@ -346,7 +405,14 @@ export function DiffViewer({
 
   const selValid = isValid(suggestion);
   const allInvalid = suggestions.every((s) => !isValid(s));
-  const canCommit = !isCommitted && selValid && committingId == null;
+  // A coherence-failed suggestion is committable only with an explicit override
+  // (Phase 3) — the user must confirm the checkbox first.
+  const coherenceFailed = suggestion.coherenceStatus === "failed";
+  const [override, setOverride] = useState(false);
+  useEffect(() => {
+    setOverride(false);
+  }, [suggestion.id]);
+  const canCommit = !isCommitted && selValid && committingId == null && (!coherenceFailed || override);
 
   const copyPath = async () => {
     try {
@@ -384,7 +450,7 @@ export function DiffViewer({
       jumpHunk(-1);
     } else if (e.key === "c" && canCommit) {
       e.preventDefault();
-      onCommit(suggestion);
+      onCommit(suggestion, override);
     }
   };
 
@@ -428,6 +494,7 @@ export function DiffViewer({
               ) : s.recommendation === "Recommended" ? (
                 <span style={{ fontSize: 10, fontWeight: 700, background: "var(--c-blue)", color: "#fff", padding: "1px 5px", borderRadius: 2, letterSpacing: "0.04em" }}>REC</span>
               ) : null}
+              {coherenceTabBadge(s)}
               {!valid && <AlertTriangle size={12} style={{ color: "var(--c-red)" }} />}
             </button>
           );
@@ -544,6 +611,9 @@ export function DiffViewer({
         </button>
       </div>
 
+      {/* Coherence findings (Phase 3) — inline above the diff for failed/warnings */}
+      <CoherenceFindings s={suggestion} />
+
       {/* Diff or invalid panel */}
       {file.applyStatus === "failed" ? (
         <div style={{ padding: "10px 0" }}>
@@ -595,7 +665,13 @@ export function DiffViewer({
                 <AlertTriangle size={12} />{allInvalid ? "No suggestion could be applied to the repository." : "This suggestion could not be applied and can't be committed."}
               </span>
             )}
-            <button className="bm-primary" onClick={() => onCommit(suggestion)} disabled={!canCommit} style={{ marginLeft: "auto" }}>
+            {selValid && coherenceFailed && (
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-xs)", color: "var(--c-red)", cursor: "pointer" }}>
+                <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+                Commit despite failed coherence check
+              </label>
+            )}
+            <button className="bm-primary" onClick={() => onCommit(suggestion, override)} disabled={!canCommit} style={{ marginLeft: "auto" }}>
               {committingId === suggestion.id ? <Loader2 size={12} className="animate-spin" /> : <GitCommit size={12} />}Commit
             </button>
           </>

@@ -1,4 +1,5 @@
 import type { ScoreBreakdown } from './scoreBreakdown.js';
+import type { CoherenceResult } from './coherence.js';
 
 /** How a file participates in a suggestion's change set. */
 export type SuggestionFileOp = 'create' | 'edit' | 'delete';
@@ -93,4 +94,6 @@ export interface CodeSuggestion {
   recommendation?: string;
   scoreBreakdown?: ScoreBreakdown | null;
   scoreNarrative?: string | null;
+  /** Static coherence check result (Phase 3) — feeds Synthesia's ranking. */
+  coherence?: CoherenceResult | null;
 }

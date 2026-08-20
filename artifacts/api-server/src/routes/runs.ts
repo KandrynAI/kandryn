@@ -44,6 +44,9 @@ const CreateRunBody = z.object({
 const CommitRunBody = z.object({
   suggestionId: z.coerce.number().int().positive(),
   commitMessage: z.string().min(1).max(500).optional(),
+  // Commit a coherence-failed suggestion anyway (Phase 3). The UI sends this
+  // only after the user confirms the failed-coherence warning.
+  override: z.boolean().optional(),
 });
 
 const ListRunsQuery = z.object({
@@ -438,6 +441,7 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
       params.data.id,
       parsed.data.suggestionId,
       parsed.data.commitMessage,
+      parsed.data.override,
     );
     req.log.info({ runId: params.data.id, ...result }, "Run suggestion committed");
     const [committedSuggestion] = await db
