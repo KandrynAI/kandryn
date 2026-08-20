@@ -208,7 +208,18 @@ export async function runAegisScan(
   const scanFile = deps?.scanFile ?? ((f: AegisScanFile) => scanOneFile(client, item, f));
   const filesTotal = input.files.length;
 
-  const results = await Promise.allSettled(input.files.map((f) => scanFile(f)));
+  // Deterministic fault injection for exercising the fail-closed gate on a real
+  // run (default OFF — unset in production). When AEGIS_FORCE_FAIL_PATH is set,
+  // any file whose path contains that substring is forced to fail its scan, so
+  // it lands in unscannedFiles and blocks the gate exactly as a genuine
+  // error/timeout/parse failure would.
+  const forceFailPath = process.env.AEGIS_FORCE_FAIL_PATH?.trim();
+  const runScan = (f: AegisScanFile): Promise<PerFileScan> =>
+    forceFailPath && f.filePath.includes(forceFailPath)
+      ? Promise.reject(new Error(`AEGIS_FORCE_FAIL_PATH matched "${f.filePath}" — forced scan failure (test hook).`))
+      : scanFile(f);
+
+  const results = await Promise.allSettled(input.files.map((f) => runScan(f)));
 
   const scannedFiles: string[] = [];
   const unscannedFiles: string[] = [];
