@@ -5,6 +5,7 @@ import { ArrowLeft, Download, ExternalLink } from "lucide-react";
 import { agentDisplay } from "@/lib/agents";
 import { Logo } from "@/components/Logo";
 import { useRepo } from "@/context/RepoContext";
+import { useActiveProjectFromResource } from "@/context/ActiveProjectContext";
 import {
   fetchRun,
   fetchProject,
@@ -45,6 +46,8 @@ export default function RunReportPage() {
   const { repos } = useRepo();
 
   const [data, setData] = useState<RunDetail | null>(null);
+  // Sidebar active project follows the run being reported on (no /p/:id in URL).
+  useActiveProjectFromResource(data?.run.projectId ?? null);
   const [project, setProject] = useState<Project | null>(null);
   const [workItem, setWorkItem] = useState<WorkItem | null>(null);
   const [pushedCases, setPushedCases] = useState<WorkItem[]>([]);

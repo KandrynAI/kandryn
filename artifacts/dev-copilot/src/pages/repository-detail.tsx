@@ -9,6 +9,7 @@ import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useActiveProjectFromResource } from "@/context/ActiveProjectContext";
 import { fetchRepositoryGraphStatus, uploadRepositoryGraph, rebuildRepositoryGraph, fetchProjectWorkItems, verifyRepository, ApiError } from "@/services/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -29,16 +30,18 @@ const formSchema = z.object({
 export default function RepositoryDetail() {
   const params = useParams();
   const id = parseInt(params.id || "0", 10);
-  // When reached via /p/:projectId/repositories/:id, keep navigation inside the
-  // project so the active project isn't lost (PART 3).
-  const projectId = params.projectId ? Number(params.projectId) : null;
-  const reposHref = projectId != null ? `/p/${projectId}/repositories` : "/repositories";
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: repo, isLoading } = useGetRepository(id);
-  // Linked Tasks are scoped to the project this repo is opened under, not the
+  // Derive the owning project from the repository itself (repositories.project_id
+  // is the single owner, 0020) — the same resource-derived active-project
+  // mechanism every page uses, replacing the old /p/:projectId URL-prefix patch.
+  const projectId = repo?.projectId ?? null;
+  useActiveProjectFromResource(projectId);
+  const reposHref = projectId != null ? `/p/${projectId}/repositories` : "/repositories";
+  // Linked Tasks are scoped to the repository's owning project, not the
   // repository row — a repo shared by two projects otherwise leaks each
   // project's work items into the other (Issue 2).
   const { data: tasks, isLoading: tasksLoading } = useQuery({
