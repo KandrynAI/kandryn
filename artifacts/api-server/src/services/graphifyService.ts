@@ -2,6 +2,10 @@ import { eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
+// Pure usability predicates live in a db-free module (unit-testable); re-exported
+// here so existing callers keep importing them from graphifyService.
+export { isGraphUsable, isGraphServable } from "./graphUsability.js";
+
 export interface GraphifyQueryResult {
   filePath: string;
   lineStart?: number; // parsed from sourceLocation "file.ts:42"
@@ -101,13 +105,6 @@ export function queryGraph(
   return Array.from(byFile.values())
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, maxResults);
-}
-
-/** Whether a graph exists and is reasonably fresh (default 24h). */
-export function isGraphUsable(graphBuiltAt: Date | string | null | undefined, maxAgeHours = 24): boolean {
-  if (!graphBuiltAt) return false;
-  const ageMs = Date.now() - new Date(graphBuiltAt).getTime();
-  return ageMs < maxAgeHours * 3600 * 1000;
 }
 
 /** Whether the Graphify microservice is configured for this deployment. */

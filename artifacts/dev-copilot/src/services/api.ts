@@ -119,7 +119,9 @@ export interface RepositoryGraphStatus {
   builtAt: string | null;
   nodeCount: number | null;
   stale: boolean;
-  status: 'idle' | 'indexing' | 'succeeded' | 'failed';
+  // 'stale' is set when the repo URL changed after the build — the graph is kept
+  // but retrieval refuses it (tree-only) until a rebuild succeeds.
+  status: 'idle' | 'indexing' | 'succeeded' | 'failed' | 'stale';
   error: string | null;
 }
 

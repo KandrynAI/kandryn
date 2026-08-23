@@ -490,20 +490,24 @@ function GraphifySection({ repoId }: { repoId: number }) {
       ? "#3b82f6"
       : graphStatus === "failed"
         ? "#dc2626"
-        : !built
-          ? "#9ba3ac"
-          : stale
-            ? "#d4821a"
-            : "#1a7f4b";
+        : graphStatus === "stale"
+          ? "#d4821a"
+          : !built
+            ? "#9ba3ac"
+            : stale
+              ? "#d4821a"
+              : "#1a7f4b";
   const statusText = isLoading
     ? "Checking…"
     : isIndexing
       ? "Indexing… this can take a minute"
       : graphStatus === "failed"
         ? `Rebuild failed${status?.error ? ` — ${status.error}` : ""}`
-        : !built
-          ? "Not loaded"
-          : `Loaded — ${status?.nodeCount ?? 0} nodes${status?.builtAt ? `, built ${formatDistanceToNow(new Date(status.builtAt))} ago` : ""}${stale ? " · Rebuild recommended" : ""}`;
+        : graphStatus === "stale"
+          ? "Stale — repository URL changed; retrieval is tree-only until a rebuild completes"
+          : !built
+            ? "Not loaded"
+            : `Loaded — ${status?.nodeCount ?? 0} nodes${status?.builtAt ? `, built ${formatDistanceToNow(new Date(status.builtAt))} ago` : ""}${stale ? " · Rebuild recommended" : ""}`;
 
   return (
     <Card>

@@ -53,8 +53,11 @@ export const repositoriesTable = pgTable(
     // Rebuild lifecycle (0021): idle → indexing (on trigger) → succeeded|failed
     // (on callback). graphError holds the failure text. Gives the UI a real
     // completion/failure signal instead of a silent "0 nodes" build.
+    // `stale` (no migration — text column) is set when the repository URL changes:
+    // the existing graph was built against different content, so retrieval must
+    // refuse it and fall back to tree-only planning until a rebuild succeeds.
     graphStatus: text("graph_status")
-      .$type<"idle" | "indexing" | "succeeded" | "failed">()
+      .$type<"idle" | "indexing" | "succeeded" | "failed" | "stale">()
       .notNull()
       .default("idle"),
     graphError: text("graph_error"),
