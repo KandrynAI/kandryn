@@ -23,6 +23,8 @@ const UpdateProjectBody = z.object({
   name: z.string().min(1).max(160).optional(),
   defaultTarget: z.enum(["story", "task"]).optional(),
   repositoryId: z.coerce.number().int().positive().optional(),
+  // Confidence gate threshold (Phase 4), 0–1.
+  confidenceThreshold: z.number().min(0).max(1).optional(),
 });
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -352,7 +354,10 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
   // Changing the repository: it must be one the caller owns. The binding is
   // adopted via repositories.project_id (0020); projects.repository_id is
   // deprecated and never written.
-  const { repositoryId: newRepositoryId, ...projectUpdates } = parsed.data;
+  const { repositoryId: newRepositoryId, confidenceThreshold, ...projectUpdates } = parsed.data;
+  // numeric column takes a string.
+  const setValues: Partial<typeof projectsTable.$inferInsert> = { ...projectUpdates };
+  if (confidenceThreshold != null) setValues.confidenceThreshold = String(confidenceThreshold);
   if (newRepositoryId != null) {
     const [repo] = await db
       .select({ id: repositoriesTable.id })
@@ -369,7 +374,7 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
   }
   const [proj] = await db
     .update(projectsTable)
-    .set(projectUpdates)
+    .set(setValues)
     .where(eq(projectsTable.id, project.id))
     .returning();
   res.json(proj);
