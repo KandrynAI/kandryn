@@ -5,6 +5,7 @@ import {
   text,
   boolean,
   jsonb,
+  numeric,
   doublePrecision,
   timestamp,
   index,
@@ -14,7 +15,10 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { runsTable } from "./runs";
 
-export type PlanStatus = "planning" | "ready" | "edited" | "failed";
+// `awaiting_review` (Phase 4, 0029): the confidence gate parked this plan below
+// the project threshold — it waits for a human decision before generation, and
+// is distinct from `edited` (a human-revised plan).
+export type PlanStatus = "planning" | "ready" | "edited" | "failed" | "awaiting_review";
 /** How the candidate file set was retrieved. Tree + stack are always included. */
 export type RetrievalMode = "graph" | "keyword";
 
@@ -28,6 +32,33 @@ export interface PlanCandidateFile {
   path: string;
   symbols: string[];
   source: "graph" | "keyword";
+  // Retrieval relevance score for this candidate (Phase 4, 0029). Graph =
+  // queryGraph weighted score; keyword = keyword-match count. Kept so the
+  // confidence gate's score-gap signal is auditable. Different scales per
+  // source — compare only within a mode. Optional for plans created before 0029.
+  score?: number;
+}
+
+/**
+ * Raw inputs the confidence score (Phase 4, 0029) was computed from, persisted
+ * so the score can be audited and recalibrated without re-running planning.
+ * Mirrors ConfidenceSignals in the api-server confidence service (lib/db cannot
+ * import from artifacts/).
+ */
+export interface PersistedConfidenceSignals {
+  scoreGap: number | null; // (s1 - s2) / s1, within-mode; null if < 2 candidates
+  topScore: number | null;
+  secondScore: number | null;
+  retrievalMode: "graph" | "keyword";
+  candidateCount: number;
+  countAboveFloor: number;
+  floor: number;
+  target: number;
+  density: number;
+  historicalPriorCount: number;
+  weights: { gap: number; mode: number; density: number; historical: number };
+  perSignal: { gap: number | null; mode: number; density: number; historical: number | null };
+  weakestSignal: "gap" | "mode" | "density" | "historical" | null;
 }
 
 /**
@@ -56,6 +87,10 @@ export const changePlansTable = pgTable(
     retrievalMode: text("retrieval_mode").$type<RetrievalMode>(),
     graphBuiltAt: timestamp("graph_built_at", { withTimezone: true }),
     graphAgeHours: doublePrecision("graph_age_hours"),
+    // Confidence gate (Phase 4, 0029). Score 0–1; signals are the raw inputs.
+    // Null on plans created before 0029 and on non-ready (planning/failed) rows.
+    confidenceScore: numeric("confidence_score"),
+    confidenceSignals: jsonb("confidence_signals").$type<PersistedConfidenceSignals | null>(),
     planningMs: integer("planning_ms"),
     retrievalMs: integer("retrieval_ms"),
     inputTokens: integer("input_tokens"),

@@ -7,6 +7,7 @@ import {
   suggestionsTable,
   suggestionFilesTable,
   projectsTable,
+  changePlansTable,
 } from "@workspace/db";
 import * as audit from "./auditService.js";
 import { GitService } from "./gitService.js";
@@ -24,6 +25,7 @@ import {
   loadPlanFiles,
   createPlanRevision,
   type RevisionFileInput,
+  type PlanningSummary,
 } from "./planningService.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
@@ -218,7 +220,7 @@ async function generateAndPersistSuggestions(params: {
  * request user. Persists suggestions; optionally auto-commits the top one.
  * Never throws: failures are captured on the run row.
  */
-export async function executeRun(runId: number): Promise<void> {
+export async function executeRun(runId: number, opts?: { reusePlan?: boolean }): Promise<void> {
   const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
   if (!run) {
     logger.warn({ runId }, "executeRun: run not found");
@@ -227,11 +229,15 @@ export async function executeRun(runId: number): Promise<void> {
   if (run.status === "canceled" || run.status === "succeeded") return;
 
   const userId = run.userId;
-  // Team scope for the plan audit entries (null for a personal project).
+  // Team scope for the plan audit entries + the project confidence threshold.
   const [proj] = run.projectId
-    ? await db.select({ teamId: projectsTable.teamId }).from(projectsTable).where(eq(projectsTable.id, run.projectId))
+    ? await db
+        .select({ teamId: projectsTable.teamId, confidenceThreshold: projectsTable.confidenceThreshold })
+        .from(projectsTable)
+        .where(eq(projectsTable.id, run.projectId))
     : [];
   const teamId = proj?.teamId ?? null;
+  const confidenceThreshold = proj?.confidenceThreshold != null ? Number(proj.confidenceThreshold) : 0.6;
   await db.update(runsTable).set({ status: "running", startedAt: new Date() }).where(eq(runsTable.id, runId));
 
   try {
@@ -317,7 +323,24 @@ export async function executeRun(runId: number): Promise<void> {
     // falls back to the Phase 1 single-file path. Needs the Anthropic key (the
     // run would fail at generation without it anyway).
     let planInput: { plan: ChangePlan; context: string } | undefined;
-    if (creds.ANTHROPIC_API_KEY) {
+    let planSummary: PlanningSummary | undefined;
+    if (opts?.reusePlan) {
+      // Approve path (Phase 4): generate against the already-parked plan without
+      // re-planning or re-gating — the human approved this exact plan. Mark it
+      // back to `ready` for the record.
+      const planRow = await loadCurrentPlanRow(runId);
+      if (planRow && fileReader) {
+        const planFiles = await loadPlanFiles(planRow.id);
+        const plan: ChangePlan = {
+          files: planFiles.map((f) => ({ op: f.op, path: f.filePath, rationale: f.rationale, symbols: f.symbols ?? undefined })),
+          notes: planRow.notes ?? undefined,
+        };
+        const tree = coherenceGit ? await coherenceGit.fetchFilePaths() : [];
+        const assembled = await assemblePlanContext(plan, fileReader, tree);
+        planInput = { plan, context: assembled.context };
+        await db.update(changePlansTable).set({ status: "ready" }).where(eq(changePlansTable.id, planRow.id));
+      }
+    } else if (creds.ANTHROPIC_API_KEY) {
       try {
         const gitPlan = await GitService.forRepo(repo.id, {
           githubToken: creds.GITHUB_TOKEN,
@@ -329,8 +352,9 @@ export async function executeRun(runId: number): Promise<void> {
         // never a stale graph left over from a URL change.
         const graphServable = Boolean(repo.graphJson) && isGraphServable(repo.graphStatus, repo.graphBuiltAt);
         const graph = graphServable ? (repo.graphJson as unknown as GraphifyGraph) : null;
-        const plan = await runPlanning({
+        planSummary = await runPlanning({
           runId,
+          projectId: run.projectId,
           userId,
           teamId,
           workItem: {
@@ -345,22 +369,49 @@ export async function executeRun(runId: number): Promise<void> {
           graphBuiltAt: graphServable ? repo.graphBuiltAt : null,
           anthropicApiKey: creds.ANTHROPIC_API_KEY,
         });
-        logger.info({ runId, ...plan, plan: undefined }, "Change plan produced");
+        logger.info({ runId, ...planSummary, plan: undefined }, "Change plan produced");
 
         // Assemble the per-file generation context (full content for edits, a
         // convention sibling for creates) and hand the plan to both agents.
-        if (plan.status === "ready" && plan.plan && plan.plan.files.length > 0 && fileReader) {
-          const assembled = await assemblePlanContext(plan.plan, fileReader, tree);
-          if (plan.planId && assembled.truncated.length > 0) {
-            await recordContextTruncation(plan.planId, assembled.truncated).catch((err) =>
+        if (planSummary.status === "ready" && planSummary.plan && planSummary.plan.files.length > 0 && fileReader) {
+          const assembled = await assemblePlanContext(planSummary.plan, fileReader, tree);
+          if (planSummary.planId && assembled.truncated.length > 0) {
+            await recordContextTruncation(planSummary.planId, assembled.truncated).catch((err) =>
               logger.warn({ runId, err }, "Recording context truncation failed"),
             );
           }
-          planInput = { plan: plan.plan, context: assembled.context };
+          planInput = { plan: planSummary.plan, context: assembled.context };
         }
       } catch (e) {
         logger.warn({ runId, err: e }, "Run: change planning failed — proceeding without a plan");
       }
+    }
+
+    // Confidence gate (Phase 4): a freshly-planned `ready` plan whose confidence
+    // is below the project threshold PARKS for human review — no generation.
+    // Placed outside the planning try so a park-write error can't fall through
+    // to generation. Runs with no `ready` plan (planning failed / no key) are
+    // NOT gated — they fall to the Phase 1 single-file path (documented limit).
+    // The approve path (reusePlan) skips the gate entirely.
+    if (
+      !opts?.reusePlan &&
+      planSummary?.status === "ready" &&
+      planSummary.confidenceScore != null &&
+      planSummary.confidenceScore < confidenceThreshold
+    ) {
+      await db
+        .update(changePlansTable)
+        .set({ status: "awaiting_review" })
+        .where(and(eq(changePlansTable.runId, runId), eq(changePlansTable.superseded, false)));
+      await db
+        .update(runsTable)
+        .set({ status: "awaiting_review", usedGraphContext })
+        .where(eq(runsTable.id, runId));
+      logger.info(
+        { runId, confidence: planSummary.confidenceScore, threshold: confidenceThreshold, weakest: planSummary.confidenceSignals?.weakestSignal },
+        "Run parked awaiting review — confidence below threshold",
+      );
+      return;
     }
 
     const { raw, ranked, validRaw, inserted } = await generateAndPersistSuggestions({
@@ -467,6 +518,42 @@ export async function executeRun(runId: number): Promise<void> {
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Confidence-gate exits (Phase 4). Edit-then-approve reuses reviseAndRegenerate.
+// ---------------------------------------------------------------------------
+
+/**
+ * Approve a parked (awaiting_review) run: generate against the already-scored
+ * plan exactly as a `ready` plan would, without re-planning or re-gating.
+ * Validates state synchronously (throws RunError for the route), then runs
+ * generation in the background (executeRun never throws).
+ */
+export async function approvePlan(runId: number, userId: string): Promise<void> {
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, userId)));
+  if (!run) throw new RunError("Run not found", 404);
+  if (run.status !== "awaiting_review") throw new RunError("This run is not awaiting review.", 409);
+  void executeRun(runId, { reusePlan: true }).catch((err) => logger.error({ runId, err }, "Approve-generation crashed"));
+}
+
+/**
+ * Reject a parked run: it ends cleanly with NO suggestions and no partial state.
+ * The run becomes `canceled` (a human declining a plan — distinct from `failed`,
+ * a technical error). Nothing downstream (Aegis/Veria/Narratia/tests) runs, as
+ * all guard on committedSuggestionId, which is never set.
+ */
+export async function rejectPlan(runId: number, userId: string): Promise<void> {
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, userId)));
+  if (!run) throw new RunError("Run not found", 404);
+  if (run.status !== "awaiting_review") throw new RunError("This run is not awaiting review.", 409);
+  await db.update(runsTable).set({ status: "canceled", finishedAt: new Date() }).where(eq(runsTable.id, runId));
 }
 
 /**

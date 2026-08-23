@@ -8,6 +8,10 @@ export type RunStatus =
   | "scheduled"
   | "queued"
   | "running"
+  // Phase 4 (0029): the confidence gate parked this run — its plan is below the
+  // project threshold and awaits a human decision before generation. A distinct
+  // status (not `running`) so the dispatcher's stuck-run sweep never reaps it.
+  | "awaiting_review"
   | "succeeded"
   | "failed"
   | "canceled";
