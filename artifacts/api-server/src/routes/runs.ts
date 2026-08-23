@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, runsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
 import { z } from "zod/v4";
-import { executeRun, commitFromSuggestion, reviseAndRegenerate, RunError } from "../services/runService.js";
+import { executeRun, commitFromSuggestion, reviseAndRegenerate, approvePlan, rejectPlan, RunError } from "../services/runService.js";
 import { loadRunPlanDTO } from "../services/planningService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
@@ -346,6 +346,65 @@ router.post("/runs/:id/plan/revise", async (req, res): Promise<void> => {
       ipAddress: audit.getIp(req),
     });
     res.status(202).json(result);
+  } catch (err) {
+    if (err instanceof RunError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Confidence-gate exits (Phase 4). A run parked in awaiting_review has three
+// exits: approve (generate as-is), edit-then-approve (reuse /plan/revise), and
+// reject (end the run, no suggestions).
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/plan/approve", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  try {
+    await approvePlan(params.data.id, req.userId!);
+    audit.log({
+      userId: req.userId!,
+      teamId: req.teamId ?? null,
+      action: "run.plan_approved",
+      entityType: "run",
+      entityId: params.data.id,
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+    res.status(202).json({ status: "generating" });
+  } catch (err) {
+    if (err instanceof RunError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+router.post("/runs/:id/plan/reject", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  try {
+    await rejectPlan(params.data.id, req.userId!);
+    audit.log({
+      userId: req.userId!,
+      teamId: req.teamId ?? null,
+      action: "run.plan_rejected",
+      entityType: "run",
+      entityId: params.data.id,
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+    res.status(200).json({ status: "canceled" });
   } catch (err) {
     if (err instanceof RunError) {
       res.status(err.status).json({ error: err.message });

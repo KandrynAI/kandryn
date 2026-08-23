@@ -3,7 +3,9 @@
 // composite project rooted at src/ and cannot import from ../../../../shared).
 
 export type ChangePlanOp = "create" | "edit" | "delete";
-export type PlanStatus = "planning" | "ready" | "edited" | "failed";
+// `awaiting_review` (Phase 4): the confidence gate parked this plan below the
+// project threshold — awaits a human decision before generation.
+export type PlanStatus = "planning" | "ready" | "edited" | "failed" | "awaiting_review";
 export type RetrievalMode = "graph" | "keyword";
 
 /** One planned file. No code — path, operation, intent. */
@@ -28,4 +30,7 @@ export interface PlanCandidateFile {
   path: string;
   symbols: string[];
   source: "graph" | "keyword";
+  /** Retrieval relevance score (Phase 4) — graph weighted score / keyword match
+   *  count. Feeds the confidence gate's score-gap signal. Within-mode only. */
+  score?: number;
 }

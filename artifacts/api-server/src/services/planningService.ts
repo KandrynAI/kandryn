@@ -8,6 +8,7 @@ import type { ChangePlan, ChangePlanOp, PlannedFile, PlanCandidateFile, Retrieva
 import type { StackProfile } from "../stack/detector.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import { queryGraph, isGraphUsable } from "./graphifyService.js";
+import { computePlanConfidence, confidenceReason, type ConfidenceSignals } from "./confidence.js";
 import * as audit from "./auditService.js";
 import { logger } from "../lib/logger.js";
 
@@ -98,7 +99,7 @@ export function rankCandidatePaths(paths: string[], keywords: string[], cap = CA
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, cap)
-    .map((x) => ({ path: x.path, symbols: [], source: "keyword" as const }));
+    .map((x) => ({ path: x.path, symbols: [], source: "keyword" as const, score: x.score }));
 }
 
 /** Candidate files from the graph: ranked files + the symbol names per file. */
@@ -114,6 +115,7 @@ export function buildCandidatesFromGraph(graph: GraphifyGraph, keywords: string[
     path: r.filePath,
     symbols: [...(symbolsByFile.get(r.filePath) ?? [])].slice(0, 40),
     source: "graph" as const,
+    score: r.score,
   }));
 }
 
@@ -253,6 +255,11 @@ export interface RunPlanDTO {
   graphAgeHours: number | null;
   error: string | null;
   files: RunPlanFileDTO[];
+  // Confidence gate (Phase 4). Null on plans predating it / non-ready plans.
+  confidenceScore: number | null;
+  confidenceSignals: ConfidenceSignals | null;
+  /** One-line, signal-derived reason for the awaiting-review banner. */
+  confidenceReason: string | null;
 }
 
 /** The current plan for a run, serialised for the client (null if none). */
@@ -260,6 +267,7 @@ export async function loadRunPlanDTO(runId: number): Promise<RunPlanDTO | null> 
   const row = await loadCurrentPlanRow(runId);
   if (!row) return null;
   const files = await loadPlanFiles(row.id);
+  const signals = row.confidenceSignals ?? null;
   return {
     id: row.id,
     revision: row.revision,
@@ -268,6 +276,9 @@ export async function loadRunPlanDTO(runId: number): Promise<RunPlanDTO | null> 
     retrievalMode: row.retrievalMode,
     graphAgeHours: row.graphAgeHours,
     error: row.error,
+    confidenceScore: row.confidenceScore != null ? Number(row.confidenceScore) : null,
+    confidenceSignals: signals,
+    confidenceReason: signals ? confidenceReason(signals) : null,
     files: files.map((f) => ({
       id: f.id,
       seq: f.seq,
@@ -484,6 +495,8 @@ async function callPlanner(
 
 export interface PlanningInput {
   runId: number;
+  /** Owning project — for the confidence gate's historical-acceptance query. */
+  projectId: number;
   /** For the fire-and-forget audit entry (plan.generated / plan.failed). */
   userId: string;
   teamId: number | null;
@@ -509,6 +522,9 @@ export interface PlanningSummary {
   inputTokens: number;
   outputTokens: number;
   graphAgeHours: number | null;
+  /** Confidence gate (Phase 4). Null when the plan is not `ready` (nothing to score). */
+  confidenceScore: number | null;
+  confidenceSignals: ConfidenceSignals | null;
 }
 
 /**
@@ -517,7 +533,7 @@ export interface PlanningSummary {
  * graph is an enhancement on the tree-primary path: its absence is not an error.
  */
 export async function runPlanning(input: PlanningInput): Promise<PlanningSummary> {
-  const { runId, userId, teamId, workItem, keywords, stack, tree, graph, graphBuiltAt, anthropicApiKey } = input;
+  const { runId, projectId, userId, teamId, workItem, keywords, stack, tree, graph, graphBuiltAt, anthropicApiKey } = input;
 
   // Retrieval (tree-primary; graph enhances candidate quality when fresh).
   const tRetrieval = Date.now();
@@ -548,6 +564,26 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
   );
   const planningMs = Date.now() - tPlan;
 
+  // Confidence gate (Phase 4). Only a `ready` plan is scored — nothing to gate
+  // otherwise. Best-effort: a failure here leaves confidence null and the run
+  // proceeds (fail-open), rather than parking on a scoring error.
+  let confidenceScore: number | null = null;
+  let confidenceSignals: ConfidenceSignals | null = null;
+  if (result.status === "ready" && result.plan) {
+    try {
+      const conf = await computePlanConfidence({
+        candidates,
+        retrievalMode,
+        planFilePaths: result.plan.files.map((f) => f.path),
+        projectId,
+      });
+      confidenceScore = conf.score;
+      confidenceSignals = conf.signals;
+    } catch (err) {
+      logger.warn({ runId, err }, "Confidence scoring failed — proceeding without a score");
+    }
+  }
+
   // Persist the plan (revision 1) + its files. Best-effort — a DB failure here
   // must not fail the run, so it is caught and logged.
   try {
@@ -560,6 +596,8 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
         status: result.status,
         model: PLANNER_MODEL,
         candidateFiles: candidates,
+        confidenceScore: confidenceScore != null ? String(confidenceScore) : null,
+        confidenceSignals,
         notes: result.plan?.notes ?? null,
         retrievalMode,
         graphBuiltAt: planGraphBuiltAt,
@@ -632,6 +670,8 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       graphAgeHours,
+      confidenceScore,
+      confidenceSignals,
     };
   } catch (err) {
     logger.error({ runId, err }, "Persisting change plan failed");
@@ -646,6 +686,8 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       graphAgeHours,
+      confidenceScore,
+      confidenceSignals,
     };
   }
 }

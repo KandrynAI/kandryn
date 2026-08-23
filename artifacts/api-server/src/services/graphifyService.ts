@@ -13,6 +13,11 @@ export interface GraphifyQueryResult {
   nodeLabel: string;
   relation: string; // how it was found: "direct" | "caller" | "callee" | "importer"
   confidence: number; // 0-1
+  // Raw weighted relevance score (label==10 / includes==5 / file==3 / id==2 +
+  // degree; one-hop neighbours far lower). Exposed for the Phase 4 confidence
+  // gate's score-gap/density signals, which need finer granularity than the
+  // coarse 1.0/0.9/0.6 confidence tiers.
+  score: number;
 }
 
 function parseLineNumber(sourceLocation?: string): number | undefined {
@@ -59,7 +64,7 @@ export function queryGraph(
   const directIds = new Set(direct.map((d) => d.node.id));
   const results: GraphifyQueryResult[] = [];
 
-  for (const { node } of direct) {
+  for (const { node, score } of direct) {
     const start = parseLineNumber(node.sourceLocation);
     results.push({
       filePath: node.sourceFile,
@@ -68,6 +73,7 @@ export function queryGraph(
       nodeLabel: node.label,
       relation: "direct",
       confidence: 1.0,
+      score,
     });
   }
 
@@ -92,6 +98,9 @@ export function queryGraph(
       nodeLabel: neighbor.label,
       relation: edge.relation,
       confidence: edge.confidence === "EXTRACTED" ? 0.9 : 0.6,
+      // One-hop neighbours are weak candidates — kept below the graph relevance
+      // floor so they don't inflate the confidence density signal.
+      score: edge.confidence === "EXTRACTED" ? 3 : 2,
     });
   }
 

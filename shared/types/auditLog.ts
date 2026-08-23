@@ -32,6 +32,9 @@ export const AUDIT_ACTIONS = [
   'run.canceled',
   'run.failed',
   'run.committed',
+  // Confidence gate (Phase 4)
+  'run.plan_approved',
+  'run.plan_rejected',
 
   // Change plan (Phase 2)
   'plan.generated',

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { repositoriesTable } from "./repositories";
@@ -34,6 +34,10 @@ export const projectsTable = pgTable(
     // avoid a schema import cycle; the FK lives in the SQL migration).
     teamId: integer("team_id"),
     visibility: text("visibility").$type<"personal" | "team">().notNull().default("personal"),
+    // Confidence gate threshold (Phase 4, 0029). A plan whose confidence_score is
+    // below this parks in awaiting_review before generation. 0.6 is an
+    // UNCALIBRATED placeholder — the eval harness should tune it.
+    confidenceThreshold: numeric("confidence_threshold").notNull().default("0.6"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
