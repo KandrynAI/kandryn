@@ -12,8 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-
-const ACTIVE_PROJECT_KEY = "bluemantis_active_project_id";
+import { ACTIVE_PROJECT_KEY } from "@/lib/activeProject";
 
 const groupLabel = "mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
 

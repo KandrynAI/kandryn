@@ -11,6 +11,7 @@ import { PlanPanel } from "@/components/plan/PlanPanel";
 import { EditPlanDialog } from "@/components/plan/EditPlanDialog";
 import { agentDisplay } from "@/lib/agents";
 import { useTeam } from "@/context/TeamContext";
+import { useActiveProjectFromResource } from "@/context/ActiveProjectContext";
 
 type AegisIssueType = "bug" | "subtask";
 type AegisIssueTypePref = AegisIssueType | "smart";
@@ -90,6 +91,9 @@ export default function RunDetailPage() {
   const [, navigate] = useLocation();
 
   const [data, setData] = useState<RunDetail | null>(null);
+  // Drive the sidebar's active project from the run being viewed, not from
+  // whatever was last active (this route has no /p/:id URL segment).
+  useActiveProjectFromResource(data?.run.projectId ?? null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [committingId, setCommittingId] = useState<number | null>(null);

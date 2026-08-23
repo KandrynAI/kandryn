@@ -6,6 +6,7 @@ import { TopBar } from "./TopBar";
 import { TabsProvider } from "@/context/TabsContext";
 import { TopBarSlotProvider } from "@/context/TopBarContext";
 import { RightPanelProvider } from "@/context/RightPanelContext";
+import { ActiveProjectProvider } from "@/context/ActiveProjectContext";
 import { Toaster } from "@/components/ui/toaster";
 
 interface AppShellProps {
@@ -17,6 +18,7 @@ export function AppShell({ children }: AppShellProps) {
   // the TabBar itself is no longer rendered (navigation is via the rail/panel).
   return (
     <TabsProvider>
+      <ActiveProjectProvider>
       <TopBarSlotProvider>
         <RightPanelProvider>
           <div data-testid="app-shell" style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "var(--sans)" }}>
@@ -36,6 +38,7 @@ export function AppShell({ children }: AppShellProps) {
           <Toaster />
         </RightPanelProvider>
       </TopBarSlotProvider>
+      </ActiveProjectProvider>
     </TabsProvider>
   );
 }

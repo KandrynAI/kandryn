@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useUser, useClerk } from "@clerk/react";
 import { useRepo } from "@/context/RepoContext";
 import { useConfig } from "@/context/ConfigContext";
 import { useTeam } from "@/context/TeamContext";
+import { useActiveProject } from "@/context/ActiveProjectContext";
 import {
-  fetchProjects,
   fetchProjectWorkItems,
   fetchRuns,
   fetchRepositories,
-  type Project,
   type Repository,
 } from "@/services/api";
 import {
@@ -21,8 +20,6 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useRightPanel } from "@/context/RightPanelContext";
-
-const ACTIVE_PROJECT_KEY = "bluemantis_active_project_id";
 
 interface Counts {
   open: number;
@@ -73,34 +70,11 @@ export function ContextPanel() {
   const { team, role, isAdmin, loading: teamLoading } = useTeam();
   const { open: openRightPanel } = useRightPanel();
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [storedProjectId] = useState<number | null>(() => {
-    const v = localStorage.getItem(ACTIVE_PROJECT_KEY);
-    return v ? Number(v) : null;
-  });
+  // Active project + project list come from the single shared source of truth.
+  const { projects, activeProject } = useActiveProject();
   const [counts, setCounts] = useState<Counts | null>(null);
   const [countsLoading, setCountsLoading] = useState(false);
 
-  // Refetch on navigation so a project created this session appears without a reload.
-  useEffect(() => {
-    fetchProjects().then(setProjects).catch(() => {});
-  }, [location]);
-
-  const routeMatch = location.match(/\/p\/(\d+)/);
-  const routeId = routeMatch ? Number(routeMatch[1]) : null;
-  const activeProject = useMemo(
-    () =>
-      projects.find((p) => p.id === routeId) ??
-      projects.find((p) => p.id === storedProjectId) ??
-      projects[0] ??
-      null,
-    [projects, routeId, storedProjectId],
-  );
-
-  // Persist the active project so it is restored on the next load.
-  useEffect(() => {
-    if (activeProject) localStorage.setItem(ACTIVE_PROJECT_KEY, String(activeProject.id));
-  }, [activeProject]);
   // Resolve the repository from the active project (repositories.project_id,
   // 0020) rather than the first of the user's repos. Sync it to RepoContext so
   // the shared active repository / stack profile follow the project.
