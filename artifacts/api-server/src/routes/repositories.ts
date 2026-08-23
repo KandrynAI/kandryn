@@ -330,11 +330,19 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
   };
   // A new URL invalidates the detected stack and clears the reconfiguration and
   // verification flags; the stack is re-detected below. Adopt the verified branch.
+  // It also invalidates the Graphify graph: the existing graph was built against
+  // the OLD content, so mark it `stale` — retrieval refuses a stale graph and
+  // falls back to tree-only planning until a rebuild succeeds. The graph_json is
+  // kept (not deleted) for reference; only its status gates usage.
   if (urlChanged) {
     updates.stackProfile = {};
     updates.needsReconfiguration = false;
     updates.needsVerification = false;
     if (verifiedBranch) updates.defaultBranch = verifiedBranch;
+    if (existing.graphBuiltAt != null) {
+      updates.graphStatus = "stale";
+      updates.graphError = null;
+    }
   }
 
   const [repo] = await db
@@ -356,6 +364,14 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
         githubToken: creds.GITHUB_TOKEN,
         azureReposToken: creds.AZURE_REPOS_TOKEN,
       });
+      // Self-heal: if the graph microservice is configured, kick a rebuild so the
+      // graph refreshes against the new URL (triggerRepoIndex flips status
+      // stale→indexing→succeeded on callback). Correctness does not depend on this
+      // — retrieval already refuses the stale graph — so an unconfigured service
+      // simply leaves it `stale` until a manual rebuild/upload.
+      if (existing.graphBuiltAt != null && isGraphifyConfigured() && repo.url) {
+        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: req.log });
+      }
     } catch (err) {
       req.log.warn({ repoId: repo.id, err }, "Stack re-detection after URL change failed");
     }

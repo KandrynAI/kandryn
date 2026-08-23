@@ -15,7 +15,7 @@ import { loadSuggestionFiles } from "./suggestionFiles.js";
 import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
 import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
 import { checkCoherence, buildRepoSymbolIndex, type RepoSymbolIndex } from "./coherence/index.js";
-import { isGraphUsable, triggerRepoIndex } from "./graphifyService.js";
+import { isGraphServable, triggerRepoIndex } from "./graphifyService.js";
 import {
   runPlanning,
   assemblePlanContext,
@@ -270,10 +270,12 @@ export async function executeRun(runId: number): Promise<void> {
         githubToken: creds.GITHUB_TOKEN,
         azureReposToken: creds.AZURE_REPOS_TOKEN,
       });
-      // Use the Graphify graph for precise, low-token context when one is loaded
-      // and fresh; otherwise fetchFileContextWithGraph falls back to keywords.
+      // Use the Graphify graph for precise, low-token context when one is loaded,
+      // current, and its build succeeded (a stale graph — URL changed since the
+      // build — is refused); otherwise fetchFileContextWithGraph falls back to
+      // keywords.
       const graph =
-        repo.graphJson && isGraphUsable(repo.graphBuiltAt)
+        repo.graphJson && isGraphServable(repo.graphStatus, repo.graphBuiltAt)
           ? (repo.graphJson as unknown as GraphifyGraph)
           : null;
       const ctx = await git.fetchFileContextWithGraph(String(workItem.id), keywords, stack, graph);
@@ -322,10 +324,11 @@ export async function executeRun(runId: number): Promise<void> {
           azureReposToken: creds.AZURE_REPOS_TOKEN,
         });
         const tree = await gitPlan.fetchFilePaths();
-        const graph =
-          repo.graphJson && isGraphUsable(repo.graphBuiltAt)
-            ? (repo.graphJson as unknown as GraphifyGraph)
-            : null;
+        // Only a servable (succeeded + fresh) graph reaches the planner, so a
+        // 'graph' retrievalMode always means the graph is current for this repo —
+        // never a stale graph left over from a URL change.
+        const graphServable = Boolean(repo.graphJson) && isGraphServable(repo.graphStatus, repo.graphBuiltAt);
+        const graph = graphServable ? (repo.graphJson as unknown as GraphifyGraph) : null;
         const plan = await runPlanning({
           runId,
           userId,
@@ -339,7 +342,7 @@ export async function executeRun(runId: number): Promise<void> {
           stack,
           tree,
           graph,
-          graphBuiltAt: repo.graphBuiltAt ?? null,
+          graphBuiltAt: graphServable ? repo.graphBuiltAt : null,
           anthropicApiKey: creds.ANTHROPIC_API_KEY,
         });
         logger.info({ runId, ...plan, plan: undefined }, "Change plan produced");
