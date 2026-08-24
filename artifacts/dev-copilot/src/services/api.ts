@@ -898,6 +898,44 @@ export function fetchPlanAcceptance(days: number, projectId?: number): Promise<P
   return request<PlanAcceptance>(`/api/reports/plan-acceptance?${reportQuery(days, projectId)}`);
 }
 
+export interface CoherenceStats {
+  passed: number;
+  warnings: number;
+  failed: number;
+  total: number;
+  rate: number | null; // % passed, null when no C# suggestions with a status
+  priorRate: number | null;
+  delta: number | null;
+}
+
+export function fetchCoherenceStats(days: number, projectId?: number): Promise<CoherenceStats> {
+  return request<CoherenceStats>(`/api/reports/coherence?${reportQuery(days, projectId)}`);
+}
+
+export interface ConfidenceDistribution {
+  histogram: { lo: number; hi: number; count: number }[];
+  threshold: number | null; // single-project only; null under "All projects"
+  total: number;
+  belowThreshold: { approved: number; edited: number; rejected: number; pending: number };
+}
+
+export function fetchConfidenceDistribution(days: number, projectId?: number): Promise<ConfidenceDistribution> {
+  return request<ConfidenceDistribution>(`/api/reports/confidence-distribution?${reportQuery(days, projectId)}`);
+}
+
+export interface AgentWin {
+  agents: {
+    name: string;
+    runs: number;
+    recommendedRate: number | null;
+    dimensions: Record<string, number | null>;
+  }[];
+}
+
+export function fetchAgentWin(days: number, projectId?: number): Promise<AgentWin> {
+  return request<AgentWin>(`/api/reports/agent-win?${reportQuery(days, projectId)}`);
+}
+
 /* ---- Audit log (admin only) ---- */
 
 export interface AuditLogItem {

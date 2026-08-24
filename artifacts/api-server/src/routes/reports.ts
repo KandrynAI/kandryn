@@ -1,9 +1,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, like } from "drizzle-orm";
 import {
   db,
   runsTable,
   suggestionsTable,
+  suggestionFilesTable,
   tasksTable,
   repositoriesTable,
   projectsTable,
@@ -322,6 +323,19 @@ async function resolveReportScope(
   return { userIds, projectId: parsed.data.projectId, days };
 }
 
+// Runs still mid-flight — their plan decision (accept/edit/reject) isn't made.
+const IN_FLIGHT_RUN = new Set(["scheduled", "queued", "running", "awaiting_review"]);
+
+/** Outcome of a run that produced a usable plan: accepted as-is (still rev 1),
+ *  edited (a revision > 1 exists), rejected (canceled), or pending (in-flight).
+ *  Shared by plan-acceptance and the confidence below-threshold breakdown. */
+function classifyOutcome(status: string, maxRevision: number): "accepted" | "edited" | "rejected" | "pending" {
+  if (IN_FLIGHT_RUN.has(status)) return "pending";
+  if (maxRevision > 1) return "edited";
+  if (status === "canceled") return "rejected";
+  return "accepted";
+}
+
 /**
  * GET /reports/retrieval-attribution — for every plan file a user added by hand
  * (`added_by_user = true`) in scope/window, split by whether the path was in the
@@ -412,16 +426,12 @@ router.get("/reports/plan-acceptance", async (req, res): Promise<void> => {
     planByRun.set(p.runId, e);
   }
 
-  const IN_FLIGHT = new Set(["scheduled", "queued", "running", "awaiting_review"]);
-
   // Classify one run: null = not eligible (no usable plan / still in-flight).
   function classify(run: { status: string }, runId: number): "accepted" | "edited" | "rejected" | null {
     const pf = planByRun.get(runId);
     if (!pf?.hasUsable) return null; // planning failed or never produced a plan
-    if (IN_FLIGHT.has(run.status)) return null; // decision not made yet
-    if (pf.maxRevision > 1) return "edited";
-    if (run.status === "canceled") return "rejected";
-    return "accepted";
+    const o = classifyOutcome(run.status, pf.maxRevision);
+    return o === "pending" ? null : o; // in-flight decision not made yet
   }
 
   function rateOver(rs: typeof runs): { rate: number | null; accepted: number; edited: number; rejected: number; total: number } {
@@ -465,6 +475,210 @@ router.get("/reports/plan-acceptance", async (req, res): Promise<void> => {
     delta: cur.rate != null && pri.rate != null ? cur.rate - pri.rate : null,
     sparkline: spark,
   });
+});
+
+/**
+ * GET /reports/coherence — coherence pass rate, scoped to C# suggestions. The
+ * Phase 3 checker is deliberately C#-only, and it returns 'passed' for
+ * unsupported languages (an auto-pass), so a suggestion is only counted here if
+ * its change set touches a `.cs` file. Share of those with status='passed', over
+ * ones with a non-null status (pre-Phase-3 suggestions are null → excluded, not
+ * counted as failures). With a trend vs. the prior window.
+ */
+router.get("/reports/coherence", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const now = Date.now();
+  const windowMs = scope.days * 24 * 60 * 60 * 1000;
+  const since = new Date(now - windowMs);
+
+  const conds = [
+    isNotNull(suggestionsTable.coherenceStatus),
+    like(suggestionFilesTable.filePath, "%.cs"),
+    inArray(runsTable.userId, scope.userIds),
+    gte(runsTable.createdAt, new Date(now - 2 * windowMs)),
+  ];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+
+  // Distinct so a suggestion touching several .cs files counts once.
+  const rows = await db
+    .selectDistinct({
+      id: suggestionsTable.id,
+      status: suggestionsTable.coherenceStatus,
+      createdAt: runsTable.createdAt,
+    })
+    .from(suggestionsTable)
+    .innerJoin(suggestionFilesTable, eq(suggestionFilesTable.suggestionId, suggestionsTable.id))
+    .innerJoin(runsTable, eq(suggestionsTable.runId, runsTable.id))
+    .where(and(...conds));
+
+  function tally(rs: typeof rows) {
+    let passed = 0, warnings = 0, failed = 0;
+    for (const r of rs) {
+      if (r.status === "passed") passed++;
+      else if (r.status === "warnings") warnings++;
+      else if (r.status === "failed") failed++;
+    }
+    const total = passed + warnings + failed;
+    return { passed, warnings, failed, total, rate: total ? Math.round((passed / total) * 100) : null };
+  }
+
+  const cur = tally(rows.filter((r) => r.createdAt >= since));
+  const pri = tally(rows.filter((r) => r.createdAt < since));
+
+  res.json({
+    ...cur,
+    priorRate: pri.rate,
+    delta: cur.rate != null && pri.rate != null ? cur.rate - pri.rate : null,
+  });
+});
+
+/**
+ * GET /reports/confidence-distribution — histogram of the Phase 4 confidence
+ * score over ready plans (revision 1; the score is not recomputed on revisions).
+ * The threshold marker is single-project only — under "All projects" there is no
+ * one threshold, so it's null and the client hides the line. Below-threshold
+ * plans are broken down by their run's outcome (each compared to ITS project's
+ * threshold, so "All projects" stays correct with mixed thresholds).
+ */
+router.get("/reports/confidence-distribution", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
+
+  const conds = [
+    isNotNull(changePlansTable.confidenceScore),
+    inArray(runsTable.userId, scope.userIds),
+    gte(runsTable.createdAt, since),
+  ];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+
+  const planRows = await db
+    .select({
+      runId: changePlansTable.runId,
+      score: changePlansTable.confidenceScore,
+      projectId: runsTable.projectId,
+      runStatus: runsTable.status,
+    })
+    .from(changePlansTable)
+    .innerJoin(runsTable, eq(changePlansTable.runId, runsTable.id))
+    .where(and(...conds));
+
+  // maxRevision per run (to tell edited from accepted-as-is).
+  const runIds = [...new Set(planRows.map((p) => p.runId))];
+  const maxRev = new Map<number, number>();
+  if (runIds.length) {
+    const allPlans = await db
+      .select({ runId: changePlansTable.runId, revision: changePlansTable.revision })
+      .from(changePlansTable)
+      .where(inArray(changePlansTable.runId, runIds));
+    for (const p of allPlans) maxRev.set(p.runId, Math.max(maxRev.get(p.runId) ?? 0, p.revision));
+  }
+
+  // Per-project thresholds (include the scoped project so its marker resolves
+  // even when it has no plans in-window).
+  const projectIds = [...new Set(planRows.map((p) => p.projectId))];
+  if (scope.projectId != null && !projectIds.includes(scope.projectId)) projectIds.push(scope.projectId);
+  const thresholdByProject = new Map<number, number>();
+  if (projectIds.length) {
+    const projRows = await db
+      .select({ id: projectsTable.id, threshold: projectsTable.confidenceThreshold })
+      .from(projectsTable)
+      .where(inArray(projectsTable.id, projectIds));
+    for (const p of projRows) thresholdByProject.set(p.id, Number(p.threshold));
+  }
+
+  const NB = 10;
+  const hist = new Array(NB).fill(0);
+  let approved = 0, edited = 0, rejected = 0, pending = 0;
+  let total = 0;
+  for (const p of planRows) {
+    const s = Number(p.score);
+    if (!Number.isFinite(s)) continue;
+    total++;
+    hist[Math.min(NB - 1, Math.max(0, Math.floor(s * NB)))]++;
+    const th = thresholdByProject.get(p.projectId) ?? 0.6;
+    if (s < th) {
+      const o = classifyOutcome(p.runStatus, maxRev.get(p.runId) ?? 1);
+      if (o === "accepted") approved++;
+      else if (o === "edited") edited++;
+      else if (o === "rejected") rejected++;
+      else pending++;
+    }
+  }
+
+  const histogram = hist.map((count, i) => ({ lo: i / NB, hi: (i + 1) / NB, count }));
+  const threshold = scope.projectId != null ? (thresholdByProject.get(scope.projectId) ?? 0.6) : null;
+
+  res.json({ histogram, threshold, total, belowThreshold: { approved, edited, rejected, pending } });
+});
+
+/**
+ * GET /reports/agent-win — Raptia vs. Fovea. DB agents (claude/antigravity →
+ * Raptia, openai/copilot → Fovea) mapped to display names. Recommended rate =
+ * share of runs where each agent's suggestion was picked; plus the average of
+ * each Synthesia dimension's per-suggestion score. Dimension names/weights are
+ * fixed on the client to match Synthesia exactly.
+ */
+router.get("/reports/agent-win", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
+
+  const conds = [
+    isNotNull(suggestionsTable.scoreBreakdown),
+    inArray(runsTable.userId, scope.userIds),
+    gte(runsTable.createdAt, since),
+  ];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+
+  const rows = await db
+    .select({
+      agent: suggestionsTable.agent,
+      recommendation: suggestionsTable.recommendation,
+      scoreBreakdown: suggestionsTable.scoreBreakdown,
+      runId: suggestionsTable.runId,
+    })
+    .from(suggestionsTable)
+    .innerJoin(runsTable, eq(suggestionsTable.runId, runsTable.id))
+    .where(and(...conds));
+
+  const DIMS = ["correctness", "coherence", "conventions", "acCoverage", "readability", "minimalDiff"] as const;
+  const displayName = (a: string): "Raptia" | "Fovea" => (a === "claude" || a === "antigravity" ? "Raptia" : "Fovea");
+
+  type Acc = { runIds: Set<number>; recRunIds: Set<number>; dimSum: Record<string, number>; dimCount: Record<string, number> };
+  const acc = new Map<string, Acc>();
+  for (const r of rows) {
+    const name = displayName(r.agent);
+    const e = acc.get(name) ?? { runIds: new Set(), recRunIds: new Set(), dimSum: {}, dimCount: {} };
+    e.runIds.add(r.runId);
+    if (r.recommendation === "Recommended") e.recRunIds.add(r.runId);
+    const sb = r.scoreBreakdown as Record<string, { score?: number } | undefined> | null;
+    if (sb) {
+      for (const d of DIMS) {
+        const v = sb[d]?.score;
+        if (v != null) {
+          e.dimSum[d] = (e.dimSum[d] ?? 0) + v;
+          e.dimCount[d] = (e.dimCount[d] ?? 0) + 1;
+        }
+      }
+    }
+    acc.set(name, e);
+  }
+
+  const agents = (["Raptia", "Fovea"] as const).map((name) => {
+    const e = acc.get(name);
+    const dimensions: Record<string, number | null> = {};
+    for (const d of DIMS) dimensions[d] = e?.dimCount[d] ? Math.round(e.dimSum[d] / e.dimCount[d]) : null;
+    return {
+      name,
+      runs: e ? e.runIds.size : 0,
+      recommendedRate: e && e.runIds.size ? Math.round((e.recRunIds.size / e.runIds.size) * 100) : null,
+      dimensions,
+    };
+  });
+
+  res.json({ agents });
 });
 
 // ─── Admin diagnostics (Reporting Phase A) ──────────────────────────────────
