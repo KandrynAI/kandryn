@@ -5,7 +5,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { KpiRow } from "@/components/reports/KpiRow";
 import { ChartsGrid } from "@/components/reports/ChartsGrid";
 import { AdminReports } from "@/pages/reports/AdminReports";
-import { PlanAcceptancePanel, RetrievalAttributionPanel } from "@/pages/reports/managerPanels";
+import {
+  PlanAcceptancePanel,
+  RetrievalAttributionPanel,
+  CoherencePanel,
+  ConfidenceDistributionPanel,
+  AgentWinPanel,
+} from "@/pages/reports/managerPanels";
 import { useTeam } from "@/context/TeamContext";
 import { fetchReportSummary, fetchProjects, type ReportData, type Project } from "@/services/api";
 
@@ -159,6 +165,9 @@ export default function ReportsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <PlanAcceptancePanel days={days} projectId={projectId} />
             <RetrievalAttributionPanel days={days} projectId={projectId} />
+            <CoherencePanel days={days} projectId={projectId} />
+            <ConfidenceDistributionPanel days={days} projectId={projectId} />
+            <AgentWinPanel days={days} projectId={projectId} />
           </div>
         </div>
       )}
