@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { useParams } from "wouter";
-import { Printer } from "lucide-react";
+import { useParams, useLocation } from "wouter";
+import { Printer, ShieldCheck } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { KpiRow } from "@/components/reports/KpiRow";
 import { ChartsGrid } from "@/components/reports/ChartsGrid";
 import { AdminReports } from "@/pages/reports/AdminReports";
+import { useTeam } from "@/context/TeamContext";
 import { fetchReportSummary, fetchProjects, type ReportData, type Project } from "@/services/api";
 
 const RANGES = [
@@ -28,6 +29,8 @@ function ReportSkeleton() {
 
 export default function ReportsPage() {
   const params = useParams<{ tab?: string }>();
+  const [, navigate] = useLocation();
+  const { isAdmin } = useTeam();
   const [days, setDays] = useState(30);
   const [projectId, setProjectId] = useState<number | undefined>(undefined);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -108,6 +111,16 @@ export default function ReportsPage() {
           <button className="rp-export" onClick={() => window.print()} title="Export as PDF">
             <Printer size={14} /> Export PDF
           </button>
+          {isAdmin && (
+            <button
+              className="rp-pill"
+              onClick={() => navigate("/reports/admin")}
+              title="Admin diagnostics"
+              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+            >
+              <ShieldCheck size={13} /> Admin reports
+            </button>
+          )}
         </div>
       </div>
 

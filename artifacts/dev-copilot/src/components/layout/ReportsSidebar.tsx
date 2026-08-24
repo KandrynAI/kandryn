@@ -1,25 +1,23 @@
 import { useLocation, useParams } from "wouter";
-import { BarChart2, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useTeam } from "@/context/TeamContext";
 
-// The Reports-specific left sidebar. Rendered by AppShell in place of the
-// project-scoped ContextPanel while on /reports, so it never touches the
-// project sidebar's rendering path. Tabs: Overview (the existing analytics) and
-// Admin (role-gated). Manager/Executive are intentionally hidden until their
-// phases — a disabled/"coming soon" row would just be noise today. Tabs are
-// path-based (/reports, /reports/admin) because wouter's location ignores the
-// query string and would not re-render on a ?tab change.
+// The Reports-specific left sidebar. Rendered by AppShell only on the Admin
+// reports screen (/reports/admin), in place of the project-scoped ContextPanel,
+// so it never touches the project sidebar's path. Only the role-gated Admin tab
+// exists this phase — Manager/Executive are hidden entirely (no placeholder)
+// until built. The analytics view (/reports) keeps the normal ContextPanel and
+// is unchanged; it is the starting point for the future Manager tab.
 
 export function ReportsSidebar() {
   const [, navigate] = useLocation();
   const { isAdmin } = useTeam();
   const params = useParams<{ tab?: string }>();
-  const tab = params.tab ?? "overview";
+  const tab = params.tab ?? "";
 
-  const items: { key: string; label: string; href: string; icon: typeof BarChart2 }[] = [
-    { key: "overview", label: "Overview", href: "/reports", icon: BarChart2 },
-    ...(isAdmin ? [{ key: "admin", label: "Admin", href: "/reports/admin", icon: ShieldCheck }] : []),
-  ];
+  const items: { key: string; label: string; href: string; icon: typeof ShieldCheck }[] = isAdmin
+    ? [{ key: "admin", label: "Admin", href: "/reports/admin", icon: ShieldCheck }]
+    : [];
 
   return (
     <div
@@ -69,10 +67,16 @@ export function ReportsSidebar() {
           );
         })}
       </nav>
-      <div style={{ marginTop: "auto", padding: "10px 14px", borderTop: "1px solid var(--c-border)" }}>
+      <div style={{ marginTop: "auto", padding: "10px 14px", borderTop: "1px solid var(--c-border)", display: "flex", flexDirection: "column", gap: 8 }}>
+        <button
+          onClick={() => navigate("/reports")}
+          style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}
+        >
+          ← Delivery analytics
+        </button>
         <button
           onClick={() => navigate("/dashboard")}
-          style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}
         >
           ← Back to workspace
         </button>
