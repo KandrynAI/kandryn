@@ -863,6 +863,41 @@ export function fetchReportSummary(days: number, projectId?: number): Promise<Re
   return request<ReportData>(`/api/reports/summary?${q.toString()}`);
 }
 
+/* ---- Manager panels (Reporting Phase B) ---- */
+
+/** projectId omitted → "All projects" (team-aware scope). */
+function reportQuery(days: number, projectId?: number): string {
+  const q = new URLSearchParams();
+  q.set('days', String(days));
+  if (projectId != null) q.set('projectId', String(projectId));
+  return q.toString();
+}
+
+export interface RetrievalAttribution {
+  found: number; // in_candidates = true  → retrieval found it, planner chose badly
+  missed: number; // in_candidates = false → retrieval never found it
+  topPaths: { filePath: string; count: number; exampleRunId: number }[];
+}
+
+export function fetchRetrievalAttribution(days: number, projectId?: number): Promise<RetrievalAttribution> {
+  return request<RetrievalAttribution>(`/api/reports/retrieval-attribution?${reportQuery(days, projectId)}`);
+}
+
+export interface PlanAcceptance {
+  rate: number | null; // % accepted as-is (never edited), null when no eligible runs
+  accepted: number;
+  edited: number;
+  rejected: number;
+  total: number;
+  priorRate: number | null;
+  delta: number | null;
+  sparkline: number[];
+}
+
+export function fetchPlanAcceptance(days: number, projectId?: number): Promise<PlanAcceptance> {
+  return request<PlanAcceptance>(`/api/reports/plan-acceptance?${reportQuery(days, projectId)}`);
+}
+
 /* ---- Audit log (admin only) ---- */
 
 export interface AuditLogItem {

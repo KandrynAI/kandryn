@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { KpiRow } from "@/components/reports/KpiRow";
 import { ChartsGrid } from "@/components/reports/ChartsGrid";
 import { AdminReports } from "@/pages/reports/AdminReports";
+import { PlanAcceptancePanel, RetrievalAttributionPanel } from "@/pages/reports/managerPanels";
 import { useTeam } from "@/context/TeamContext";
 import { fetchReportSummary, fetchProjects, type ReportData, type Project } from "@/services/api";
 
@@ -148,6 +149,19 @@ export default function ReportsPage() {
           </>
         ) : null}
       </div>
+
+      {/* Delivery quality — Manager panels (Phase B). Independent of the summary
+          fetch above; each panel manages its own three-state and reads the same
+          range + project scope. */}
+      {!error && (
+        <div style={{ marginTop: 24 }}>
+          <h2 style={{ fontSize: "var(--fs-lg)", fontWeight: 700, color: "var(--c-ink)", margin: "0 0 12px" }}>Delivery quality</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <PlanAcceptancePanel days={days} projectId={projectId} />
+            <RetrievalAttributionPanel days={days} projectId={projectId} />
+          </div>
+        </div>
+      )}
 
       {/* Print footer */}
       <div className="print-only" style={{ marginTop: 20, paddingTop: 10, borderTop: "1px solid #cbd5e1", fontSize: 10, color: "#64748b", display: "flex", justifyContent: "space-between" }}>

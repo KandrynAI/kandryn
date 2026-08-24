@@ -1,9 +1,6 @@
-import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { formatDistanceToNow } from "date-fns";
 import { ArrowUpRight } from "lucide-react";
 import {
-  ApiError,
   fetchParkedRuns,
   fetchRepoHealth,
   fetchAegisFailures,
@@ -15,53 +12,15 @@ import {
   type AccessChange,
 } from "@/services/api";
 import type { RangeDays, Scope, Tone } from "@/components/reports/shared";
-import { ReportPanel, PanelState, StatusPill, StatusDot } from "@/components/reports/shared";
+import { ReportPanel, PanelState, StatusPill, StatusDot, usePanelData, Row, age } from "@/components/reports/shared";
 
 // The four Reporting Phase A diagnostic panels. Each fetches independently and
 // wraps its body in PanelState, so one panel failing never blanks the others,
 // and "empty" and "broken" always read differently. `scope` is a projectId or
-// "all"; time-bounded panels also take `days`.
-
-/** Shared fetch-with-retry for a panel. `deps` drives refetch; retry bumps a nonce. */
-function usePanelData<T>(fetcher: () => Promise<T>, deps: unknown[]) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetcher()
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "Network error — check your connection."); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, nonce]);
-
-  return { data, loading, error, reload: () => setNonce((n) => n + 1) };
-}
+// "all"; time-bounded panels also take `days`. The three-state hook + row/age
+// helpers live in components/reports/shared.tsx (shared with the manager panels).
 
 const scopeArg = (scope: Scope): number | undefined => (scope === "all" ? undefined : scope);
-
-/** A single dense list row. */
-function Row({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", borderTop: "1px solid var(--c-border)" }}>
-      {children}
-    </div>
-  );
-}
-
-function age(iso: string): string {
-  try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true });
-  } catch {
-    return "";
-  }
-}
 
 // ── 2.1 Stuck & Parked Runs ────────────────────────────────────────────────
 export function ParkedRunsPanel({ scope }: { scope: Scope }) {
