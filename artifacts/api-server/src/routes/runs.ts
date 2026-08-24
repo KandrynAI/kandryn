@@ -53,9 +53,12 @@ const ListRunsQuery = z.object({
   projectId: z.coerce.number().int().positive().optional(),
   workItemId: z.coerce.number().int().positive().optional(),
   status: z
-    .enum(["scheduled", "queued", "running", "succeeded", "failed", "canceled"])
+    .enum(["scheduled", "queued", "running", "awaiting_review", "succeeded", "failed", "canceled"])
     .optional(),
-  limit: z.coerce.number().int().positive().max(50).optional(),
+  // Cap aligned with the endpoint's own default (200) for project-scoped
+  // listing — capping an explicit limit lower than the default made a valid
+  // request (e.g. the right-panel's limit=200) 400, which callers swallowed.
+  limit: z.coerce.number().int().positive().max(200).optional(),
   trigger: z.string().optional(), // filters runs.trigger_context (e.g. "remediation")
   parentRunId: z.coerce.number().int().positive().optional(),
 });
