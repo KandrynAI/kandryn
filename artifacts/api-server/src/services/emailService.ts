@@ -237,6 +237,30 @@ export async function sendRunFailed(
   await sendViaResend({ to: [to], subject: `Run failed: ${d.itemTitle}`, text });
 }
 
+/**
+ * Notify the run owner that a scheduled run PARKED for review (Phase 4): its
+ * plan scored below the confidence threshold, so generation did not start and
+ * it waits for a human decision (no auto-approval, no retry).
+ */
+export async function sendRunParked(
+  to: string,
+  d: { itemTitle: string; itemKey?: string | null; runId: number; reason: string; confidencePct?: number | null },
+): Promise<void> {
+  const text = [
+    "Your scheduled Blue Mantis run paused for review before generating code.",
+    "",
+    `Work item: ${d.itemKey ? `${d.itemKey} — ` : ""}${d.itemTitle}`,
+    d.confidencePct != null ? `Plan confidence: ${d.confidencePct}% (below your project threshold)` : "Plan confidence is below your project threshold.",
+    `Why: ${d.reason}`,
+    "",
+    "No code was generated. It will wait for your decision — approve, edit, or reject:",
+    `${APP_BASE}/app/runs/${d.runId}`,
+    "",
+    "— getbluemantis.com",
+  ].join("\n");
+  await sendViaResend({ to: [to], subject: `Run needs review: ${d.itemTitle}`, text });
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
