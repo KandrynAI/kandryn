@@ -945,6 +945,56 @@ export function fetchAgentWin(days: number, projectId?: number): Promise<AgentWi
   return request<AgentWin>(`/api/reports/agent-win?${reportQuery(days, projectId)}`);
 }
 
+export interface Throughput {
+  total: number;
+  manual: number;
+  scheduled: number;
+  priorTotal: number;
+  delta: number;
+}
+
+export function fetchThroughput(days: number, projectId?: number): Promise<Throughput> {
+  return request<Throughput>(`/api/reports/throughput?${reportQuery(days, projectId)}`);
+}
+
+export interface TimeToPr {
+  medianHours: number | null;
+  priorMedianHours: number | null;
+  delta: number | null;
+  runsWithPr: number;
+  trend: { label: string; median: number | null }[];
+}
+
+export function fetchTimeToPr(days: number, projectId?: number): Promise<TimeToPr> {
+  return request<TimeToPr>(`/api/reports/time-to-pr?${reportQuery(days, projectId)}`);
+}
+
+export interface PlanningCost {
+  avgCostUsd: number | null;
+  priorAvgCostUsd: number | null;
+  delta: number | null;
+  avgInputTokens: number | null;
+  avgOutputTokens: number | null;
+  runsWithTokens: number;
+  trend: { label: string; cost: number | null }[];
+}
+
+export function fetchPlanningCost(days: number, projectId?: number): Promise<PlanningCost> {
+  return request<PlanningCost>(`/api/reports/planning-cost?${reportQuery(days, projectId)}`);
+}
+
+export interface SecurityPosture {
+  severities: { critical: number; high: number; medium: number; low: number; info: number };
+  gateBlocked: number;
+  total: number;
+  scannedRuns: number;
+  trend: { label: string; count: number | null }[];
+}
+
+export function fetchSecurityPosture(days: number, projectId?: number): Promise<SecurityPosture> {
+  return request<SecurityPosture>(`/api/reports/security-posture?${reportQuery(days, projectId)}`);
+}
+
 /* ---- Audit log (admin only) ---- */
 
 export interface AuditLogItem {

@@ -702,6 +702,221 @@ router.get("/reports/agent-win", async (req, res): Promise<void> => {
   res.json({ agents });
 });
 
+// --- shared helpers for the throughput/latency/cost/security panels ---------
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Rolling 7-day buckets covering `days`, oldest→newest, each with ms bounds and
+ *  a short label at the bucket start. Used for the trend series. */
+function weekBuckets(now: number, days: number): { lo: number; hi: number; label: string }[] {
+  const n = Math.max(1, Math.ceil(days / 7));
+  const out: { lo: number; hi: number; label: string }[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const hi = now - i * WEEK_MS;
+    const lo = hi - WEEK_MS;
+    out.push({ lo, hi, label: shortLabel(new Date(lo)) });
+  }
+  return out;
+}
+
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+// Planning-stage token pricing (Sonnet 4.5 published rates, USD per 1M tokens).
+// Estimate only — generation-stage tokens (Raptia/Fovea/Veria/Aegis/Narratia)
+// are not instrumented, so this covers the planning call alone.
+const PLAN_INPUT_USD_PER_M = 3;
+const PLAN_OUTPUT_USD_PER_M = 15;
+const planCostUsd = (input: number, output: number): number =>
+  (input / 1_000_000) * PLAN_INPUT_USD_PER_M + (output / 1_000_000) * PLAN_OUTPUT_USD_PER_M;
+
+/**
+ * GET /reports/throughput — run volume this window, split manual vs. scheduled
+ * trigger, with a trend vs. the prior equivalent window.
+ */
+router.get("/reports/throughput", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const now = Date.now();
+  const windowMs = scope.days * 24 * 60 * 60 * 1000;
+  const since = new Date(now - windowMs);
+  const priorSince = new Date(now - 2 * windowMs);
+
+  const conds = [inArray(runsTable.userId, scope.userIds), gte(runsTable.createdAt, priorSince)];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+  const runs = await db
+    .select({ trigger: runsTable.trigger, createdAt: runsTable.createdAt })
+    .from(runsTable)
+    .where(and(...conds));
+
+  const cur = runs.filter((r) => r.createdAt >= since);
+  const prior = runs.filter((r) => r.createdAt < since);
+  const manual = cur.filter((r) => r.trigger === "manual").length;
+  const scheduled = cur.filter((r) => r.trigger === "scheduled").length;
+
+  res.json({
+    total: cur.length,
+    manual,
+    scheduled,
+    priorTotal: prior.length,
+    delta: cur.length - prior.length,
+  });
+});
+
+/**
+ * GET /reports/time-to-pr — median hours from run start to finish for runs that
+ * opened a PR, with a weekly trend and a prior-window comparison. A week with no
+ * PR-opening runs is null in the trend (a gap, not a 0). Phase-2 "multi-file
+ * generation began here" annotation is deferred until there's enough pre/post
+ * data for a clean before/after — noted as a follow-up.
+ */
+router.get("/reports/time-to-pr", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const now = Date.now();
+  const windowMs = scope.days * 24 * 60 * 60 * 1000;
+  const since = new Date(now - windowMs);
+  const priorSince = new Date(now - 2 * windowMs);
+
+  const conds = [
+    inArray(runsTable.userId, scope.userIds),
+    gte(runsTable.createdAt, priorSince),
+    isNotNull(runsTable.prUrl),
+    isNotNull(runsTable.startedAt),
+    isNotNull(runsTable.finishedAt),
+  ];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+  const runs = await db
+    .select({ startedAt: runsTable.startedAt, finishedAt: runsTable.finishedAt, createdAt: runsTable.createdAt })
+    .from(runsTable)
+    .where(and(...conds));
+
+  const hoursOf = (r: (typeof runs)[number]): number =>
+    (r.finishedAt!.getTime() - r.startedAt!.getTime()) / 3_600_000;
+
+  const cur = runs.filter((r) => r.createdAt >= since);
+  const prior = runs.filter((r) => r.createdAt < since);
+  const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10);
+
+  const trend = weekBuckets(now, scope.days).map((b) => {
+    const slice = cur.filter((r) => r.createdAt.getTime() >= b.lo && r.createdAt.getTime() < b.hi);
+    return { label: b.label, median: slice.length ? round1(median(slice.map(hoursOf))) : null };
+  });
+
+  const curMed = round1(median(cur.map(hoursOf)));
+  const priMed = round1(median(prior.map(hoursOf)));
+  res.json({
+    medianHours: curMed,
+    priorMedianHours: priMed,
+    delta: curMed != null && priMed != null ? Math.round((curMed - priMed) * 10) / 10 : null,
+    runsWithPr: cur.length,
+    trend,
+  });
+});
+
+/**
+ * GET /reports/planning-cost — estimated PLANNING-STAGE cost per run, from
+ * change_plans token counts (revision 1). Generation-stage tokens aren't
+ * instrumented, so this is the planning call only — the client labels it as such.
+ * Weekly trend + prior-window comparison; empty weeks are null (a gap, not $0).
+ */
+router.get("/reports/planning-cost", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const now = Date.now();
+  const windowMs = scope.days * 24 * 60 * 60 * 1000;
+  const since = new Date(now - windowMs);
+  const priorSince = new Date(now - 2 * windowMs);
+
+  const conds = [
+    eq(changePlansTable.revision, 1),
+    isNotNull(changePlansTable.inputTokens),
+    inArray(runsTable.userId, scope.userIds),
+    gte(runsTable.createdAt, priorSince),
+  ];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+  const plans = await db
+    .select({
+      input: changePlansTable.inputTokens,
+      output: changePlansTable.outputTokens,
+      createdAt: runsTable.createdAt,
+    })
+    .from(changePlansTable)
+    .innerJoin(runsTable, eq(changePlansTable.runId, runsTable.id))
+    .where(and(...conds));
+
+  const costOf = (p: (typeof plans)[number]): number => planCostUsd(p.input ?? 0, p.output ?? 0);
+  const avg = (xs: number[]): number | null => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const round4 = (n: number | null) => (n == null ? null : Math.round(n * 10000) / 10000);
+
+  const cur = plans.filter((p) => p.createdAt >= since);
+  const prior = plans.filter((p) => p.createdAt < since);
+
+  const trend = weekBuckets(now, scope.days).map((b) => {
+    const slice = cur.filter((p) => p.createdAt.getTime() >= b.lo && p.createdAt.getTime() < b.hi);
+    return { label: b.label, cost: slice.length ? round4(avg(slice.map(costOf))) : null };
+  });
+
+  const curAvg = round4(avg(cur.map(costOf)));
+  const priAvg = round4(avg(prior.map(costOf)));
+  res.json({
+    avgCostUsd: curAvg,
+    priorAvgCostUsd: priAvg,
+    delta: curAvg != null && priAvg != null ? round4(curAvg - priAvg) : null,
+    avgInputTokens: cur.length ? Math.round(avg(cur.map((p) => p.input ?? 0))!) : null,
+    avgOutputTokens: cur.length ? Math.round(avg(cur.map((p) => p.output ?? 0))!) : null,
+    runsWithTokens: cur.length,
+    trend,
+  });
+});
+
+/**
+ * GET /reports/security-posture — Aegis findings by severity over the window,
+ * plus the count of gate-blocked runs, plus a weekly findings trend. A week with
+ * no scanned runs is null in the trend (a gap); a scanned week with no findings
+ * is 0 (a real clean week).
+ */
+router.get("/reports/security-posture", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const now = Date.now();
+  const since = new Date(now - scope.days * 24 * 60 * 60 * 1000);
+
+  const conds = [
+    isNotNull(runsTable.securityScan),
+    inArray(runsTable.userId, scope.userIds),
+    gte(runsTable.createdAt, since),
+  ];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+  const runs = await db
+    .select({ securityScan: runsTable.securityScan, securityGate: runsTable.securityGate, createdAt: runsTable.createdAt })
+    .from(runsTable)
+    .where(and(...conds));
+
+  const severities = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  let gateBlocked = 0;
+  const findingsAt: { at: number; n: number }[] = [];
+  for (const r of runs) {
+    if (r.securityGate === "blocked") gateBlocked++;
+    const findings = r.securityScan?.findings ?? [];
+    findingsAt.push({ at: r.createdAt.getTime(), n: findings.length });
+    for (const f of findings) {
+      if (f.severity in severities) severities[f.severity as keyof typeof severities]++;
+    }
+  }
+  const total = severities.critical + severities.high + severities.medium + severities.low + severities.info;
+
+  const trend = weekBuckets(now, scope.days).map((b) => {
+    const slice = findingsAt.filter((f) => f.at >= b.lo && f.at < b.hi);
+    return { label: b.label, count: slice.length ? slice.reduce((a, f) => a + f.n, 0) : null };
+  });
+
+  res.json({ severities, gateBlocked, total, scannedRuns: runs.length, trend });
+});
+
 // ─── Admin diagnostics (Reporting Phase A) ──────────────────────────────────
 // Operational-health panels for team admins. Every endpoint below is admin-only
 // and team-scoped: it reads across every team member's runs/repositories (the

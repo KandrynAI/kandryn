@@ -11,6 +11,10 @@ import {
   CoherencePanel,
   ConfidenceDistributionPanel,
   AgentWinPanel,
+  ThroughputPanel,
+  TimeToPrPanel,
+  PlanningCostPanel,
+  SecurityPosturePanel,
 } from "@/pages/reports/managerPanels";
 import { useTeam } from "@/context/TeamContext";
 import { fetchReportSummary, fetchProjects, type ReportData, type Project } from "@/services/api";
@@ -168,6 +172,10 @@ export default function ReportsPage() {
             <CoherencePanel days={days} projectId={projectId} />
             <ConfidenceDistributionPanel days={days} projectId={projectId} />
             <AgentWinPanel days={days} projectId={projectId} />
+            <ThroughputPanel days={days} projectId={projectId} />
+            <TimeToPrPanel days={days} projectId={projectId} />
+            <PlanningCostPanel days={days} projectId={projectId} />
+            <SecurityPosturePanel days={days} projectId={projectId} />
           </div>
         </div>
       )}
