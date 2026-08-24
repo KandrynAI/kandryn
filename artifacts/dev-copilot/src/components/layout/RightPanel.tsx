@@ -1,16 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { X, Loader2, Check, Clock, ChevronRight, AlertTriangle } from "lucide-react";
 import {
   fetchProjectWorkItems,
   fetchRuns,
   fetchRun,
+  ApiError,
   type WorkItem,
   type Run,
   type RunDetail,
 } from "@/services/api";
 import { WorkItemPanel } from "@/components/board/WorkItemPanel";
 import { RunPanel } from "@/components/runs/RunPanel";
+import { useToast } from "@/hooks/use-toast";
 import { useRightPanel, type RightPanelView } from "@/context/RightPanelContext";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -54,9 +56,12 @@ function RunListView({
   onClose: () => void;
 }) {
   const [, navigate] = useLocation();
+  const { toast } = useToast();
   const [runs, setRuns] = useState<Run[]>([]);
   const [titles, setTitles] = useState<Map<number, string>>(new Map());
   const [page, setPage] = useState(1);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const toastedRef = useRef(false);
 
   useEffect(() => {
     fetchProjectWorkItems(view.projectId)
@@ -66,12 +71,30 @@ function RunListView({
 
   useEffect(() => {
     let cancelled = false;
+    toastedRef.current = false; // one toast per (project, status, open) cycle
     const load = () =>
       fetchRuns({ projectId: view.projectId, limit: 200 })
         .then((r) => {
-          if (!cancelled) setRuns(r);
+          if (cancelled) return;
+          setRuns(r);
+          setLoadError(null);
         })
-        .catch(() => {});
+        .catch((err) => {
+          if (cancelled) return;
+          // NEVER swallow: a swallowed 400 here (a validation regression like the
+          // limit>50 cap) looked like an empty list for months. Surface the real
+          // cause — a 400/500 (ApiError carries status + server message) vs. a
+          // network failure — in the console AND as a one-time toast, and mark
+          // the panel as errored so it doesn't read as legitimately empty.
+          const detail =
+            err instanceof ApiError ? `${err.status}: ${err.message}` : err instanceof Error ? err.message : "network error";
+          console.error("[RightPanel] run list fetch failed —", detail);
+          setLoadError(detail);
+          if (!toastedRef.current) {
+            toastedRef.current = true;
+            toast({ title: "Couldn't load runs", description: detail, variant: "destructive" });
+          }
+        });
     load();
     // Poll while the panel is open so every list (not just Running) stays live
     // and self-corrects after a transient fetch failure — matching the left
@@ -81,7 +104,7 @@ function RunListView({
       cancelled = true;
       if (iv) clearInterval(iv);
     };
-  }, [view.projectId, view.status, open]);
+  }, [view.projectId, view.status, open, toast]);
 
   const filtered = runs.filter((r) => {
     if (view.status === "running") return r.status === "running" || r.status === "queued";
@@ -114,7 +137,13 @@ function RunListView({
       </div>
       <div className="rp-body">
         {visible.length === 0 ? (
-          <div className="rp-empty">No {view.status} runs.</div>
+          loadError ? (
+            <div className="rp-empty" style={{ color: "var(--c-red)", display: "flex", alignItems: "center", gap: 6 }}>
+              <AlertTriangle size={13} /> Couldn't load runs — {loadError}
+            </div>
+          ) : (
+            <div className="rp-empty">No {view.status === "awaiting_review" ? "runs needing review" : `${view.status} runs`}.</div>
+          )
         ) : (
           visible.map((run) => (
             <button key={run.id} className="rp-item" onClick={() => openRun(run.id)}>
