@@ -8,6 +8,7 @@ import {
   repositoriesTable,
   projectsTable,
   changePlansTable,
+  changePlanFilesTable,
   auditLogTable,
 } from "@workspace/db";
 import { z } from "zod/v4";
@@ -288,6 +289,181 @@ router.get("/reports/summary", async (req, res): Promise<void> => {
       workItemsByType,
       backlogBurn,
     },
+  });
+});
+
+// ─── Manager panels (Reporting Phase B) ─────────────────────────────────────
+// Delivery-quality panels that extend the /reports analytics view. Team-AWARE
+// (not admin-gated, matching /reports/summary): an admin sees every team
+// member's data, a member sees only their own. Optional `projectId` scopes to
+// one project; `days` (7/30/90) bounds the window. Read-only, no migration.
+
+/** Resolve the team-aware scope (admin → all member ids, else own) + window.
+ *  Non-gated — everyone with a report view gets a scope. Null after a 400. */
+async function resolveReportScope(
+  req: Request,
+  res: Response,
+): Promise<{ userIds: string[]; projectId?: number; days: number } | null> {
+  const parsed = ReportQuery.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid query" });
+    return null;
+  }
+  const isAdmin = req.teamId != null && req.teamRole === "admin";
+  let userIds: string[];
+  if (isAdmin && req.teamId != null) {
+    const members = await getTeamMembers(req.teamId);
+    userIds = members.map((m) => m.userId);
+    if (!userIds.includes(req.userId)) userIds.push(req.userId);
+  } else {
+    userIds = [req.userId];
+  }
+  const days = ALLOWED_DAYS.includes(parsed.data.days ?? 30) ? (parsed.data.days ?? 30) : 30;
+  return { userIds, projectId: parsed.data.projectId, days };
+}
+
+/**
+ * GET /reports/retrieval-attribution — for every plan file a user added by hand
+ * (`added_by_user = true`) in scope/window, split by whether the path was in the
+ * planner's candidate set: `in_candidates = true` means retrieval surfaced it but
+ * the planner didn't pick it (a prompt problem); `false` means retrieval never
+ * found it (a retrieval problem). Plus the top manually-added paths with one
+ * example run each for drill-in.
+ */
+router.get("/reports/retrieval-attribution", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
+
+  const runConds = [
+    eq(changePlanFilesTable.addedByUser, true),
+    inArray(runsTable.userId, scope.userIds),
+    gte(runsTable.createdAt, since),
+  ];
+  if (scope.projectId != null) runConds.push(eq(runsTable.projectId, scope.projectId));
+
+  const rows = await db
+    .select({
+      filePath: changePlanFilesTable.filePath,
+      inCandidates: changePlanFilesTable.inCandidates,
+      runId: changePlansTable.runId,
+    })
+    .from(changePlanFilesTable)
+    .innerJoin(changePlansTable, eq(changePlanFilesTable.planId, changePlansTable.id))
+    .innerJoin(runsTable, eq(changePlansTable.runId, runsTable.id))
+    .where(and(...runConds));
+
+  let found = 0; // in_candidates = true  → planner miss
+  let missed = 0; // in_candidates = false → retrieval miss
+  const byPath = new Map<string, { count: number; exampleRunId: number }>();
+  for (const r of rows) {
+    if (r.inCandidates === true) found++;
+    else if (r.inCandidates === false) missed++;
+    const prev = byPath.get(r.filePath);
+    if (prev) prev.count++;
+    else byPath.set(r.filePath, { count: 1, exampleRunId: r.runId });
+  }
+  const topPaths = [...byPath.entries()]
+    .map(([filePath, v]) => ({ filePath, count: v.count, exampleRunId: v.exampleRunId }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  res.json({ found, missed, topPaths });
+});
+
+/**
+ * GET /reports/plan-acceptance — the headline "how often is the first plan good
+ * enough to run as-is" number. Over runs that produced a usable plan and reached
+ * a terminal state, the share accepted without edits (current plan still
+ * revision 1, run not rejected). Editing supersedes revision 1 (a revision > 1
+ * exists); rejecting cancels the run. Returns the rate, the component counts, a
+ * trend vs. the prior equivalent window, and a weekly sparkline.
+ */
+router.get("/reports/plan-acceptance", async (req, res): Promise<void> => {
+  const scope = await resolveReportScope(req, res);
+  if (!scope) return;
+  const now = Date.now();
+  const windowMs = scope.days * 24 * 60 * 60 * 1000;
+  const since = new Date(now - windowMs);
+  const priorSince = new Date(now - 2 * windowMs);
+
+  // Pull runs over the current + prior window in one query, then split by time.
+  const runConds = [inArray(runsTable.userId, scope.userIds), gte(runsTable.createdAt, priorSince)];
+  if (scope.projectId != null) runConds.push(eq(runsTable.projectId, scope.projectId));
+  const runs = await db
+    .select({ id: runsTable.id, status: runsTable.status, createdAt: runsTable.createdAt })
+    .from(runsTable)
+    .where(and(...runConds));
+
+  const runIds = runs.map((r) => r.id);
+  const plans = runIds.length
+    ? await db
+        .select({ runId: changePlansTable.runId, revision: changePlansTable.revision, status: changePlansTable.status })
+        .from(changePlansTable)
+        .where(inArray(changePlansTable.runId, runIds))
+    : [];
+
+  // Per-run plan facts.
+  const planByRun = new Map<number, { hasUsable: boolean; maxRevision: number }>();
+  for (const p of plans) {
+    const e = planByRun.get(p.runId) ?? { hasUsable: false, maxRevision: 0 };
+    if (p.status !== "failed" && p.status !== "planning") e.hasUsable = true;
+    if (p.revision > e.maxRevision) e.maxRevision = p.revision;
+    planByRun.set(p.runId, e);
+  }
+
+  const IN_FLIGHT = new Set(["scheduled", "queued", "running", "awaiting_review"]);
+
+  // Classify one run: null = not eligible (no usable plan / still in-flight).
+  function classify(run: { status: string }, runId: number): "accepted" | "edited" | "rejected" | null {
+    const pf = planByRun.get(runId);
+    if (!pf?.hasUsable) return null; // planning failed or never produced a plan
+    if (IN_FLIGHT.has(run.status)) return null; // decision not made yet
+    if (pf.maxRevision > 1) return "edited";
+    if (run.status === "canceled") return "rejected";
+    return "accepted";
+  }
+
+  function rateOver(rs: typeof runs): { rate: number | null; accepted: number; edited: number; rejected: number; total: number } {
+    let accepted = 0, edited = 0, rejected = 0;
+    for (const r of rs) {
+      const c = classify(r, r.id);
+      if (c === "accepted") accepted++;
+      else if (c === "edited") edited++;
+      else if (c === "rejected") rejected++;
+    }
+    const total = accepted + edited + rejected;
+    return { rate: total ? Math.round((accepted / total) * 100) : null, accepted, edited, rejected, total };
+  }
+
+  const current = runs.filter((r) => r.createdAt >= since);
+  const prior = runs.filter((r) => r.createdAt < since);
+  const cur = rateOver(current);
+  const pri = rateOver(prior);
+
+  // Weekly sparkline of the acceptance rate across the current window. Weeks
+  // with no eligible runs are skipped, not zero-filled — a quiet week is a data
+  // gap, not a 0% acceptance rate.
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  const buckets = Math.max(1, Math.ceil(windowMs / weekMs));
+  const spark: number[] = [];
+  for (let i = buckets - 1; i >= 0; i--) {
+    const hi = now - i * weekMs;
+    const lo = hi - weekMs;
+    const slice = current.filter((r) => r.createdAt.getTime() >= lo && r.createdAt.getTime() < hi);
+    const { rate } = rateOver(slice);
+    if (rate != null) spark.push(rate);
+  }
+
+  res.json({
+    rate: cur.rate,
+    accepted: cur.accepted,
+    edited: cur.edited,
+    rejected: cur.rejected,
+    total: cur.total,
+    priorRate: pri.rate,
+    delta: cur.rate != null && pri.rate != null ? cur.rate - pri.rate : null,
+    sparkline: spark,
   });
 });
 

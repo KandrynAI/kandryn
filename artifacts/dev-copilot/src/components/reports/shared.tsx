@@ -1,10 +1,53 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowUpRight, ArrowDownRight, RotateCcw } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Project } from "@/services/api";
+import { ApiError, type Project } from "@/services/api";
 
 // Shared building blocks for the Reports screen. Colors come from the existing
 // index.css tokens (--c-green/amber/red + -bg) — no new palette.
+
+/** Fetch-with-retry for a report panel. `deps` drives refetch; retry bumps a
+ *  nonce. Shared by the admin diagnostics and manager panels so every panel gets
+ *  the same three-state (loading / error / data) behaviour. */
+export function usePanelData<T>(fetcher: () => Promise<T>, deps: unknown[]) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetcher()
+      .then((d) => { if (!cancelled) setData(d); })
+      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "Network error — check your connection."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, nonce]);
+
+  return { data, loading, error, reload: () => setNonce((n) => n + 1) };
+}
+
+/** A single dense list row inside a ReportPanel. */
+export function Row({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", borderTop: "1px solid var(--c-border)" }}>
+      {children}
+    </div>
+  );
+}
+
+/** Relative age of an ISO timestamp, e.g. "3 days ago". Empty on bad input. */
+export function age(iso: string): string {
+  try {
+    return formatDistanceToNow(new Date(iso), { addSuffix: true });
+  } catch {
+    return "";
+  }
+}
 
 export type RangeDays = 7 | 30 | 90;
 export const RANGES: RangeDays[] = [7, 30, 90];
