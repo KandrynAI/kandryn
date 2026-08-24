@@ -337,27 +337,28 @@ function classifyOutcome(status: string, maxRevision: number): "accepted" | "edi
 }
 
 /**
- * GET /reports/retrieval-attribution — for every plan file a user added by hand
- * (`added_by_user = true`) in scope/window, split by whether the path was in the
- * planner's candidate set: `in_candidates = true` means retrieval surfaced it but
- * the planner didn't pick it (a prompt problem); `false` means retrieval never
- * found it (a retrieval problem). Plus the top manually-added paths with one
- * example run each for drill-in.
+ * GET /reports/retrieval-attribution — how well retrieval served the planner, in
+ * scope/window. Two views over `change_plan_files.in_candidates`:
+ *   • planner — over every planned file, was the path in the candidate set?
+ *     `false` = the planner planned a file retrieval never surfaced (a retrieval
+ *     miss). This has data on real runs even before anyone hand-edits a plan.
+ *   • manual — over files a user added by hand (`added_by_user = true`): in
+ *     candidates = "retrieval found it, planner chose badly" (prompt problem);
+ *     not in candidates = "retrieval never found it" (retrieval problem). Plus
+ *     the top hand-added paths with one example run each. Empty until users edit
+ *     plans.
  */
 router.get("/reports/retrieval-attribution", async (req, res): Promise<void> => {
   const scope = await resolveReportScope(req, res);
   if (!scope) return;
   const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
 
-  const runConds = [
-    eq(changePlanFilesTable.addedByUser, true),
-    inArray(runsTable.userId, scope.userIds),
-    gte(runsTable.createdAt, since),
-  ];
+  const runConds = [inArray(runsTable.userId, scope.userIds), gte(runsTable.createdAt, since)];
   if (scope.projectId != null) runConds.push(eq(runsTable.projectId, scope.projectId));
 
   const rows = await db
     .select({
+      addedByUser: changePlanFilesTable.addedByUser,
       filePath: changePlanFilesTable.filePath,
       inCandidates: changePlanFilesTable.inCandidates,
       runId: changePlansTable.runId,
@@ -367,22 +368,42 @@ router.get("/reports/retrieval-attribution", async (req, res): Promise<void> => 
     .innerJoin(runsTable, eq(changePlansTable.runId, runsTable.id))
     .where(and(...runConds));
 
-  let found = 0; // in_candidates = true  → planner miss
+  // Planner coverage (all planned files) — how much of what the planner planned
+  // retrieval actually surfaced.
+  let plannerInCandidates = 0;
+  let plannerMissed = 0;
+  // Manual adds (added_by_user = true).
+  let found = 0; // in_candidates = true  → planner chose badly
   let missed = 0; // in_candidates = false → retrieval miss
   const byPath = new Map<string, { count: number; exampleRunId: number }>();
+
   for (const r of rows) {
-    if (r.inCandidates === true) found++;
-    else if (r.inCandidates === false) missed++;
-    const prev = byPath.get(r.filePath);
-    if (prev) prev.count++;
-    else byPath.set(r.filePath, { count: 1, exampleRunId: r.runId });
+    if (r.addedByUser) {
+      if (r.inCandidates === true) found++;
+      else if (r.inCandidates === false) missed++;
+      const prev = byPath.get(r.filePath);
+      if (prev) prev.count++;
+      else byPath.set(r.filePath, { count: 1, exampleRunId: r.runId });
+    } else {
+      if (r.inCandidates === true) plannerInCandidates++;
+      else if (r.inCandidates === false) plannerMissed++;
+    }
   }
+
   const topPaths = [...byPath.entries()]
     .map(([filePath, v]) => ({ filePath, count: v.count, exampleRunId: v.exampleRunId }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
-  res.json({ found, missed, topPaths });
+  const plannerTotal = plannerInCandidates + plannerMissed;
+  res.json({
+    planner: {
+      inCandidates: plannerInCandidates,
+      missed: plannerMissed,
+      coverageRate: plannerTotal ? Math.round((plannerInCandidates / plannerTotal) * 100) : null,
+    },
+    manual: { found, missed, topPaths },
+  });
 });
 
 /**
