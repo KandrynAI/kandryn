@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 import { useUser, useClerk } from "@clerk/react";
 import { useRepo } from "@/context/RepoContext";
 import { useConfig } from "@/context/ConfigContext";
@@ -30,6 +30,7 @@ interface Counts {
   allBugs: number;
   scheduled: number;
   running: number;
+  needsReview: number;
   completed: number;
 }
 
@@ -42,6 +43,7 @@ const ZERO_COUNTS: Counts = {
   allBugs: 0,
   scheduled: 0,
   running: 0,
+  needsReview: 0,
   completed: 0,
 };
 
@@ -150,13 +152,15 @@ export function ContextPanel() {
           if (cancelled) return;
           let scheduled = 0;
           let running = 0;
+          let needsReview = 0;
           let completed = 0;
           for (const r of runs) {
             if (r.status === "scheduled") scheduled += 1;
             else if (r.status === "running" || r.status === "queued") running += 1;
+            else if (r.status === "awaiting_review") needsReview += 1;
             else if (r.status === "succeeded") completed += 1;
           }
-          setCounts((prev) => ({ ...(prev ?? ZERO_COUNTS), scheduled, running, completed }));
+          setCounts((prev) => ({ ...(prev ?? ZERO_COUNTS), scheduled, running, needsReview, completed }));
         })
         .catch(() => {});
     load();
@@ -365,6 +369,7 @@ export function ContextPanel() {
           {([
             ["Scheduled", counts?.scheduled, "scheduled"],
             ["Running", counts?.running, "running"],
+            ["Needs review", counts?.needsReview, "awaiting_review"],
             ["Completed", counts?.completed, "completed"],
           ] as const).map(([label, val, status]) => (
             <div
@@ -377,6 +382,9 @@ export function ContextPanel() {
               <span className="cp-row-label" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                 {status === "running" && (val ?? 0) > 0 && (
                   <Loader2 className="animate-spin" size={11} style={{ color: "var(--c-blue)" }} />
+                )}
+                {status === "awaiting_review" && (val ?? 0) > 0 && (
+                  <AlertTriangle size={11} style={{ color: "var(--c-amber)" }} />
                 )}
                 {label}
               </span>

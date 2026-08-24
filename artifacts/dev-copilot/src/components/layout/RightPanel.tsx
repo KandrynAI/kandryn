@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { X, Loader2, Check, Clock, ChevronRight } from "lucide-react";
+import { X, Loader2, Check, Clock, ChevronRight, AlertTriangle } from "lucide-react";
 import {
   fetchProjectWorkItems,
   fetchRuns,
@@ -86,10 +86,18 @@ function RunListView({
   const filtered = runs.filter((r) => {
     if (view.status === "running") return r.status === "running" || r.status === "queued";
     if (view.status === "scheduled") return r.status === "scheduled";
+    if (view.status === "awaiting_review") return r.status === "awaiting_review";
     return r.status === "succeeded"; // "completed"
   });
   const visible = view.status === "completed" ? filtered.slice(0, page * PAGE_SIZE) : filtered;
-  const title = view.status === "running" ? "Running runs" : view.status === "scheduled" ? "Scheduled runs" : "Completed runs";
+  const title =
+    view.status === "running"
+      ? "Running runs"
+      : view.status === "scheduled"
+        ? "Scheduled runs"
+        : view.status === "awaiting_review"
+          ? "Runs needing review"
+          : "Completed runs";
 
   const runTitle = (run: Run) => titles.get(run.workItemId) ?? `Work item #${run.workItemId}`;
 
@@ -114,6 +122,8 @@ function RunListView({
                 <Loader2 className="animate-spin" size={13} style={{ color: "var(--c-blue)", flexShrink: 0 }} />
               ) : view.status === "scheduled" ? (
                 <Clock size={13} style={{ color: "var(--c-amber)", flexShrink: 0 }} />
+              ) : view.status === "awaiting_review" ? (
+                <AlertTriangle size={13} style={{ color: "var(--c-amber)", flexShrink: 0 }} />
               ) : (
                 <Check size={13} strokeWidth={2.5} style={{ color: "#1a7f4b", flexShrink: 0 }} />
               )}
@@ -123,7 +133,9 @@ function RunListView({
                   ? `started ${relativeTime(run.startedAt ?? run.createdAt)}`
                   : view.status === "scheduled"
                     ? relativeTime(run.scheduledAt)
-                    : relativeTime(run.finishedAt)}
+                    : view.status === "awaiting_review"
+                      ? `${run.trigger === "scheduled" ? "scheduled" : "manual"} · ${relativeTime(run.startedAt ?? run.createdAt)}`
+                      : relativeTime(run.finishedAt)}
               </span>
             </button>
           ))

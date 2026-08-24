@@ -217,6 +217,8 @@ export interface Project {
   /** @deprecated (0020) — resolve a project's repo via GET /repositories?projectId. */
   repositoryId: number | null;
   defaultTarget: 'story' | 'task';
+  /** Confidence gate threshold (Phase 4), 0–1. numeric → arrives as a string. */
+  confidenceThreshold: string;
   lastSyncedAt: string | null;
   createdAt: string;
   counts?: { open: number; running: number; review: number };
@@ -258,7 +260,7 @@ export function fetchProject(id: number): Promise<Project> {
 
 export function updateProject(
   id: number,
-  data: { name?: string; repositoryId?: number },
+  data: { name?: string; repositoryId?: number; confidenceThreshold?: number },
 ): Promise<Project> {
   return request<Project>(`/api/projects/${id}`, {
     method: 'PATCH',
@@ -323,6 +325,8 @@ export type RunStatus =
   | 'scheduled'
   | 'queued'
   | 'running'
+  // Parked by the confidence gate (Phase 4) — awaits a human decision.
+  | 'awaiting_review'
   | 'succeeded'
   | 'failed'
   | 'canceled';
@@ -539,12 +543,35 @@ export interface RunPlanFile {
 export interface RunPlan {
   id: number;
   revision: number;
-  status: 'planning' | 'ready' | 'edited' | 'failed';
+  // 'awaiting_review' (Phase 4): parked by the confidence gate before generation.
+  status: 'planning' | 'ready' | 'edited' | 'failed' | 'awaiting_review';
   notes: string | null;
   retrievalMode: 'graph' | 'keyword' | null;
   graphAgeHours: number | null;
   error: string | null;
   files: RunPlanFile[];
+  // Confidence gate (Phase 4). Null on plans predating it.
+  confidenceScore: number | null;
+  confidenceSignals: ConfidenceSignals | null;
+  /** One-line, signal-derived reason for the awaiting-review banner. */
+  confidenceReason: string | null;
+}
+
+/** Raw inputs the confidence score was computed from (Phase 4). */
+export interface ConfidenceSignals {
+  scoreGap: number | null;
+  topScore: number | null;
+  secondScore: number | null;
+  retrievalMode: 'graph' | 'keyword';
+  candidateCount: number;
+  countAboveFloor: number;
+  floor: number;
+  target: number;
+  density: number;
+  historicalPriorCount: number;
+  weights: { gap: number; mode: number; density: number; historical: number };
+  perSignal: { gap: number | null; mode: number; density: number; historical: number | null };
+  weakestSignal: 'gap' | 'mode' | 'density' | 'historical' | null;
 }
 
 /** A file in a plan-revision request (Edit plan). */
@@ -628,6 +655,16 @@ export function reviseRunPlan(runId: number, files: RevisionFileInput[]): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ files }),
   });
+}
+
+/** Approve a parked (awaiting_review) plan → generate as-is (Phase 4). */
+export function approveRunPlan(runId: number): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/runs/${runId}/plan/approve`, { method: 'POST' });
+}
+
+/** Reject a parked plan → the run ends canceled, no suggestions (Phase 4). */
+export function rejectRunPlan(runId: number): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/runs/${runId}/plan/reject`, { method: 'POST' });
 }
 
 /** Trigger the Veria review agent for a committed run. */

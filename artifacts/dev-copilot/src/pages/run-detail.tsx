@@ -27,6 +27,8 @@ import {
   commitRunSuggestion,
   reRunItem,
   runReview,
+  approveRunPlan,
+  rejectRunPlan,
   runAegisScan,
   runNarratia,
   remediateAegisFinding,
@@ -77,6 +79,7 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   scheduled: "scheduled",
   queued: "queued",
   running: "running",
+  awaiting_review: "needs review",
   succeeded: "succeeded",
   failed: "failed",
   canceled: "canceled",
@@ -100,6 +103,8 @@ export default function RunDetailPage() {
   const [staleError, setStaleError] = useState<string | null>(null);
   const [editPlanOpen, setEditPlanOpen] = useState(false);
   const [rerunning, setRerunning] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [aegisLoading, setAegisLoading] = useState(false);
   const [narratiaLoading, setNarratiaLoading] = useState(false);
@@ -229,6 +234,41 @@ export default function RunDetailPage() {
     }
   };
 
+  const onApprovePlan = async () => {
+    setApproving(true);
+    try {
+      await approveRunPlan(runId);
+      toast({ title: "Plan approved — generating." });
+      await load(true); // run flips to running → polling resumes
+    } catch (err) {
+      toast({
+        title: "Could not approve",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const onRejectPlan = async () => {
+    if (!window.confirm("Reject this plan? The run ends with no code generated.")) return;
+    setRejecting(true);
+    try {
+      await rejectRunPlan(runId);
+      toast({ title: "Plan rejected — run canceled." });
+      await load(true);
+    } catch (err) {
+      toast({
+        title: "Could not reject",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setRejecting(false);
+    }
+  };
+
   const onReview = async () => {
     setReviewing(true);
     try {
@@ -342,6 +382,37 @@ export default function RunDetailPage() {
         </div>
       </div>
     ) : null;
+  // Confidence gate (Phase 4): the plan is parked below the project threshold.
+  const awaitingReview = run.status === "awaiting_review" || plan?.status === "awaiting_review";
+  const awaitingReviewNode =
+    awaitingReview && plan ? (
+      <div style={{ border: "1px solid var(--c-amber)", background: "var(--c-amber-bg)", borderRadius: 6, padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertTriangle size={16} style={{ color: "var(--c-amber)" }} />
+          <span style={{ fontSize: "var(--fs-base)", fontWeight: 700, color: "var(--c-ink)" }}>This plan needs review before generating code</span>
+        </div>
+        <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-2)", margin: "8px 0 0", lineHeight: 1.5 }}>
+          {plan.confidenceReason ?? "Low confidence in the retrieved file set for this change."}
+          {plan.confidenceScore != null && (
+            <span style={{ color: "var(--c-ink-4)", marginLeft: 6, fontFamily: "var(--mono)", fontSize: "var(--fs-xs)" }}>
+              confidence {Math.round(plan.confidenceScore * 100)}%
+            </span>
+          )}
+        </p>
+        <div style={{ marginTop: 12 }}>{planNode("full")}</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button className="bm-primary" onClick={onApprovePlan} disabled={approving || rejecting}>
+            {approving ? <Loader2 size={12} className="animate-spin" /> : <ThumbsUp size={12} />}Approve &amp; generate
+          </button>
+          <button className="bm-ghost" onClick={() => setEditPlanOpen(true)} disabled={approving || rejecting}>
+            <FileText size={12} />Edit plan
+          </button>
+          <button className="bm-ghost" onClick={onRejectPlan} disabled={approving || rejecting} style={{ color: "var(--c-red)" }}>
+            {rejecting ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}Reject
+          </button>
+        </div>
+      </div>
+    ) : null;
   const infoCells: [string, string][] = [
     ["Status", STATUS_LABEL[run.status]],
     ["Trigger", run.trigger === "scheduled" ? "Scheduled" : "Manual"],
@@ -448,7 +519,9 @@ export default function RunDetailPage() {
           </div>
         )}
 
-        {inProgress ? (
+        {awaitingReview ? (
+          awaitingReviewNode
+        ) : inProgress ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {run.status !== "scheduled" && planNode("full")}
             {run.status !== "scheduled" && planFailedNode}

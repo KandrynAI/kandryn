@@ -27,6 +27,8 @@ export default function ProjectSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [threshold, setThreshold] = useState("");
+  const [savingThreshold, setSavingThreshold] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -36,6 +38,7 @@ export default function ProjectSettingsPage() {
       .then((p) => {
         setProject(p);
         setName(p.name);
+        setThreshold(p.confidenceThreshold);
       })
       .catch(() => setProject(null))
       .finally(() => setLoading(false));
@@ -55,6 +58,25 @@ export default function ProjectSettingsPage() {
       toast({ title: "Could not update name", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const saveThreshold = async () => {
+    const n = Number(threshold);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      toast({ title: "Enter a value between 0 and 1", variant: "destructive" });
+      return;
+    }
+    setSavingThreshold(true);
+    try {
+      const updated = await updateProject(projectId, { confidenceThreshold: n });
+      setProject(updated);
+      setThreshold(updated.confidenceThreshold);
+      toast({ title: "Confidence threshold updated" });
+    } catch (err) {
+      toast({ title: "Could not update threshold", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
+    } finally {
+      setSavingThreshold(false);
     }
   };
 
@@ -117,6 +139,38 @@ export default function ProjectSettingsPage() {
               <span className="font-mono text-sm text-muted-foreground">{project.plmProjectKey ?? "—"}</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Confidence gate */}
+      <section className="mb-8">
+        <div className={groupLabel}>Confidence gate</div>
+        <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
+          <label className="block text-xs font-medium text-foreground">Confidence threshold</label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              className="h-9 w-28"
+            />
+            <Button
+              size="sm"
+              className="h-9"
+              onClick={saveThreshold}
+              disabled={savingThreshold || threshold === project.confidenceThreshold}
+            >
+              {savingThreshold ? "Saving…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Before generating code, Blue Mantis scores its confidence in the change plan (0–1). Plans scoring
+            below this value pause for your review instead of generating automatically. Set 0 to never pause,
+            1 to always pause. Default 0.6 — an uncalibrated starting point.
+          </p>
         </div>
       </section>
 

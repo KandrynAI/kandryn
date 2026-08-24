@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, X, Loader2, Clock, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
+import { ArrowLeft, X, Loader2, Clock, CheckCircle2, XCircle, RotateCcw, AlertTriangle } from "lucide-react";
 import {
   fetchRuns,
   fetchProject,
@@ -22,6 +22,7 @@ const STATUS_META: Record<RunStatus, { label: string; className: string; icon: t
   scheduled: { label: "Scheduled", className: "text-amber-700 border-amber-600/40", icon: Clock },
   queued: { label: "Queued", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
   running: { label: "Running", className: "text-blue-700 border-blue-600/40", icon: Loader2 },
+  awaiting_review: { label: "Needs review", className: "text-amber-700 border-amber-600/40", icon: AlertTriangle },
   succeeded: { label: "Succeeded", className: "text-emerald-700 border-emerald-600/40", icon: CheckCircle2 },
   failed: { label: "Failed", className: "text-red-700 border-red-600/40", icon: XCircle },
   canceled: { label: "Canceled", className: "text-muted-foreground border-border", icon: XCircle },
