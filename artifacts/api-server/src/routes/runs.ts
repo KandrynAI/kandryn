@@ -507,7 +507,12 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
     );
     req.log.info({ runId: params.data.id, ...result }, "Run suggestion committed");
     const [committedSuggestion] = await db
-      .select({ agent: suggestionsTable.agent, score: suggestionsTable.score })
+      .select({
+        agent: suggestionsTable.agent,
+        score: suggestionsTable.score,
+        coherenceStatus: suggestionsTable.coherenceStatus,
+        coherenceFindings: suggestionsTable.coherenceFindings,
+      })
       .from(suggestionsTable)
       .where(eq(suggestionsTable.id, parsed.data.suggestionId));
     const committedPrimary = await suggestionPrimaryFile(parsed.data.suggestionId);
@@ -526,6 +531,30 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
       ipAddress: audit.getIp(req),
       userAgent: req.headers["user-agent"],
     });
+    // Separately audit an override commit — a suggestion that FAILED the
+    // coherence gate but was committed anyway via the explicit override
+    // (Reporting §3.2). Only fires when both conditions hold.
+    if (parsed.data.override && committedSuggestion?.coherenceStatus === "failed") {
+      const findings = committedSuggestion.coherenceFindings ?? [];
+      const errors = findings.filter((f) => f.severity === "error").length;
+      const warnings = findings.filter((f) => f.severity === "warning").length;
+      const checks = [...new Set(findings.map((f) => f.check))].join(", ");
+      audit.log({
+        userId: req.userId,
+        teamId: req.teamId ?? null,
+        action: "run.override_committed",
+        entityType: "run",
+        entityId: params.data.id,
+        metadata: {
+          suggestionId: parsed.data.suggestionId,
+          findingsSummary: `${errors} error(s), ${warnings} warning(s)${checks ? ` (${checks})` : ""}`,
+          errorCount: errors,
+          warningCount: warnings,
+        },
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
+    }
     res.json(result);
   } catch (err) {
     if (err instanceof RunError) {

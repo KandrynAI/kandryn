@@ -25,6 +25,7 @@ const ACTION_LABELS: Record<string, string> = {
   "team_credential.set": "Team credential saved",
   "team_credential.deleted": "Team credential deleted",
   "project.created": "Project created",
+  "project.updated": "Project settings changed",
   "project.deleted": "Project deleted",
   "project.synced": "Board synced",
   "repository.connected": "Repository connected",
@@ -32,6 +33,7 @@ const ACTION_LABELS: Record<string, string> = {
   "run.triggered": "Run triggered",
   "run.scheduled": "Run scheduled",
   "run.committed": "Suggestion committed",
+  "run.override_committed": "Committed past coherence gate",
   "run.canceled": "Run canceled",
   "run.failed": "Run failed",
   "plan.generated": "Plan generated",
@@ -61,6 +63,7 @@ function categoryColor(action: string): string {
   if (action.startsWith("team") || action.startsWith("member") || action.startsWith("invite")) return "var(--c-blue)";
   if (action.includes("credential")) return "#d97706";
   if (action.startsWith("project") || action.startsWith("repository")) return "#0d9488";
+  if (action === "run.override_committed") return "#d97706"; // amber — a gate override stands out
   if (action.startsWith("run.")) return action === "run.failed" || action === "run.canceled" ? "#dc2626" : "#16a34a";
   if (action.startsWith("plan.")) return action === "plan.failed" ? "#dc2626" : "#6366f1";
   if (action.startsWith("aegis") || action.startsWith("narratia") || action.startsWith("veria") || action.startsWith("tests")) return "#7c3aed";
@@ -78,6 +81,12 @@ function formatMetadata(action: string, meta: Record<string, unknown> | null): s
   switch (action) {
     case "run.committed":
       return `${meta.agent ?? ""}${meta.score ? ` · score ${meta.score}` : ""}${meta.prUrl ? " · PR opened" : ""}`;
+    case "run.override_committed":
+      return `suggestion #${meta.suggestionId ?? "?"} · ${meta.findingsSummary ?? "coherence override"}`;
+    case "project.updated":
+      return meta.confidenceThreshold && typeof meta.confidenceThreshold === "object"
+        ? `confidence threshold ${(meta.confidenceThreshold as { from?: unknown }).from ?? "?"} → ${(meta.confidenceThreshold as { to?: unknown }).to ?? "?"}`
+        : "settings changed";
     case "member.invited":
       return `${meta.email ?? ""} as ${meta.role ?? ""}`;
     case "member.role_changed":

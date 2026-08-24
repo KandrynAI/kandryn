@@ -21,6 +21,7 @@ export const AUDIT_ACTIONS = [
 
   // Projects
   'project.created',
+  'project.updated',
   'project.deleted',
   'project.synced',
   'repository.connected',
@@ -32,6 +33,8 @@ export const AUDIT_ACTIONS = [
   'run.canceled',
   'run.failed',
   'run.committed',
+  // A suggestion committed past a failed coherence gate via explicit override.
+  'run.override_committed',
   // Confidence gate (Phase 4)
   'run.plan_approved',
   'run.plan_rejected',

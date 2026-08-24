@@ -301,6 +301,7 @@ function ProtectedApp() {
           <Route path="/tasks/:id" component={TaskDetail} />
           <Route path="/history" component={HistoryPage} />
           <Route path="/reports" component={ReportsPage} />
+          <Route path="/reports/:tab" component={ReportsPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>
