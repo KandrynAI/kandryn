@@ -904,6 +904,90 @@ export function fetchAuditActions(): Promise<{ actions: string[] }> {
   return request<{ actions: string[] }>('/api/audit/actions');
 }
 
+/* ---- Admin diagnostics (Reporting Phase A, admin only) ---- */
+
+/** `scope` is a projectId, or omitted for all team projects. */
+function adminQuery(scope?: number, days?: number): string {
+  const p = new URLSearchParams();
+  if (scope != null) p.set('scope', String(scope));
+  if (days != null) p.set('days', String(days));
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+
+export interface ParkedRun {
+  runId: number;
+  projectId: number | null;
+  projectName: string | null;
+  workItemTitle: string | null;
+  externalId: string | null;
+  itemType: string | null;
+  plmUrl: string | null;
+  trigger: 'manual' | 'scheduled';
+  triggerContext: string | null;
+  createdAt: string;
+}
+
+export function fetchParkedRuns(scope?: number): Promise<{ items: ParkedRun[] }> {
+  return request<{ items: ParkedRun[] }>(`/api/reports/admin/parked-runs${adminQuery(scope)}`);
+}
+
+export interface RepoHealth {
+  repositoryId: number;
+  name: string;
+  provider: string;
+  projectId: number | null;
+  projectName: string | null;
+  graphStatus: 'idle' | 'indexing' | 'succeeded' | 'failed' | 'stale';
+  graphBuiltAt: string | null;
+  graphNodeCount: number | null;
+  graphAgeHours: number | null;
+  graphFresh: boolean;
+  needsReconfiguration: boolean;
+  needsVerification: boolean;
+  lastAegisScanAt: string | null;
+}
+
+export function fetchRepoHealth(scope?: number): Promise<{ items: RepoHealth[] }> {
+  return request<{ items: RepoHealth[] }>(`/api/reports/admin/repo-health${adminQuery(scope)}`);
+}
+
+export interface AegisFailure {
+  runId: number | null;
+  projectId: number | null;
+  projectName: string | null;
+  criticalCount: number;
+  highCount: number;
+  filesScanned: number | null;
+  filesTotal: number | null;
+  unscannedFiles: string[];
+  createdAt: string;
+}
+
+export function fetchAegisFailures(scope?: number, days?: number): Promise<{ items: AegisFailure[] }> {
+  return request<{ items: AegisFailure[] }>(`/api/reports/admin/aegis-failures${adminQuery(scope, days)}`);
+}
+
+export interface FailedStage {
+  count: number;
+  runIds: number[];
+}
+
+export interface FailedByStage {
+  days: number;
+  totalRuns: number;
+  stages: {
+    planning: FailedStage;
+    commit: FailedStage;
+    coherenceExcluded: FailedStage;
+    aegisBlocked: FailedStage;
+  };
+}
+
+export function fetchFailedByStage(scope?: number, days?: number): Promise<FailedByStage> {
+  return request<FailedByStage>(`/api/reports/admin/failed-by-stage${adminQuery(scope, days)}`);
+}
+
 export function auditLogCsvUrl(days: number): string {
   return `/api/audit/export.csv?days=${days}`;
 }

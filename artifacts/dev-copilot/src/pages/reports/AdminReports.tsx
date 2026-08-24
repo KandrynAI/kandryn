@@ -3,13 +3,21 @@ import { ShieldAlert } from "lucide-react";
 import { useTeam } from "@/context/TeamContext";
 import type { Project } from "@/services/api";
 import { RangePills, ReportScope, type RangeDays, type Scope } from "@/components/reports/shared";
+import {
+  ParkedRunsPanel,
+  RepoHealthPanel,
+  AegisFailuresPanel,
+  FailedByStagePanel,
+} from "@/pages/reports/adminPanels";
 
 /**
- * Admin reports (Reporting Phase A). PR 1 lays out the shell — role gate, the
+ * Admin reports (Reporting Phase A). PR 1 laid out the shell — role gate, the
  * cross-project scope selector, and the time-range pills — plus the shared
- * component kit. The six diagnostic panels (Stuck & Parked, Repository Health,
- * Aegis Gate Failures, Failed Runs by Stage, Configuration Audit, Access &
- * Change Audit) are filled in PR 2/PR 3, each reading `scope` + `days`.
+ * component kit. PR 2 mounts the four operational panels below (Stuck & Parked,
+ * Repository Health, Aegis Gate Failures, Failed Runs by Stage), each reading
+ * `scope` + `days` and fetching independently. Parked runs — the one with a real
+ * action — leads, above the diagnostics. Configuration + Access audit follow in
+ * PR 3.
  */
 export function AdminReports({ projects }: { projects: Project[] }) {
   const { isAdmin } = useTeam();
@@ -40,10 +48,12 @@ export function AdminReports({ projects }: { projects: Project[] }) {
       </div>
 
       <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* PR 2/PR 3 mount the panels here, each scoped to `scope` + `days`. */}
-        <div style={{ border: "1px dashed var(--c-border)", borderRadius: 8, padding: "28px 16px", textAlign: "center", color: "var(--c-ink-4)", fontSize: "var(--fs-sm)" }}>
-          Diagnostic panels load here.
-        </div>
+        {/* Parked runs lead — the one panel with a real action. Then diagnostics. */}
+        <ParkedRunsPanel scope={scope} />
+        <RepoHealthPanel scope={scope} />
+        <AegisFailuresPanel scope={scope} days={days} />
+        <FailedByStagePanel scope={scope} days={days} />
+        {/* PR 3 mounts Configuration Audit + Access & Change Audit here. */}
       </div>
     </div>
   );
