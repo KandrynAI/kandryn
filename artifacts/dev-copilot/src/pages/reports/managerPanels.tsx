@@ -70,61 +70,90 @@ export function PlanAcceptancePanel({ days, projectId }: { days: number; project
 }
 
 // ── 1.1 Retrieval attribution ───────────────────────────────────────────────
-// For every file a human added to a plan by hand, was it in the planner's
-// candidate set? The two categories carry their actionable meaning — a planner
-// miss (fix the prompt) vs. a retrieval miss (fix retrieval) — not a raw boolean.
-export function RetrievalAttributionPanel({ days, projectId }: { days: number; projectId?: number }) {
-  const [, navigate] = useLocation();
-  const { data, loading, error, reload } = usePanelData(() => fetchRetrievalAttribution(days, projectId), [days, projectId]);
-  const total = data ? data.found + data.missed : 0;
-  const max = data ? Math.max(data.found, data.missed, 1) : 1;
-
-  const bar = (count: number, tone: "amber" | "red", label: string, hint: string) => (
+// How well retrieval served the planner. Two views: planner coverage (over all
+// planned files — has data on real runs) and hand-added files (empty until users
+// edit plans). Each category carries its actionable meaning, not a raw boolean.
+function AttrBar({ count, denom, tone, label, hint }: { count: number; denom: number; tone: "teal" | "amber" | "red"; label: string; hint: string }) {
+  const bg = tone === "teal" ? "var(--accent-blue)" : `var(--c-${tone})`;
+  return (
     <div style={{ padding: "8px 14px" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
         <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink)" }}>{label}</span>
         <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink)" }}>{count}</span>
       </div>
       <div style={{ height: 8, borderRadius: 4, background: "var(--c-raised)", marginTop: 4, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${(count / max) * 100}%`, background: `var(--c-${tone})`, borderRadius: 4 }} />
+        <div style={{ height: "100%", width: `${(count / Math.max(denom, 1)) * 100}%`, background: bg, borderRadius: 4 }} />
       </div>
       <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 3 }}>{hint}</div>
     </div>
   );
+}
+
+export function RetrievalAttributionPanel({ days, projectId }: { days: number; projectId?: number }) {
+  const [, navigate] = useLocation();
+  const { data, loading, error, reload } = usePanelData(() => fetchRetrievalAttribution(days, projectId), [days, projectId]);
+  const plannerTotal = data ? data.planner.inCandidates + data.planner.missed : 0;
+  const manualTotal = data ? data.manual.found + data.manual.missed : 0;
 
   return (
     <ReportPanel
       title="Retrieval attribution"
-      subtitle={`Where hand-added plan files came from, last ${days} days — a prompt problem vs. a retrieval problem.`}
+      subtitle={`How well retrieval served the planner, last ${days} days — a prompt problem vs. a retrieval problem.`}
     >
-      <PanelState loading={loading} error={error} isEmpty={total === 0} onRetry={reload} emptyLabel="No plan files were added by hand in this window.">
+      <PanelState loading={loading} error={error} isEmpty={plannerTotal === 0 && manualTotal === 0} onRetry={reload} emptyLabel="No planned files in this window.">
         {data && (
           <>
-            {bar(data.found, "amber", "Retrieval found it, planner chose badly", "The path was in candidates — fix the planner prompt.")}
-            {bar(data.missed, "red", "Retrieval never found it", "The path wasn't retrieved at all — fix retrieval.")}
-            {data.topPaths.length > 0 && (
-              <div style={{ marginTop: 6 }}>
-                <div style={{ padding: "8px 14px 2px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>
-                  Most-added-by-hand paths
-                </div>
-                {data.topPaths.map((p) => (
-                  <Row key={p.filePath}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {p.filePath}
-                      </div>
-                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>added by hand {p.count}×</div>
+            {/* Planner coverage — has data on real runs. */}
+            <div style={{ padding: "8px 14px 2px", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>Planner retrieval coverage</span>
+              {data.planner.coverageRate != null && (
+                <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink)" }}>{data.planner.coverageRate}% surfaced</span>
+              )}
+            </div>
+            {plannerTotal === 0 ? (
+              <div style={{ padding: "4px 14px 10px", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>No planned files in this window.</div>
+            ) : (
+              <>
+                <AttrBar count={data.planner.inCandidates} denom={plannerTotal} tone="teal" label="In candidates" hint="Retrieval surfaced the file the planner used." />
+                <AttrBar count={data.planner.missed} denom={plannerTotal} tone="red" label="Retrieval miss — planned anyway" hint="The planner named a file retrieval never surfaced — fix retrieval." />
+              </>
+            )}
+
+            {/* Hand-added files — empty until users edit plans. */}
+            <div style={{ padding: "12px 14px 2px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)", borderTop: "1px solid var(--c-border)" }}>
+              Files added by hand
+            </div>
+            {manualTotal === 0 ? (
+              <div style={{ padding: "4px 14px 10px", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>No plan files were added by hand in this window.</div>
+            ) : (
+              <>
+                <AttrBar count={data.manual.found} denom={manualTotal} tone="amber" label="Retrieval found it, planner chose badly" hint="The path was in candidates — fix the planner prompt." />
+                <AttrBar count={data.manual.missed} denom={manualTotal} tone="red" label="Retrieval never found it" hint="The path wasn't retrieved at all — fix retrieval." />
+                {data.manual.topPaths.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ padding: "6px 14px 2px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>
+                      Most-added-by-hand paths
                     </div>
-                    <button
-                      onClick={() => navigate(`/runs/${p.exampleRunId}`)}
-                      className="bm-ghost"
-                      style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
-                    >
-                      Example <ArrowRight size={12} />
-                    </button>
-                  </Row>
-                ))}
-              </div>
+                    {data.manual.topPaths.map((p) => (
+                      <Row key={p.filePath}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {p.filePath}
+                          </div>
+                          <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>added by hand {p.count}×</div>
+                        </div>
+                        <button
+                          onClick={() => navigate(`/runs/${p.exampleRunId}`)}
+                          className="bm-ghost"
+                          style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
+                        >
+                          Example <ArrowRight size={12} />
+                        </button>
+                      </Row>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

@@ -874,9 +874,18 @@ function reportQuery(days: number, projectId?: number): string {
 }
 
 export interface RetrievalAttribution {
-  found: number; // in_candidates = true  → retrieval found it, planner chose badly
-  missed: number; // in_candidates = false → retrieval never found it
-  topPaths: { filePath: string; count: number; exampleRunId: number }[];
+  // Planner coverage over all planned files — has data on real runs.
+  planner: {
+    inCandidates: number; // retrieval surfaced the path
+    missed: number; // planner planned a path retrieval never surfaced (retrieval miss)
+    coverageRate: number | null; // % of planned files that were in candidates
+  };
+  // Files a user added by hand (empty until plans are edited).
+  manual: {
+    found: number; // in_candidates = true  → retrieval found it, planner chose badly
+    missed: number; // in_candidates = false → retrieval never found it
+    topPaths: { filePath: string; count: number; exampleRunId: number }[];
+  };
 }
 
 export function fetchRetrievalAttribution(days: number, projectId?: number): Promise<RetrievalAttribution> {
