@@ -8,16 +8,18 @@ import {
   RepoHealthPanel,
   AegisFailuresPanel,
   FailedByStagePanel,
+  ConfigAuditPanel,
+  AccessChangePanel,
 } from "@/pages/reports/adminPanels";
 
 /**
  * Admin reports (Reporting Phase A). PR 1 laid out the shell — role gate, the
  * cross-project scope selector, and the time-range pills — plus the shared
- * component kit. PR 2 mounts the four operational panels below (Stuck & Parked,
- * Repository Health, Aegis Gate Failures, Failed Runs by Stage), each reading
- * `scope` + `days` and fetching independently. Parked runs — the one with a real
- * action — leads, above the diagnostics. Configuration + Access audit follow in
- * PR 3.
+ * component kit. PR 2 mounted the four operational panels (Stuck & Parked,
+ * Repository Health, Aegis Gate Failures, Failed Runs by Stage). PR 3 adds
+ * Configuration Audit + Access & Change Audit below. Each panel reads `scope` +
+ * `days` and fetches independently; parked runs — the one with a real action —
+ * leads, above the diagnostics.
  */
 export function AdminReports({ projects }: { projects: Project[] }) {
   const { isAdmin } = useTeam();
@@ -53,7 +55,8 @@ export function AdminReports({ projects }: { projects: Project[] }) {
         <RepoHealthPanel scope={scope} />
         <AegisFailuresPanel scope={scope} days={days} />
         <FailedByStagePanel scope={scope} days={days} />
-        {/* PR 3 mounts Configuration Audit + Access & Change Audit here. */}
+        <ConfigAuditPanel scope={scope} />
+        <AccessChangePanel days={days} />
       </div>
     </div>
   );

@@ -988,6 +988,38 @@ export function fetchFailedByStage(scope?: number, days?: number): Promise<Faile
   return request<FailedByStage>(`/api/reports/admin/failed-by-stage${adminQuery(scope, days)}`);
 }
 
+export interface ConfigAuditRepo {
+  repositoryId: number;
+  name: string;
+  projectId: number | null;
+  projectName: string | null;
+}
+
+export interface ConfigAudit {
+  staleGraphs: ConfigAuditRepo[];
+  unverifiedRepos: ConfigAuditRepo[];
+  needsReconfigRepos: ConfigAuditRepo[];
+  projectsWithoutRepo: { projectId: number; name: string }[];
+}
+
+export function fetchConfigAudit(scope?: number): Promise<ConfigAudit> {
+  return request<ConfigAudit>(`/api/reports/admin/config-audit${adminQuery(scope)}`);
+}
+
+export interface AccessChange {
+  id: number;
+  userId: string;
+  action: string;
+  entityType: string | null;
+  entityId: number | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export function fetchAccessChanges(days?: number): Promise<{ items: AccessChange[] }> {
+  return request<{ items: AccessChange[] }>(`/api/reports/admin/access-changes${adminQuery(undefined, days)}`);
+}
+
 export function auditLogCsvUrl(days: number): string {
   return `/api/audit/export.csv?days=${days}`;
 }

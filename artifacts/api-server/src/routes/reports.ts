@@ -566,4 +566,110 @@ router.get("/reports/admin/failed-by-stage", async (req, res): Promise<void> => 
   });
 });
 
+/**
+ * GET /reports/admin/config-audit — structural configuration drift across the
+ * team's repos + projects. Not time-bounded (a stale config is stale now
+ * regardless of when it drifted). Stale graphs come from graph_status='stale'
+ * (set on a repo URL change), NOT a graph_built_at/updated_at comparison — there
+ * is no updated_at column, and staleness is an explicit lifecycle state. Credential
+ * expiry is a known gap (not tracked) and is surfaced as a static note client-side.
+ */
+router.get("/reports/admin/config-audit", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+
+  const repoConds = [inArray(repositoriesTable.userId, scope.userIds)];
+  if (scope.projectId != null) repoConds.push(eq(repositoriesTable.projectId, scope.projectId));
+  const repos = await db
+    .select({
+      repositoryId: repositoriesTable.id,
+      name: repositoriesTable.name,
+      projectId: repositoriesTable.projectId,
+      projectName: projectsTable.name,
+      graphStatus: repositoriesTable.graphStatus,
+      needsVerification: repositoriesTable.needsVerification,
+      needsReconfiguration: repositoriesTable.needsReconfiguration,
+    })
+    .from(repositoriesTable)
+    .leftJoin(projectsTable, eq(repositoriesTable.projectId, projectsTable.id))
+    .where(and(...repoConds));
+
+  const projConds = [inArray(projectsTable.userId, scope.userIds)];
+  if (scope.projectId != null) projConds.push(eq(projectsTable.id, scope.projectId));
+  const projects = await db
+    .select({ projectId: projectsTable.id, name: projectsTable.name })
+    .from(projectsTable)
+    .where(and(...projConds));
+
+  const boundProjectIds = new Set(
+    repos.map((r) => r.projectId).filter((id): id is number => id != null),
+  );
+  const trim = (r: (typeof repos)[number]) => ({
+    repositoryId: r.repositoryId,
+    name: r.name,
+    projectId: r.projectId,
+    projectName: r.projectName,
+  });
+
+  res.json({
+    staleGraphs: repos.filter((r) => r.graphStatus === "stale").map(trim),
+    unverifiedRepos: repos.filter((r) => r.needsVerification).map(trim),
+    needsReconfigRepos: repos.filter((r) => r.needsReconfiguration).map(trim),
+    projectsWithoutRepo: projects.filter((p) => !boundProjectIds.has(p.projectId)),
+  });
+});
+
+// Curated slice of audit actions for the Access & Change panel: who can do what
+// (membership/role/team) and the governance-sensitive changes (confidence
+// threshold edits, coherence-gate overrides, team credentials). Everything else
+// stays in the full Settings → Audit log, which this panel links out to.
+const ACCESS_CHANGE_ACTIONS = [
+  "member.invited",
+  "member.joined",
+  "member.removed",
+  "member.role_changed",
+  "invite.canceled",
+  "team.updated",
+  "project.updated",
+  "run.override_committed",
+  "team_credential.set",
+  "team_credential.deleted",
+];
+
+/**
+ * GET /reports/admin/access-changes — recent access + governance events from the
+ * audit log, team-scoped and bounded by `days`. Not project-scoped (these are
+ * team-level). Raw rows; the client renders labels/metadata (reusing the audit
+ * log's presentation vocabulary).
+ */
+router.get("/reports/admin/access-changes", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+  const teamId = req.teamId!;
+  const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      id: auditLogTable.id,
+      userId: auditLogTable.userId,
+      action: auditLogTable.action,
+      entityType: auditLogTable.entityType,
+      entityId: auditLogTable.entityId,
+      metadata: auditLogTable.metadata,
+      createdAt: auditLogTable.createdAt,
+    })
+    .from(auditLogTable)
+    .where(
+      and(
+        eq(auditLogTable.teamId, teamId),
+        gte(auditLogTable.createdAt, since),
+        inArray(auditLogTable.action, ACCESS_CHANGE_ACTIONS),
+      ),
+    )
+    .orderBy(desc(auditLogTable.createdAt))
+    .limit(40);
+
+  res.json({ items: rows });
+});
+
 export default router;

@@ -8,10 +8,14 @@ import {
   fetchRepoHealth,
   fetchAegisFailures,
   fetchFailedByStage,
+  fetchConfigAudit,
+  fetchAccessChanges,
   type RepoHealth,
+  type ConfigAuditRepo,
+  type AccessChange,
 } from "@/services/api";
 import type { RangeDays, Scope, Tone } from "@/components/reports/shared";
-import { ReportPanel, PanelState, StatusPill } from "@/components/reports/shared";
+import { ReportPanel, PanelState, StatusPill, StatusDot } from "@/components/reports/shared";
 
 // The four Reporting Phase A diagnostic panels. Each fetches independently and
 // wraps its body in PanelState, so one panel failing never blanks the others,
@@ -216,6 +220,150 @@ export function FailedByStagePanel({ scope, days }: { scope: Scope; days: RangeD
             </div>
           ))}
         </div>
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── 3.1 Configuration Audit ─────────────────────────────────────────────────
+/** A labelled group of config issues sharing one tone + resolution link. */
+function IssueGroup({ label, tone, rows }: { label: string; tone: Tone; rows: { key: number; title: string; sub: string; href: string }[] }) {
+  const [, navigate] = useLocation();
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <div style={{ padding: "6px 14px 2px" }}>
+        <StatusPill tone={tone} label={`${label} · ${rows.length}`} />
+      </div>
+      {rows.map((r) => (
+        <Row key={r.key}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.title}</div>
+            <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>{r.sub}</div>
+          </div>
+          <button onClick={() => navigate(r.href)} className="bm-ghost" style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+            Fix <ArrowUpRight size={12} />
+          </button>
+        </Row>
+      ))}
+    </div>
+  );
+}
+
+const repoRow = (r: ConfigAuditRepo, sub: string) => ({
+  key: r.repositoryId,
+  title: r.name,
+  sub: `${r.projectName ?? "unbound"} · ${sub}`,
+  href: `/repositories/${r.repositoryId}`,
+});
+
+export function ConfigAuditPanel({ scope }: { scope: Scope }) {
+  const { data, loading, error, reload } = usePanelData(() => fetchConfigAudit(scopeArg(scope)), [scope]);
+  const total = data
+    ? data.staleGraphs.length + data.unverifiedRepos.length + data.needsReconfigRepos.length + data.projectsWithoutRepo.length
+    : 0;
+
+  return (
+    <ReportPanel title="Configuration audit" subtitle="Structural drift across repositories and projects that needs attention.">
+      <PanelState loading={loading} error={error} isEmpty={total === 0} onRetry={reload} emptyLabel="Configuration looks healthy.">
+        {data && (
+          <>
+            <IssueGroup label="Graph invalidated" tone="red" rows={data.staleGraphs.map((r) => repoRow(r, "URL changed — rebuild the graph"))} />
+            <IssueGroup label="Needs reconfiguration" tone="red" rows={data.needsReconfigRepos.map((r) => repoRow(r, "repository URL was cleared"))} />
+            <IssueGroup label="Unverified" tone="amber" rows={data.unverifiedRepos.map((r) => repoRow(r, "confirm after migration"))} />
+            <IssueGroup
+              label="No repository"
+              tone="amber"
+              rows={data.projectsWithoutRepo.map((p) => ({ key: p.projectId, title: p.name, sub: "project has no repository bound", href: `/p/${p.projectId}/board` }))}
+            />
+            <div style={{ padding: "10px 14px 4px", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", borderTop: "1px solid var(--c-border)" }}>
+              Credential expiry isn't tracked yet — integration health is verified on use (Settings → Integrations).
+            </div>
+          </>
+        )}
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── 3.2 Access & Change Audit ───────────────────────────────────────────────
+// A curated slice of the audit log — labels/summaries for just these actions.
+// The full log lives in Settings → Audit, which the panel footer links to.
+const ACCESS_LABELS: Record<string, string> = {
+  "member.invited": "Member invited",
+  "member.joined": "Member joined",
+  "member.removed": "Member removed",
+  "member.role_changed": "Role changed",
+  "invite.canceled": "Invite canceled",
+  "team.updated": "Team updated",
+  "project.updated": "Project settings changed",
+  "run.override_committed": "Committed past coherence gate",
+  "team_credential.set": "Team credential saved",
+  "team_credential.deleted": "Team credential deleted",
+};
+
+function accessDot(action: string): Tone {
+  if (action.includes("credential")) return "amber";
+  if (action === "run.override_committed" || action === "project.updated") return "amber";
+  if (action === "member.removed" || action === "invite.canceled") return "red";
+  return "muted";
+}
+
+function accessSummary(a: AccessChange): string {
+  const m = a.metadata ?? {};
+  switch (a.action) {
+    case "member.invited":
+      return `${m.email ?? ""} as ${m.role ?? ""}`;
+    case "member.role_changed":
+      return `→ ${m.newRole ?? ""}`;
+    case "member.removed":
+      return String(m.removedUserId ?? "");
+    case "project.updated":
+      return m.confidenceThreshold && typeof m.confidenceThreshold === "object"
+        ? `confidence threshold ${(m.confidenceThreshold as { from?: unknown }).from ?? "?"} → ${(m.confidenceThreshold as { to?: unknown }).to ?? "?"}`
+        : "settings changed";
+    case "run.override_committed":
+      return `suggestion #${m.suggestionId ?? "?"} · ${m.findingsSummary ?? "coherence override"}`;
+    case "team_credential.set":
+    case "team_credential.deleted":
+      return `key: ${m.key ?? ""}`;
+    default:
+      return "";
+  }
+}
+
+export function AccessChangePanel({ days }: { days: RangeDays }) {
+  const [, navigate] = useLocation();
+  const { data, loading, error, reload } = usePanelData(() => fetchAccessChanges(days), [days]);
+  const items = data?.items ?? [];
+
+  return (
+    <ReportPanel
+      title="Access & change audit"
+      subtitle={`Membership, role, and governance-sensitive changes in the last ${days} days.`}
+      action={
+        <button onClick={() => navigate("/settings?tab=audit")} className="bm-ghost" style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          Full audit log <ArrowUpRight size={12} />
+        </button>
+      }
+    >
+      <PanelState loading={loading} error={error} isEmpty={items.length === 0} onRetry={reload} emptyLabel="No access or governance changes in this window.">
+        {items.map((a) => {
+          const summary = accessSummary(a);
+          return (
+            <Row key={a.id}>
+              <StatusDot tone={accessDot(a.action)} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink)" }}>
+                  {ACCESS_LABELS[a.action] ?? a.action}
+                  {summary && <span style={{ color: "var(--c-ink-4)", fontWeight: 400 }}> · {summary}</span>}
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--c-ink-4)" }}>{a.userId}</div>
+              </div>
+              <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", flexShrink: 0 }}>{age(a.createdAt)}</span>
+            </Row>
+          );
+        })}
       </PanelState>
     </ReportPanel>
   );
