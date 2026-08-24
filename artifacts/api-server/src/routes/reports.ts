@@ -1,6 +1,15 @@
-import { Router, type IRouter } from "express";
-import { and, asc, eq, gte, inArray } from "drizzle-orm";
-import { db, runsTable, suggestionsTable, tasksTable } from "@workspace/db";
+import { Router, type IRouter, type Request, type Response } from "express";
+import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import {
+  db,
+  runsTable,
+  suggestionsTable,
+  tasksTable,
+  repositoriesTable,
+  projectsTable,
+  changePlansTable,
+  auditLogTable,
+} from "@workspace/db";
 import { z } from "zod/v4";
 import { getTeamMembers } from "../services/teamService.js";
 
@@ -278,6 +287,281 @@ router.get("/reports/summary", async (req, res): Promise<void> => {
       securityByOwasp,
       workItemsByType,
       backlogBurn,
+    },
+  });
+});
+
+// ─── Admin diagnostics (Reporting Phase A) ──────────────────────────────────
+// Operational-health panels for team admins. Every endpoint below is admin-only
+// and team-scoped: it reads across every team member's runs/repositories (the
+// same member-userIds scope as /reports/summary), never a single user. An
+// optional `scope` narrows to one project; `days` (7/30/90) bounds the
+// time-windowed panels. Read-only — no migration, reuses existing columns and
+// the `aegis.scan_run` audit action.
+
+const AdminQuery = z.object({
+  days: z.coerce.number().int().optional(),
+  scope: z.coerce.number().int().positive().optional(),
+});
+
+/** Resolve the admin guard + team member ids + optional project scope. Returns
+ *  null (after writing the 403) when the caller is not a team admin. */
+async function resolveAdminScope(
+  req: Request,
+  res: Response,
+): Promise<{ userIds: string[]; projectId?: number; days: number } | null> {
+  if (!req.teamId || req.teamRole !== "admin") {
+    res.status(403).json({ error: "Admin access required." });
+    return null;
+  }
+  const parsed = AdminQuery.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid query" });
+    return null;
+  }
+  const members = await getTeamMembers(req.teamId);
+  const userIds = members.map((m) => m.userId);
+  if (!userIds.includes(req.userId)) userIds.push(req.userId);
+  const days = ALLOWED_DAYS.includes(parsed.data.days ?? 30) ? (parsed.data.days ?? 30) : 30;
+  return { userIds, projectId: parsed.data.scope, days };
+}
+
+/**
+ * GET /reports/admin/parked-runs — runs parked by the confidence gate
+ * (status='awaiting_review'), oldest first. Not time-bounded: a park waits
+ * indefinitely, and an old one is the most urgent, so `days` is deliberately
+ * ignored here. This panel carries the real action (approve/reject the plan).
+ */
+router.get("/reports/admin/parked-runs", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+
+  const conds = [inArray(runsTable.userId, scope.userIds), eq(runsTable.status, "awaiting_review")];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+
+  const rows = await db
+    .select({
+      runId: runsTable.id,
+      projectId: runsTable.projectId,
+      projectName: projectsTable.name,
+      workItemTitle: tasksTable.title,
+      externalId: tasksTable.externalId,
+      itemType: tasksTable.itemType,
+      plmUrl: tasksTable.plmUrl,
+      trigger: runsTable.trigger,
+      triggerContext: runsTable.triggerContext,
+      createdAt: runsTable.createdAt,
+    })
+    .from(runsTable)
+    .leftJoin(projectsTable, eq(runsTable.projectId, projectsTable.id))
+    .leftJoin(tasksTable, eq(runsTable.workItemId, tasksTable.id))
+    .where(and(...conds))
+    .orderBy(asc(runsTable.createdAt));
+
+  res.json({ items: rows });
+});
+
+/**
+ * GET /reports/admin/repo-health — per-repository operational health: graph
+ * freshness (built <24h ago and status='succeeded'), reconfiguration/
+ * verification flags, and the last completed Aegis scan. Not time-bounded.
+ */
+router.get("/reports/admin/repo-health", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+
+  const repoConds = [inArray(repositoriesTable.userId, scope.userIds)];
+  if (scope.projectId != null) repoConds.push(eq(repositoriesTable.projectId, scope.projectId));
+
+  const repos = await db
+    .select({
+      repositoryId: repositoriesTable.id,
+      name: repositoriesTable.name,
+      provider: repositoriesTable.provider,
+      projectId: repositoriesTable.projectId,
+      projectName: projectsTable.name,
+      graphStatus: repositoriesTable.graphStatus,
+      graphBuiltAt: repositoriesTable.graphBuiltAt,
+      graphNodeCount: repositoriesTable.graphNodeCount,
+      needsReconfiguration: repositoriesTable.needsReconfiguration,
+      needsVerification: repositoriesTable.needsVerification,
+    })
+    .from(repositoriesTable)
+    .leftJoin(projectsTable, eq(repositoriesTable.projectId, projectsTable.id))
+    .where(and(...repoConds))
+    .orderBy(asc(repositoriesTable.name));
+
+  // Last completed Aegis scan per repo — one query, reduced in JS.
+  const repoIds = repos.map((r) => r.repositoryId);
+  const lastScanByRepo = new Map<number, Date>();
+  if (repoIds.length) {
+    const scanned = await db
+      .select({ repositoryId: runsTable.repositoryId, finishedAt: runsTable.finishedAt, createdAt: runsTable.createdAt })
+      .from(runsTable)
+      .where(and(inArray(runsTable.repositoryId, repoIds), eq(runsTable.securityScanStatus, "done")));
+    for (const s of scanned) {
+      if (s.repositoryId == null) continue;
+      const at = s.finishedAt ?? s.createdAt;
+      const prev = lastScanByRepo.get(s.repositoryId);
+      if (!prev || at.getTime() > prev.getTime()) lastScanByRepo.set(s.repositoryId, at);
+    }
+  }
+
+  const now = Date.now();
+  const items = repos.map((r) => {
+    const ageHours = r.graphBuiltAt ? (now - r.graphBuiltAt.getTime()) / 3_600_000 : null;
+    const graphFresh = r.graphStatus === "succeeded" && ageHours != null && ageHours < 24;
+    const lastAegisScanAt = lastScanByRepo.get(r.repositoryId) ?? null;
+    return {
+      ...r,
+      graphAgeHours: ageHours != null ? Math.round(ageHours * 10) / 10 : null,
+      graphFresh,
+      lastAegisScanAt: lastAegisScanAt ? lastAegisScanAt.toISOString() : null,
+    };
+  });
+
+  res.json({ items });
+});
+
+/**
+ * GET /reports/admin/aegis-failures — Aegis gate blocks in the window, from the
+ * `aegis.scan_run` audit trail (metadata.gateDecision='blocked'). The audit log
+ * is the source of truth: it records every scan event and its coverage, so a
+ * fail-closed block (unscanned files) is auditable after the fact. Bounded by
+ * `days`; older rows may be pruned by the team's audit retention window.
+ */
+router.get("/reports/admin/aegis-failures", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+  const teamId = req.teamId!;
+  const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select()
+    .from(auditLogTable)
+    .where(
+      and(
+        eq(auditLogTable.teamId, teamId),
+        eq(auditLogTable.action, "aegis.scan_run"),
+        gte(auditLogTable.createdAt, since),
+      ),
+    )
+    .orderBy(desc(auditLogTable.createdAt))
+    .limit(200);
+
+  const blocked = rows.filter(
+    (r) => (r.metadata as { gateDecision?: string } | null)?.gateDecision === "blocked",
+  );
+
+  // Resolve run → project (name + scope filter) for the blocked events.
+  const runIds = [...new Set(blocked.map((r) => r.entityId).filter((id): id is number => id != null))];
+  const runMeta = new Map<number, { projectId: number; projectName: string | null }>();
+  if (runIds.length) {
+    const runRows = await db
+      .select({ id: runsTable.id, projectId: runsTable.projectId, projectName: projectsTable.name })
+      .from(runsTable)
+      .leftJoin(projectsTable, eq(runsTable.projectId, projectsTable.id))
+      .where(inArray(runsTable.id, runIds));
+    for (const r of runRows) runMeta.set(r.id, { projectId: r.projectId, projectName: r.projectName });
+  }
+
+  const items = blocked
+    .map((r) => {
+      const meta = (r.metadata ?? {}) as {
+        criticalCount?: number;
+        highCount?: number;
+        filesScanned?: number;
+        filesTotal?: number;
+        unscannedFiles?: string[];
+      };
+      const run = r.entityId != null ? runMeta.get(r.entityId) : undefined;
+      return {
+        runId: r.entityId,
+        projectId: run?.projectId ?? null,
+        projectName: run?.projectName ?? null,
+        criticalCount: meta.criticalCount ?? 0,
+        highCount: meta.highCount ?? 0,
+        filesScanned: meta.filesScanned ?? null,
+        filesTotal: meta.filesTotal ?? null,
+        unscannedFiles: meta.unscannedFiles ?? [],
+        createdAt: r.createdAt.toISOString(),
+      };
+    })
+    .filter((it) => scope.projectId == null || it.projectId === scope.projectId);
+
+  res.json({ items });
+});
+
+/**
+ * GET /reports/admin/failed-by-stage — a derived breakdown of where runs fell
+ * over in the window. The pipeline has no single "stage" column, so each bucket
+ * is heuristically derived from the durable rows. Buckets are distinct signals
+ * and may overlap only where noted:
+ *   • planning         — a run whose change_plan ended status='failed'
+ *   • commit           — a status='failed' run with an error that ISN'T a
+ *                        planning failure (failed during generation/commit)
+ *   • coherenceExcluded — runs with ≥1 suggestion whose coherence gate failed
+ *   • aegisBlocked     — runs whose security gate blocked
+ * planning ∪ commit partition the hard failures; the latter two are quality
+ * gates, not necessarily failures.
+ */
+router.get("/reports/admin/failed-by-stage", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+  const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
+
+  const runConds = [inArray(runsTable.userId, scope.userIds), gte(runsTable.createdAt, since)];
+  if (scope.projectId != null) runConds.push(eq(runsTable.projectId, scope.projectId));
+  const runs = await db
+    .select({
+      id: runsTable.id,
+      status: runsTable.status,
+      error: runsTable.error,
+      securityGate: runsTable.securityGate,
+    })
+    .from(runsTable)
+    .where(and(...runConds));
+
+  const runIds = runs.map((r) => r.id);
+  const sample = (ids: number[]) => ids.slice(0, 20);
+
+  // planning: runs with a failed change_plan.
+  let planningIds: number[] = [];
+  if (runIds.length) {
+    const failedPlans = await db
+      .selectDistinct({ runId: changePlansTable.runId })
+      .from(changePlansTable)
+      .where(and(inArray(changePlansTable.runId, runIds), eq(changePlansTable.status, "failed")));
+    planningIds = failedPlans.map((p) => p.runId);
+  }
+  const planningSet = new Set(planningIds);
+
+  // commit: hard-failed runs with an error that aren't planning failures.
+  const commitIds = runs
+    .filter((r) => r.status === "failed" && r.error != null && !planningSet.has(r.id))
+    .map((r) => r.id);
+
+  // coherenceExcluded: distinct runs with a failed coherence gate.
+  let coherenceIds: number[] = [];
+  if (runIds.length) {
+    const failedCoh = await db
+      .selectDistinct({ runId: suggestionsTable.runId })
+      .from(suggestionsTable)
+      .where(and(inArray(suggestionsTable.runId, runIds), eq(suggestionsTable.coherenceStatus, "failed")));
+    coherenceIds = failedCoh.map((s) => s.runId);
+  }
+
+  // aegisBlocked: runs whose security gate blocked.
+  const aegisIds = runs.filter((r) => r.securityGate === "blocked").map((r) => r.id);
+
+  res.json({
+    days: scope.days,
+    totalRuns: runs.length,
+    stages: {
+      planning: { count: planningIds.length, runIds: sample(planningIds) },
+      commit: { count: commitIds.length, runIds: sample(commitIds) },
+      coherenceExcluded: { count: coherenceIds.length, runIds: sample(coherenceIds) },
+      aegisBlocked: { count: aegisIds.length, runIds: sample(aegisIds) },
     },
   });
 });
