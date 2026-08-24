@@ -37,7 +37,7 @@ export function CommandRail() {
     { key: "runs", title: "Runs", href: runsHref, Icon: Play, active: location.includes("/runs") },
     { key: "repositories", title: "Repositories", href: "/repositories", Icon: GitBranch, active: location.startsWith("/repositories") },
     { key: "history", title: "History", href: "/history", Icon: History, active: location === "/history" },
-    { key: "reports", title: "Reports", href: "/reports", Icon: BarChart2, active: location === "/reports" },
+    { key: "reports", title: "Reports", href: "/reports", Icon: BarChart2, active: location.startsWith("/reports") },
   ];
 
   const email = user?.primaryEmailAddress?.emailAddress ?? "";

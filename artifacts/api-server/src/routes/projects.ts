@@ -377,6 +377,25 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
     .set(setValues)
     .where(eq(projectsTable.id, project.id))
     .returning();
+
+  // Audit a confidence-threshold change specifically (Phase Reporting §3.2) —
+  // only when the PATCH actually touched it and the value moved, to avoid noise
+  // from unrelated project edits (name/repo).
+  if (confidenceThreshold != null) {
+    const from = Number(project.confidenceThreshold);
+    if (from !== confidenceThreshold) {
+      audit.log({
+        userId: req.userId,
+        teamId: req.teamId ?? null,
+        action: "project.updated",
+        entityType: "project",
+        entityId: project.id,
+        metadata: { confidenceThreshold: { from, to: confidenceThreshold } },
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
+    }
+  }
   res.json(proj);
 });
 
