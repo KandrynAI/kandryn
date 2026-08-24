@@ -33,7 +33,8 @@ import type { ChangePlan } from "../../../../shared/types/changePlan.js";
 import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { getConfigs } from "./configService.js";
-import { sendRunCompleted, sendRunFailed } from "./emailService.js";
+import { sendRunCompleted, sendRunFailed, sendRunParked } from "./emailService.js";
+import { confidenceReason } from "./confidence.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
 import type { StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
@@ -411,6 +412,21 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         { runId, confidence: planSummary.confidenceScore, threshold: confidenceThreshold, weakest: planSummary.confidenceSignals?.weakestSignal },
         "Run parked awaiting review — confidence below threshold",
       );
+      // A scheduled run is unattended, so notify the owner it parked (Phase 4
+      // PR3). No auto-approval/retry — it waits for a human. Interactive runs
+      // need no email: the user is already on the run page seeing the banner.
+      if (run.trigger === "scheduled") {
+        const email = await primaryEmail(userId);
+        if (email) {
+          await sendRunParked(email, {
+            itemTitle: workItem.title,
+            itemKey: workItem.externalId,
+            runId,
+            reason: planSummary.confidenceSignals ? confidenceReason(planSummary.confidenceSignals) : "Low confidence in the retrieved file set.",
+            confidencePct: Math.round(planSummary.confidenceScore * 100),
+          }).catch((e) => logger.warn({ runId, err: e }, "Run-parked email failed"));
+        }
+      }
       return;
     }
 
