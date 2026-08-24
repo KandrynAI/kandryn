@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, useLocation } from "wouter";
-import { Printer, ShieldCheck } from "lucide-react";
+import { Printer, ShieldCheck, LineChart } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { KpiRow } from "@/components/reports/KpiRow";
 import { ChartsGrid } from "@/components/reports/ChartsGrid";
 import { AdminReports } from "@/pages/reports/AdminReports";
+import { ExecutiveReports } from "@/pages/reports/ExecutiveReports";
 import {
   PlanAcceptancePanel,
   RetrievalAttributionPanel,
@@ -54,7 +55,7 @@ export default function ReportsPage() {
   }, []);
 
   useEffect(() => {
-    if (params.tab === "admin") return; // admin tab has its own data
+    if (params.tab === "admin" || params.tab === "executive") return; // those tabs fetch their own data
     setLoading(true);
     setError(false);
     fetchReportSummary(days, projectId)
@@ -63,9 +64,10 @@ export default function ReportsPage() {
       .finally(() => setLoading(false));
   }, [days, projectId, params.tab]);
 
-  // Admin tab (role-gated inside AdminReports) — the diagnostic screen for this
-  // phase. The default (no tab) keeps the existing analytics Overview.
+  // Admin/Executive tabs (role-gated inside their pages) fetch their own data.
+  // The default (no tab) keeps the Manager analytics view.
   if (params.tab === "admin") return <AdminReports projects={projects} />;
+  if (params.tab === "executive") return <ExecutiveReports projects={projects} />;
 
   const activeProject = projects.find((p) => p.id === projectId);
 
@@ -123,14 +125,24 @@ export default function ReportsPage() {
             <Printer size={14} /> Export PDF
           </button>
           {isAdmin && (
-            <button
-              className="rp-pill"
-              onClick={() => navigate("/reports/admin")}
-              title="Admin diagnostics"
-              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-            >
-              <ShieldCheck size={13} /> Admin reports
-            </button>
+            <>
+              <button
+                className="rp-pill"
+                onClick={() => navigate("/reports/admin")}
+                title="Admin diagnostics"
+                style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+              >
+                <ShieldCheck size={13} /> Admin reports
+              </button>
+              <button
+                className="rp-pill"
+                onClick={() => navigate("/reports/executive")}
+                title="Executive summary"
+                style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+              >
+                <LineChart size={13} /> Executive
+              </button>
+            </>
           )}
         </div>
       </div>
