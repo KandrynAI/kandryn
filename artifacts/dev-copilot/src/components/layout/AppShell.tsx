@@ -17,11 +17,11 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const [location] = useLocation();
-  // The Reports screen swaps the left sidebar for its own (Overview/Admin),
-  // distinct from the project-scoped ContextPanel. Branching here (rather than
-  // inside ContextPanel) means ContextPanel doesn't even mount on /reports, so
-  // its project-scoped rendering path is entirely untouched.
-  const onReports = location.startsWith("/reports");
+  // Only the Admin reports screen swaps the left sidebar for its own. The
+  // analytics view (/reports) keeps the normal ContextPanel — unchanged from
+  // before Reporting Phase A. Branching here (not inside ContextPanel) means
+  // ContextPanel's project-scoped path is entirely untouched.
+  const onReports = location.startsWith("/reports/admin");
   // TabsProvider stays mounted because other components still read useTabs();
   // the TabBar itself is no longer rendered (navigation is via the rail/panel).
   return (
