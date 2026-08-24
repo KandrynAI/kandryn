@@ -6,8 +6,16 @@ import {
   fetchCoherenceStats,
   fetchConfidenceDistribution,
   fetchAgentWin,
+  fetchThroughput,
+  fetchTimeToPr,
+  fetchPlanningCost,
+  fetchSecurityPosture,
+  type SecurityPosture,
 } from "@/services/api";
 import { ReportPanel, PanelState, Sparkline, Row, usePanelData } from "@/components/reports/shared";
+import { SEV_COLOR } from "@/components/reports/ChartsGrid";
+
+type SecuritySeverities = SecurityPosture["severities"];
 
 // Reporting Phase B — Manager panels. These extend the /reports analytics view
 // (team-aware scope: admin sees the team, a member sees their own). Each fetches
@@ -334,6 +342,150 @@ export function AgentWinPanel({ days, projectId }: { days: number; projectId?: n
             <div style={{ padding: "6px 10px 0", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>
               Recommended rate is % of runs where each agent was picked ({raptia?.runs ?? 0} / {fovea?.runs ?? 0} scored runs). Dimension scores are 0–100.
             </div>
+          </div>
+        )}
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── PR 3 shared: a tiny trend chart with gap-aware bars ─────────────────────
+// null values render as an empty slot (a data gap), never a zero-height bar —
+// so "no data this week" never reads the same as "zero this week".
+function TrendBars({ points, color, format }: { points: { label: string; value: number | null }[]; color: string; format: (v: number) => string }) {
+  const vals = points.map((p) => p.value).filter((v): v is number => v != null);
+  if (vals.length === 0) return null;
+  const max = Math.max(...vals, 0.0001);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 44, marginTop: 8 }}>
+      {points.map((p, i) => (
+        <div key={i} title={`${p.label}: ${p.value != null ? format(p.value) : "no data"}`} style={{ flex: 1, height: "100%", display: "flex", alignItems: "flex-end" }}>
+          {p.value == null ? (
+            <div style={{ width: "100%", height: 2, background: "var(--c-border)", borderRadius: 1 }} />
+          ) : (
+            <div style={{ width: "100%", height: `${Math.max((p.value / max) * 100, 3)}%`, background: color, borderRadius: "3px 3px 0 0" }} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeltaBadge({ delta, unit, invert }: { delta: number | null; unit: string; invert?: boolean }) {
+  if (delta == null) return null;
+  // invert: for cost/latency, down is good (green).
+  const good = invert ? delta < 0 : delta > 0;
+  const bad = invert ? delta > 0 : delta < 0;
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--fs-sm)", color: good ? "var(--c-green)" : bad ? "var(--c-red)" : "var(--c-ink-4)", paddingBottom: 4 }}>
+      {delta > 0 ? <ArrowUpRight size={14} /> : delta < 0 ? <ArrowDownRight size={14} /> : null}
+      {Math.abs(delta)}{unit} vs. prior
+    </div>
+  );
+}
+
+const bigNum: React.CSSProperties = { fontFamily: "var(--mono)", fontSize: 34, fontWeight: 600, color: "var(--c-ink)", lineHeight: 1 };
+
+// ── 3.1 Throughput ──────────────────────────────────────────────────────────
+export function ThroughputPanel({ days, projectId }: { days: number; projectId?: number }) {
+  const { data, loading, error, reload } = usePanelData(() => fetchThroughput(days, projectId), [days, projectId]);
+  return (
+    <ReportPanel title="Throughput" subtitle={`Runs started in the last ${days} days, by trigger.`}>
+      <PanelState loading={loading} error={error} isEmpty={!!data && data.total === 0 && data.priorTotal === 0} onRetry={reload} emptyLabel="No runs in this window.">
+        {data && (
+          <div style={{ padding: "12px 14px 14px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
+              <div style={bigNum}>{data.total}</div>
+              <DeltaBadge delta={data.delta} unit="" />
+            </div>
+            <div style={{ marginTop: 12, fontSize: "var(--fs-sm)", color: "var(--c-ink-3)" }}>
+              <b style={{ color: "var(--c-ink)" }}>{data.manual}</b> manual ·{" "}
+              <b style={{ color: "var(--c-ink)" }}>{data.scheduled}</b> scheduled
+              <span style={{ color: "var(--c-ink-4)" }}> · {data.priorTotal} in the prior {days}d</span>
+            </div>
+          </div>
+        )}
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── 3.2 Time to PR ──────────────────────────────────────────────────────────
+export function TimeToPrPanel({ days, projectId }: { days: number; projectId?: number }) {
+  const { data, loading, error, reload } = usePanelData(() => fetchTimeToPr(days, projectId), [days, projectId]);
+  return (
+    <ReportPanel title="Time to PR" subtitle={`Median run start → finish for runs that opened a PR, last ${days} days.`}>
+      <PanelState loading={loading} error={error} isEmpty={!!data && data.runsWithPr === 0} onRetry={reload} emptyLabel="No runs opened a PR in this window.">
+        {data && (
+          <div style={{ padding: "12px 14px 14px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
+              <div style={bigNum}>{data.medianHours != null ? `${data.medianHours}h` : "—"}</div>
+              <DeltaBadge delta={data.delta} unit="h" invert />
+            </div>
+            <TrendBars points={data.trend.map((t) => ({ label: t.label, value: t.median }))} color="var(--accent-blue)" format={(v) => `${v}h`} />
+            <div style={{ marginTop: 8, fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>
+              Median over {data.runsWithPr} PR run{data.runsWithPr === 1 ? "" : "s"}. Measured run start → finish; a Phase-2 before/after marker is deferred until more data accrues.
+            </div>
+          </div>
+        )}
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── 3.3 Planning-stage cost per run ─────────────────────────────────────────
+export function PlanningCostPanel({ days, projectId }: { days: number; projectId?: number }) {
+  const { data, loading, error, reload } = usePanelData(() => fetchPlanningCost(days, projectId), [days, projectId]);
+  const money = (v: number) => `$${v.toFixed(4)}`;
+  return (
+    <ReportPanel title="Planning-stage cost per run" subtitle={`Estimated planning-call cost, last ${days} days. Generation-stage tokens aren't instrumented yet.`}>
+      <PanelState loading={loading} error={error} isEmpty={!!data && data.runsWithTokens === 0} onRetry={reload} emptyLabel="No planned runs with token data in this window.">
+        {data && (
+          <div style={{ padding: "12px 14px 14px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
+              <div style={bigNum}>{data.avgCostUsd != null ? money(data.avgCostUsd) : "—"}</div>
+              <DeltaBadge delta={data.delta} unit="" invert />
+            </div>
+            <TrendBars points={data.trend.map((t) => ({ label: t.label, value: t.cost }))} color="var(--accent-blue)" format={money} />
+            <div style={{ marginTop: 8, fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>
+              Avg {data.avgInputTokens ?? 0} in / {data.avgOutputTokens ?? 0} out tokens over {data.runsWithTokens} run{data.runsWithTokens === 1 ? "" : "s"} · Sonnet 4.5 rates. Planning call only — Raptia/Fovea/Veria/Aegis/Narratia usage not yet counted.
+            </div>
+          </div>
+        )}
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── 3.4 Security posture ────────────────────────────────────────────────────
+const SEV_ROWS: { key: keyof SecuritySeverities; label: string; color: string }[] = [
+  { key: "critical", label: "Critical", color: SEV_COLOR.Critical },
+  { key: "high", label: "High", color: SEV_COLOR.High },
+  { key: "medium", label: "Medium", color: SEV_COLOR.Medium },
+  { key: "low", label: "Low", color: SEV_COLOR.Low },
+  { key: "info", label: "Info", color: "var(--c-ink-4)" },
+];
+
+export function SecurityPosturePanel({ days, projectId }: { days: number; projectId?: number }) {
+  const { data, loading, error, reload } = usePanelData(() => fetchSecurityPosture(days, projectId), [days, projectId]);
+  return (
+    <ReportPanel title="Security posture" subtitle={`Aegis findings by severity, last ${days} days.`}>
+      <PanelState loading={loading} error={error} isEmpty={!!data && data.scannedRuns === 0} onRetry={reload} emptyLabel="No security scans in this window.">
+        {data && (
+          <div style={{ padding: "12px 14px 14px" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {SEV_ROWS.map((s) => (
+                <div key={s.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 56, border: "1px solid var(--c-border)", borderRadius: 8, padding: "8px 10px", background: "var(--c-surface)" }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-lg)", fontWeight: 600, color: data.severities[s.key] > 0 ? s.color : "var(--c-ink-4)" }}>{data.severities[s.key]}</span>
+                  <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-ink-4)" }}>{s.label}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 12, fontSize: "var(--fs-sm)", color: "var(--c-ink-3)" }}>
+              <b style={{ color: data.gateBlocked > 0 ? "var(--c-red)" : "var(--c-ink)" }}>{data.gateBlocked}</b> gate-blocked run{data.gateBlocked === 1 ? "" : "s"}
+              <span style={{ color: "var(--c-ink-4)" }}> · {data.total} findings across {data.scannedRuns} scanned run{data.scannedRuns === 1 ? "" : "s"}</span>
+            </div>
+            <TrendBars points={data.trend.map((t) => ({ label: t.label, value: t.count }))} color={SEV_COLOR.High} format={(v) => `${v} findings`} />
           </div>
         )}
       </PanelState>

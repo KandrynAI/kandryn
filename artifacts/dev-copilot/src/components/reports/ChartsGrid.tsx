@@ -22,7 +22,7 @@ const STATUS_COLOR: Record<string, string> = {
   queued: C.amber,
   scheduled: C.purple,
 };
-const SEV_COLOR: Record<string, string> = {
+export const SEV_COLOR: Record<string, string> = {
   Critical: "#b91c1c",
   High: "#dc2626",
   Medium: "#f59e0b",
