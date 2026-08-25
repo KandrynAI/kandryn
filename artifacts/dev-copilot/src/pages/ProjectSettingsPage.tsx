@@ -236,6 +236,20 @@ export default function ProjectSettingsPage() {
         </div>
       </section>
 
+      <section className="mb-8">
+        <div className={groupLabel}>Governance</div>
+        <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            A read-only summary of this project's human-in-the-loop and safety controls — the confidence gate,
+            scheduled-run pausing, the security scan gate, and the coherence gate — compiled from current settings.
+            Shareable with a security team as a single governance-policy view.
+          </p>
+          <Link href={`/p/${projectId}/governance`} className="text-xs font-medium text-primary hover:underline">
+            View governance policy →
+          </Link>
+        </div>
+      </section>
+
       {/* Repository */}
       <section className="mb-8">
         <div className={groupLabel}>Repository</div>
