@@ -11,6 +11,10 @@ export const teamsTable = pgTable(
     slug: text("slug").unique(),
     ownerUserId: text("owner_user_id").notNull(),
     plan: text("plan").$type<TeamPlan>().notNull().default("free"),
+    // Per-team audit-log retention in days (0031, governance item 5). Null =
+    // fall back to the plan default (AUDIT_RETENTION_DAYS). Admin-configurable;
+    // supports multi-year retention for regulated customers.
+    auditRetentionDays: integer("audit_retention_days"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("teams_owner_idx").on(t.ownerUserId)],

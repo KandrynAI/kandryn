@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "wouter";
-import { Printer, ArrowLeft, ShieldCheck, UserCheck, Clock, Network } from "lucide-react";
+import { Printer, ArrowLeft, ShieldCheck, UserCheck, Clock, Network, Database } from "lucide-react";
 import { fetchProject, type Project } from "@/services/api";
+import { useTeam } from "@/context/TeamContext";
 
 /**
  * Governance policy (Item 3) — a read-only, screenshot-ready summary of the
@@ -42,6 +43,7 @@ function Control({
 export default function GovernancePage() {
   const params = useParams<{ projectId: string }>();
   const projectId = Number(params.projectId);
+  const { effectiveAuditRetentionDays } = useTeam();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -120,6 +122,20 @@ export default function GovernancePage() {
           and type references line up across the changed files). Incoherent changes are excluded from being recommended
           and blocked from automatic commit, so a human reviews them first. This structural analysis currently covers
           C#; changes in other languages pass through to human review without this automated gate.
+        </Control>
+
+        <Control
+          icon={Database}
+          title="Audit-log retention"
+          status={effectiveAuditRetentionDays != null ? `${effectiveAuditRetentionDays} days` : "—"}
+          statusTone="on"
+        >
+          Every significant action — sign-ins, credential changes, runs, commits, security scans, membership and role
+          changes — is recorded in an append-only audit log. The log cannot be edited or deleted through the application;
+          entries age out only by the retention policy.
+          {effectiveAuditRetentionDays != null
+            ? ` This team retains audit history for ${effectiveAuditRetentionDays} days; admins can extend it for regulated retention (Settings → Team).`
+            : ""}
         </Control>
       </div>
 
