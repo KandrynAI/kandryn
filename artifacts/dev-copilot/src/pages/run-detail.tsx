@@ -586,6 +586,20 @@ export default function RunDetailPage() {
         )}
       </div>
 
+      {isCommitted && committedSug && committedSug.scoreBreakdown && (
+        <div style={{ padding: "0 20px 8px", maxWidth: 760 }}>
+          <ExplanationSection
+            committed={committedSug}
+            alternative={
+              suggestions
+                .filter((s) => s.id !== committedId && s.scoreBreakdown)
+                .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null
+            }
+            confidenceScore={plan?.confidenceScore ?? null}
+          />
+        </div>
+      )}
+
       {isCommitted && run.reviewStatus && (
         <div style={{ padding: "0 20px 8px", maxWidth: 760 }}>
           <VeriaReview run={run} onReview={onReview} reviewing={reviewing} />
@@ -1257,6 +1271,123 @@ function FindingRow({ f }: { f: ReviewFinding }) {
           {f.acRef && <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", fontStyle: "italic" }}>{f.acRef}</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Explanation report (governance artifact) ────────────────────────────────
+// Renders, in plain language, WHY the committed AI change was accepted — from
+// data Synthesia + the Phase 3 coherence checker already stored on the
+// suggestion. Deterministic (no AI call). Written as prose, not a debug panel.
+function verdictLabel(v: "strong" | "adequate" | "weak"): string {
+  return v === "strong" ? "Strong" : v === "adequate" ? "Adequate" : "Needs work";
+}
+function verdictColor(v: "strong" | "adequate" | "weak"): string {
+  return v === "strong" ? "var(--c-green)" : v === "adequate" ? "var(--c-ink-2)" : "var(--c-amber)";
+}
+
+/** Plain-language coherence line. C#-aware: the Phase 3 checker only runs on C#,
+ *  so a 'passed' on a non-C# change is an auto-pass, NOT a clean bill of health —
+ *  say so rather than overstating. Cross-file checks need ≥2 C# files. */
+function coherenceExplanation(sug: RunSuggestion): { color: string; text: string } {
+  const findings = sug.coherenceFindings ?? [];
+  const csFiles = sug.files.filter((f) => f.filePath?.endsWith(".cs"));
+  if (sug.coherenceStatus === "failed") {
+    const errs = findings.filter((f) => f.severity === "error").map((f) => f.message);
+    return { color: "var(--c-red)", text: `Did not pass structural coherence checks — ${errs.join("; ") || "cross-file inconsistencies were detected"}.` };
+  }
+  if (sug.coherenceStatus === "warnings") {
+    const warns = findings.filter((f) => f.severity === "warning").map((f) => f.message);
+    return { color: "var(--c-amber)", text: `Passed with warnings — ${warns.join("; ") || "minor cross-file notes"}.` };
+  }
+  if (sug.coherenceStatus === "passed") {
+    if (csFiles.length >= 2) return { color: "var(--c-green)", text: "Passed — no cross-file coherence issues detected across the C# changes." };
+    if (csFiles.length === 1) return { color: "var(--c-ink-4)", text: "Single-file C# change — no cross-file coherence to check." };
+    return { color: "var(--c-ink-4)", text: "Not applicable — structural coherence checks currently run on C# changes only." };
+  }
+  return { color: "var(--c-ink-4)", text: "Not evaluated for this change." };
+}
+
+/** The dimensions (weighted) where the committed suggestion beat the alternative,
+ *  top two — the reason it was recommended over the other agent. */
+function decidingDimensions(committed: RunSuggestion, alternative: RunSuggestion | null): string[] {
+  const b = committed.scoreBreakdown;
+  const a = alternative?.scoreBreakdown;
+  if (!b || !a) return [];
+  return DIMENSIONS.map(({ key, label }) => {
+    const cb = b[key];
+    const ab = a[key];
+    if (!cb || !ab) return null;
+    return { label, margin: (cb.score - ab.score) * cb.weight };
+  })
+    .filter((x): x is { label: string; margin: number } => x != null && x.margin > 0)
+    .sort((x, y) => y.margin - x.margin)
+    .slice(0, 2)
+    .map((m) => m.label.toLowerCase());
+}
+
+function ExplanationSection({
+  committed,
+  alternative,
+  confidenceScore,
+}: {
+  committed: RunSuggestion;
+  alternative: RunSuggestion | null;
+  confidenceScore: number | null;
+}) {
+  const b = committed.scoreBreakdown;
+  if (!b) return null;
+  const agentName = agentDisplay(committed.agent).name;
+  const altName = alternative ? agentDisplay(alternative.agent).name : null;
+  const deciding = decidingDimensions(committed, alternative);
+  const coh = coherenceExplanation(committed);
+
+  const leadClause =
+    altName && deciding.length > 0
+      ? `, ahead of ${altName} on ${deciding.join(" and ")}`
+      : altName
+        ? `, chosen over ${altName}`
+        : "";
+
+  return (
+    <div style={{ animation: "bmrise 0.3s ease-out both" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--c-border)" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", fontWeight: 700 }}>
+          <FileCheck size={12} style={{ color: "var(--c-blue)" }} />Why this change was accepted
+        </span>
+      </div>
+
+      <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-2)", lineHeight: 1.55, margin: "12px 0 0" }}>
+        {agentName} produced the recommended implementation
+        {committed.score != null ? `, scoring ${committed.score}/10 overall` : ""}
+        {leadClause}.{b.overallNarrative ? ` ${b.overallNarrative}` : ""}
+      </p>
+
+      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        {DIMENSIONS.map(({ key, label }) => {
+          const d = b[key];
+          if (!d) return null;
+          return (
+            <div key={key} style={{ display: "flex", gap: 10, fontSize: "var(--fs-sm)", lineHeight: 1.45 }}>
+              <span style={{ minWidth: 132, flexShrink: 0, color: "var(--c-ink)", fontWeight: 600 }}>{label}</span>
+              <span style={{ minWidth: 80, flexShrink: 0, color: verdictColor(d.verdict), fontWeight: 600 }}>{verdictLabel(d.verdict)}</span>
+              <span style={{ color: "var(--c-ink-3)" }}>{d.reason}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop: 12, fontSize: "var(--fs-sm)", lineHeight: 1.45 }}>
+        <span style={{ color: "var(--c-ink)", fontWeight: 600 }}>Cross-file coherence: </span>
+        <span style={{ color: coh.color }}>{coh.text}</span>
+      </div>
+
+      {confidenceScore != null && (
+        <div style={{ marginTop: 8, fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", lineHeight: 1.45 }}>
+          <span style={{ color: "var(--c-ink)", fontWeight: 600 }}>Plan confidence: </span>
+          {Math.round(confidenceScore * 100)}% — the pre-generation confidence in the retrieved file set for this change.
+        </div>
+      )}
     </div>
   );
 }
