@@ -348,11 +348,11 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
           azureReposToken: creds.AZURE_REPOS_TOKEN,
         });
         const tree = await gitPlan.fetchFilePaths();
-        // Only a servable (succeeded + fresh) graph reaches the planner, so a
-        // 'graph' retrievalMode always means the graph is current for this repo —
-        // never a stale graph left over from a URL change.
-        const graphServable = Boolean(repo.graphJson) && isGraphServable(repo.graphStatus, repo.graphBuiltAt);
-        const graph = graphServable ? (repo.graphJson as unknown as GraphifyGraph) : null;
+        // Pass the RAW graph + its status/build time; runPlanning owns the
+        // servability decision (isGraphServable) internally, so a stale graph
+        // can never reach candidate retrieval even if a future caller forgets to
+        // filter. A 'graph' retrievalMode therefore still means the graph is
+        // current — the guarantee is structural, not this caller's convention.
         planSummary = await runPlanning({
           runId,
           projectId: run.projectId,
@@ -366,8 +366,9 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
           keywords,
           stack,
           tree,
-          graph,
-          graphBuiltAt: graphServable ? repo.graphBuiltAt : null,
+          graph: repo.graphJson as unknown as GraphifyGraph | null,
+          graphStatus: repo.graphStatus,
+          graphBuiltAt: repo.graphBuiltAt,
           anthropicApiKey: creds.ANTHROPIC_API_KEY,
         });
         logger.info({ runId, ...planSummary, plan: undefined }, "Change plan produced");

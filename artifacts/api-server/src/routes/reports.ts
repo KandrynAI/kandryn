@@ -359,6 +359,7 @@ router.get("/reports/retrieval-attribution", async (req, res): Promise<void> => 
   const rows = await db
     .select({
       addedByUser: changePlanFilesTable.addedByUser,
+      op: changePlanFilesTable.op,
       filePath: changePlanFilesTable.filePath,
       inCandidates: changePlanFilesTable.inCandidates,
       runId: changePlansTable.runId,
@@ -368,10 +369,14 @@ router.get("/reports/retrieval-attribution", async (req, res): Promise<void> => 
     .innerJoin(runsTable, eq(changePlansTable.runId, runsTable.id))
     .where(and(...runConds));
 
-  // Planner coverage (all planned files) — how much of what the planner planned
-  // retrieval actually surfaced.
-  let plannerInCandidates = 0;
-  let plannerMissed = 0;
+  // Planner coverage — only over EXISTING files (edit/delete). A `create` is a
+  // new file that cannot be in the candidate set by definition (retrieval only
+  // surfaces existing files), so counting creates as "misses" overstates the
+  // retrieval gap. Creates are reported separately as informational, never in
+  // the miss bar.
+  let plannerInCandidates = 0; // edit/delete that WAS in candidates
+  let plannerMissed = 0; // edit/delete NOT in candidates → true retrieval miss
+  let plannerCreates = 0; // new files — not retrievable, informational
   // Manual adds (added_by_user = true).
   let found = 0; // in_candidates = true  → planner chose badly
   let missed = 0; // in_candidates = false → retrieval miss
@@ -384,6 +389,8 @@ router.get("/reports/retrieval-attribution", async (req, res): Promise<void> => 
       const prev = byPath.get(r.filePath);
       if (prev) prev.count++;
       else byPath.set(r.filePath, { count: 1, exampleRunId: r.runId });
+    } else if (r.op === "create") {
+      plannerCreates++;
     } else {
       if (r.inCandidates === true) plannerInCandidates++;
       else if (r.inCandidates === false) plannerMissed++;
@@ -400,6 +407,7 @@ router.get("/reports/retrieval-attribution", async (req, res): Promise<void> => 
     planner: {
       inCandidates: plannerInCandidates,
       missed: plannerMissed,
+      creates: plannerCreates,
       coverageRate: plannerTotal ? Math.round((plannerInCandidates / plannerTotal) * 100) : null,
     },
     manual: { found, missed, topPaths },

@@ -100,7 +100,8 @@ function AttrBar({ count, denom, tone, label, hint }: { count: number; denom: nu
 export function RetrievalAttributionPanel({ days, projectId }: { days: number; projectId?: number }) {
   const [, navigate] = useLocation();
   const { data, loading, error, reload } = usePanelData(() => fetchRetrievalAttribution(days, projectId), [days, projectId]);
-  const plannerTotal = data ? data.planner.inCandidates + data.planner.missed : 0;
+  const plannerTotal = data ? data.planner.inCandidates + data.planner.missed : 0; // edit/delete only
+  const plannerAny = data ? plannerTotal + data.planner.creates : 0;
   const manualTotal = data ? data.manual.found + data.manual.missed : 0;
 
   return (
@@ -108,23 +109,29 @@ export function RetrievalAttributionPanel({ days, projectId }: { days: number; p
       title="Retrieval attribution"
       subtitle={`How well retrieval served the planner, last ${days} days — a prompt problem vs. a retrieval problem.`}
     >
-      <PanelState loading={loading} error={error} isEmpty={plannerTotal === 0 && manualTotal === 0} onRetry={reload} emptyLabel="No planned files in this window.">
+      <PanelState loading={loading} error={error} isEmpty={plannerAny === 0 && manualTotal === 0} onRetry={reload} emptyLabel="No planned files in this window.">
         {data && (
           <>
-            {/* Planner coverage — has data on real runs. */}
+            {/* Planner coverage over EXISTING files — creates are excluded from the
+                miss math (new files can't be retrieved) and noted separately. */}
             <div style={{ padding: "8px 14px 2px", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>Planner retrieval coverage</span>
+              <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>Planner retrieval coverage · edited files</span>
               {data.planner.coverageRate != null && (
                 <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink)" }}>{data.planner.coverageRate}% surfaced</span>
               )}
             </div>
             {plannerTotal === 0 ? (
-              <div style={{ padding: "4px 14px 10px", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>No planned files in this window.</div>
+              <div style={{ padding: "4px 14px 10px", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>No existing files were edited in this window.</div>
             ) : (
               <>
-                <AttrBar count={data.planner.inCandidates} denom={plannerTotal} tone="teal" label="In candidates" hint="Retrieval surfaced the file the planner used." />
-                <AttrBar count={data.planner.missed} denom={plannerTotal} tone="red" label="Retrieval miss — planned anyway" hint="The planner named a file retrieval never surfaced — fix retrieval." />
+                <AttrBar count={data.planner.inCandidates} denom={plannerTotal} tone="teal" label="In candidates" hint="Retrieval surfaced the file the planner edited." />
+                <AttrBar count={data.planner.missed} denom={plannerTotal} tone="red" label="Retrieval miss — edited anyway" hint="The planner edited an existing file retrieval never surfaced — fix retrieval." />
               </>
+            )}
+            {data.planner.creates > 0 && (
+              <div style={{ padding: "2px 14px 8px", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>
+                + {data.planner.creates} new file{data.planner.creates === 1 ? "" : "s"} created — not counted (new files can't be retrieved).
+              </div>
             )}
 
             {/* Hand-added files — empty until users edit plans. */}
