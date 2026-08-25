@@ -77,6 +77,10 @@ export const suggestionsTable = pgTable(
       .notNull()
       .references(() => runsTable.id, { onDelete: "cascade" }),
     agent: text("agent").$type<"claude" | "openai" | "copilot" | "antigravity">().notNull(),
+    // Exact generation model string, e.g. "claude-sonnet-4-5" / "gpt-4o" (0030,
+    // governance item 2). Null on pre-instrumentation rows (not backfilled) and
+    // on mock demo agents.
+    model: text("model"),
     // @deprecated (0022) — the change set now lives in suggestion_files (one row
     // per file). Nullable and no longer written; kept for rollback safety. Read
     // a suggestion's files via `suggestion_files WHERE suggestion_id=…`.

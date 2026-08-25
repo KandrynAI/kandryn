@@ -25,6 +25,9 @@ const UpdateProjectBody = z.object({
   repositoryId: z.coerce.number().int().positive().optional(),
   // Confidence gate threshold (Phase 4), 0–1.
   confidenceThreshold: z.number().min(0).max(1).optional(),
+  // Per-provider pinned generation model (governance item 2). null/"" = unpin.
+  pinnedClaudeModel: z.string().max(100).nullable().optional(),
+  pinnedOpenaiModel: z.string().max(100).nullable().optional(),
 });
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -358,6 +361,9 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
   // numeric column takes a string.
   const setValues: Partial<typeof projectsTable.$inferInsert> = { ...projectUpdates };
   if (confidenceThreshold != null) setValues.confidenceThreshold = String(confidenceThreshold);
+  // Normalize an empty pin to null (unpin) so we never store "" as a model.
+  if (setValues.pinnedClaudeModel === "") setValues.pinnedClaudeModel = null;
+  if (setValues.pinnedOpenaiModel === "") setValues.pinnedOpenaiModel = null;
   if (newRepositoryId != null) {
     const [repo] = await db
       .select({ id: repositoriesTable.id })
@@ -391,6 +397,26 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
         entityType: "project",
         entityId: project.id,
         metadata: { confidenceThreshold: { from, to: confidenceThreshold } },
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
+    }
+  }
+
+  // Audit a model-pin change (governance item 2) — who pinned/unpinned which
+  // provider's model, when. Only when the value actually moved.
+  for (const [key, provider] of [
+    ["pinnedClaudeModel", "claude"],
+    ["pinnedOpenaiModel", "openai"],
+  ] as const) {
+    if (key in setValues && setValues[key] !== project[key]) {
+      audit.log({
+        userId: req.userId,
+        teamId: req.teamId ?? null,
+        action: "project.updated",
+        entityType: "project",
+        entityId: project.id,
+        metadata: { pinnedModel: { provider, from: project[key] ?? null, to: setValues[key] ?? null } },
         ipAddress: audit.getIp(req),
         userAgent: req.headers["user-agent"],
       });

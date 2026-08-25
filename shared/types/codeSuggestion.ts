@@ -90,6 +90,8 @@ export interface CodeSuggestion {
   stats: SuggestionStats;
   explanation: string;
   language: string;
+  /** Exact generation model string (governance item 2). Null for mock agents. */
+  model?: string | null;
   score?: number;
   recommendation?: string;
   scoreBreakdown?: ScoreBreakdown | null;

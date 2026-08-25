@@ -219,6 +219,9 @@ export interface Project {
   defaultTarget: 'story' | 'task';
   /** Confidence gate threshold (Phase 4), 0–1. numeric → arrives as a string. */
   confidenceThreshold: string;
+  /** Per-provider pinned generation model (governance item 2). null = unpinned. */
+  pinnedClaudeModel: string | null;
+  pinnedOpenaiModel: string | null;
   lastSyncedAt: string | null;
   createdAt: string;
   counts?: { open: number; running: number; review: number };
@@ -260,7 +263,13 @@ export function fetchProject(id: number): Promise<Project> {
 
 export function updateProject(
   id: number,
-  data: { name?: string; repositoryId?: number; confidenceThreshold?: number },
+  data: {
+    name?: string;
+    repositoryId?: number;
+    confidenceThreshold?: number;
+    pinnedClaudeModel?: string | null;
+    pinnedOpenaiModel?: string | null;
+  },
 ): Promise<Project> {
   return request<Project>(`/api/projects/${id}`, {
     method: 'PATCH',
@@ -500,6 +509,8 @@ export interface RunSuggestion {
   id: number;
   runId: number;
   agent: 'claude' | 'openai' | 'copilot' | 'antigravity';
+  /** Exact generation model (governance item 2). null on pre-instrumentation rows. */
+  model?: string | null;
   /** The change set (0022). Phase 0: one file. */
   files: SuggestionFile[];
   /** @deprecated (0022) — read `files`. Null for suggestions created after 0022. */
