@@ -1198,6 +1198,8 @@ export interface TeamInfo {
   slug: string | null;
   ownerUserId: string;
   plan: string;
+  /** Per-team audit retention override (governance item 5). null = plan default. */
+  auditRetentionDays: number | null;
   createdAt: string;
 }
 
@@ -1205,10 +1207,23 @@ export interface TeamMe {
   team: TeamInfo | null;
   role?: 'admin' | 'member';
   memberCount?: number;
+  /** The retention actually applied: override, else plan default. */
+  effectiveAuditRetentionDays?: number;
 }
 
 export function fetchMyTeam(): Promise<TeamMe> {
   return request<TeamMe>('/api/teams/me');
+}
+
+export function updateTeamSettings(
+  teamId: number,
+  data: { auditRetentionDays: number | null },
+): Promise<{ team: TeamInfo; effectiveAuditRetentionDays: number }> {
+  return request(`/api/teams/${teamId}/settings`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
 }
 
 export function bootstrapTeam(name?: string): Promise<{ team: TeamInfo }> {

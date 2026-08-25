@@ -14,6 +14,7 @@ import {
   cancelInvite,
   removeTeamMember,
   updateMemberRole,
+  updateTeamSettings,
   ApiError,
   type TeamIntegrationRow,
   type TeamMemberRow,
@@ -216,7 +217,7 @@ function TeamCredGroup({
 }
 
 export default function TeamTab() {
-  const { team, isAdmin } = useTeam();
+  const { team, isAdmin, effectiveAuditRetentionDays, refetch } = useTeam();
   const { toast } = useToast();
   const [integrations, setIntegrations] = useState<TeamIntegrationRow[]>([]);
   const [members, setMembers] = useState<TeamMemberRow[]>([]);
@@ -224,8 +225,14 @@ export default function TeamTab() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
   const [sending, setSending] = useState(false);
+  const [retentionInput, setRetentionInput] = useState("");
+  const [savingRetention, setSavingRetention] = useState(false);
 
   const teamId = team?.id;
+
+  useEffect(() => {
+    setRetentionInput(team?.auditRetentionDays != null ? String(team.auditRetentionDays) : "");
+  }, [team?.auditRetentionDays]);
 
   const loadIntegrations = () => {
     if (teamId == null) return;
@@ -267,6 +274,31 @@ export default function TeamTab() {
       });
     } finally {
       setSending(false);
+    }
+  };
+
+  const saveRetention = async () => {
+    const trimmed = retentionInput.trim();
+    let value: number | null;
+    if (trimmed === "") {
+      value = null; // reset to plan default
+    } else {
+      const n = Number(trimmed);
+      if (!Number.isInteger(n) || n < 1 || n > 3650) {
+        toast({ title: "Enter 1–3650 days, or blank for the plan default", variant: "destructive" });
+        return;
+      }
+      value = n;
+    }
+    setSavingRetention(true);
+    try {
+      await updateTeamSettings(teamId, { auditRetentionDays: value });
+      toast({ title: "Audit retention updated" });
+      refetch();
+    } catch (err) {
+      toast({ title: "Could not update retention", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
+    } finally {
+      setSavingRetention(false);
     }
   };
 
@@ -342,6 +374,48 @@ export default function TeamTab() {
           </div>
         </div>
       )}
+
+      {/* Audit-log retention */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={groupLabel}>
+          Audit-log retention{" "}
+          <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--c-ink-4)", fontWeight: 400 }}>
+            · How long audit history is kept
+          </span>
+        </div>
+        <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Currently retaining audit history for{" "}
+            <strong>{effectiveAuditRetentionDays ?? "—"} days</strong>
+            {team.auditRetentionDays == null ? ` (your ${team.plan} plan default)` : " (custom)"}. Set a custom number of
+            days to retain longer — regulated teams often keep multi-year history. Leave blank to use the plan default.
+          </p>
+          {isAdmin ? (
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={3650}
+                value={retentionInput}
+                onChange={(e) => setRetentionInput(e.target.value)}
+                placeholder={`${effectiveAuditRetentionDays ?? ""} (default)`}
+                className="h-9 w-32"
+              />
+              <span className="text-xs text-muted-foreground">days</span>
+              <Button
+                size="sm"
+                className="h-9"
+                onClick={saveRetention}
+                disabled={savingRetention || retentionInput === (team.auditRetentionDays != null ? String(team.auditRetentionDays) : "")}
+              >
+                {savingRetention ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">Only a team admin can change retention.</p>
+          )}
+        </div>
+      </div>
 
       {/* Members */}
       <div style={{ marginBottom: 24 }}>

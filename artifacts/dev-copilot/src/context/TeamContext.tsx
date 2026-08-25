@@ -6,6 +6,7 @@ interface TeamContextValue {
   role: "admin" | "member" | null;
   memberCount: number;
   isAdmin: boolean;
+  effectiveAuditRetentionDays: number | null;
   loading: boolean;
   refetch: () => void;
 }
@@ -15,6 +16,7 @@ const TeamContext = createContext<TeamContextValue>({
   role: null,
   memberCount: 0,
   isAdmin: false,
+  effectiveAuditRetentionDays: null,
   loading: true,
   refetch: () => {},
 });
@@ -42,6 +44,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         role: data?.role ?? null,
         memberCount: data?.memberCount ?? 0,
         isAdmin: data?.role === "admin",
+        effectiveAuditRetentionDays: data?.effectiveAuditRetentionDays ?? null,
         loading,
         refetch: load,
       }}

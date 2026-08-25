@@ -117,13 +117,16 @@ function csvEscape(value: string): string {
 
 // ── Retention cleanup (called by the nightly cron) ────────────────
 export async function runRetentionCleanup(): Promise<{ deleted: number }> {
-  // For each team, delete rows older than their plan's retention window.
-  const allTeams = await db.select({ id: teamsTable.id, plan: teamsTable.plan }).from(teamsTable);
+  // For each team, delete rows older than its retention window: the per-team
+  // override (0031) when set, else the plan default.
+  const allTeams = await db
+    .select({ id: teamsTable.id, plan: teamsTable.plan, auditRetentionDays: teamsTable.auditRetentionDays })
+    .from(teamsTable);
 
   let totalDeleted = 0;
 
   for (const team of allTeams) {
-    const retentionDays = AUDIT_RETENTION_DAYS[team.plan] ?? 30;
+    const retentionDays = team.auditRetentionDays ?? AUDIT_RETENTION_DAYS[team.plan] ?? 30;
     const cutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
 
     const result = await db

@@ -18,10 +18,16 @@ import {
 import { requireAdmin } from "../middlewares/team.js";
 import { sendTeamInvite } from "../services/emailService.js";
 import * as audit from "../services/auditService.js";
-import { db, teamsTable } from "@workspace/db";
+import { db, teamsTable, type Team } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { AUDIT_RETENTION_DAYS } from "../../../../shared/types/auditLog.js";
 
 const router: IRouter = Router();
+
+/** Effective audit retention: the per-team override, else the plan default. */
+function effectiveRetentionDays(team: Team): number {
+  return team.auditRetentionDays ?? AUDIT_RETENTION_DAYS[team.plan] ?? 30;
+}
 
 // Credentials that may be shared at the team level. GITHUB_TOKEN (commit
 // attribution) and the agent keys are intentionally excluded — they stay personal.
@@ -64,7 +70,62 @@ router.get("/teams/me", async (req, res): Promise<void> => {
     return;
   }
   const members = await getTeamMembers(membership.team.id);
-  res.json({ team: membership.team, role: membership.role, memberCount: members.length });
+  res.json({
+    team: membership.team,
+    role: membership.role,
+    memberCount: members.length,
+    effectiveAuditRetentionDays: effectiveRetentionDays(membership.team),
+  });
+});
+
+// PATCH /teams/:teamId/settings — team-level governance settings (admin only).
+// Currently: audit-log retention override. null resets to the plan default.
+const TeamSettingsBody = z.object({
+  auditRetentionDays: z.number().int().min(1).max(3650).nullable(),
+});
+router.patch("/teams/:teamId/settings", requireAdmin, async (req, res): Promise<void> => {
+  const params = TeamIdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid team id" });
+    return;
+  }
+  // requireAdmin confirms the caller is an admin of THEIR team; make sure the
+  // path targets that same team, never another.
+  if (req.teamId !== params.data.teamId) {
+    res.status(403).json({ error: "You can only change your own team's settings." });
+    return;
+  }
+  const parsed = TeamSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid settings" });
+    return;
+  }
+
+  const [before] = await db.select().from(teamsTable).where(eq(teamsTable.id, params.data.teamId));
+  if (!before) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  const [team] = await db
+    .update(teamsTable)
+    .set({ auditRetentionDays: parsed.data.auditRetentionDays })
+    .where(eq(teamsTable.id, params.data.teamId))
+    .returning();
+
+  if (before.auditRetentionDays !== parsed.data.auditRetentionDays) {
+    audit.log({
+      userId: req.userId,
+      teamId: team.id,
+      action: "team.updated",
+      entityType: "team",
+      entityId: team.id,
+      metadata: { auditRetentionDays: { from: before.auditRetentionDays, to: parsed.data.auditRetentionDays } },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+  }
+
+  res.json({ team, effectiveAuditRetentionDays: effectiveRetentionDays(team) });
 });
 
 // POST /teams — create a team (one per user for now).
