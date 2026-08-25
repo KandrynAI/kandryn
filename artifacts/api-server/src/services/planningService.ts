@@ -7,7 +7,7 @@ import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import type { ChangePlan, ChangePlanOp, PlannedFile, PlanCandidateFile, RetrievalMode, PlanStatus } from "../../../../shared/types/changePlan.js";
 import type { StackProfile } from "../stack/detector.js";
 import { describeStack } from "./stackPromptBuilder.js";
-import { queryGraph, isGraphUsable } from "./graphifyService.js";
+import { queryGraph, isGraphServable } from "./graphifyService.js";
 import { computePlanConfidence, confidenceReason, type ConfidenceSignals } from "./confidence.js";
 import * as audit from "./auditService.js";
 import { logger } from "../lib/logger.js";
@@ -506,6 +506,14 @@ export interface PlanningInput {
   /** Full repo path list (git.fetchFilePaths) — always the primary planning input. */
   tree: string[];
   graph: GraphifyGraph | null;
+  /**
+   * The repo's graph lifecycle status. Planning owns the servability decision:
+   * it uses the graph for candidate retrieval ONLY when isGraphServable(status,
+   * builtAt) — succeeded AND fresh. Passing the raw graph + status (rather than a
+   * caller-pre-filtered graph) makes "a stale graph never poisons candidates" a
+   * structural guarantee here, not a convention the caller must remember.
+   */
+  graphStatus: string | null;
   graphBuiltAt: Date | string | null;
   anthropicApiKey: string;
 }
@@ -533,11 +541,13 @@ export interface PlanningSummary {
  * graph is an enhancement on the tree-primary path: its absence is not an error.
  */
 export async function runPlanning(input: PlanningInput): Promise<PlanningSummary> {
-  const { runId, projectId, userId, teamId, workItem, keywords, stack, tree, graph, graphBuiltAt, anthropicApiKey } = input;
+  const { runId, projectId, userId, teamId, workItem, keywords, stack, tree, graph, graphStatus, graphBuiltAt, anthropicApiKey } = input;
 
-  // Retrieval (tree-primary; graph enhances candidate quality when fresh).
+  // Retrieval (tree-primary; graph enhances candidate quality only when SERVABLE
+  // — succeeded AND fresh. Planning makes this decision itself so a stale graph
+  // can never poison candidates, regardless of what the caller passed).
   const tRetrieval = Date.now();
-  const graphFresh = Boolean(graph?.nodes?.length) && isGraphUsable(graphBuiltAt);
+  const graphFresh = Boolean(graph?.nodes?.length) && isGraphServable(graphStatus, graphBuiltAt);
   let candidates: PlanCandidateFile[];
   let retrievalMode: RetrievalMode;
   let planGraphBuiltAt: Date | null = null;

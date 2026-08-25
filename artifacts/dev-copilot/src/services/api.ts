@@ -874,11 +874,14 @@ function reportQuery(days: number, projectId?: number): string {
 }
 
 export interface RetrievalAttribution {
-  // Planner coverage over all planned files — has data on real runs.
+  // Planner coverage over EXISTING files the planner edited/deleted. Creates are
+  // excluded from the miss math (a new file can't be retrieved) and reported
+  // separately.
   planner: {
-    inCandidates: number; // retrieval surfaced the path
-    missed: number; // planner planned a path retrieval never surfaced (retrieval miss)
-    coverageRate: number | null; // % of planned files that were in candidates
+    inCandidates: number; // retrieval surfaced the edited/deleted path
+    missed: number; // planner edited/deleted a path retrieval never surfaced (true miss)
+    creates: number; // new files — not retrievable, informational only
+    coverageRate: number | null; // % of edited/deleted files that were in candidates
   };
   // Files a user added by hand (empty until plans are edited).
   manual: {
