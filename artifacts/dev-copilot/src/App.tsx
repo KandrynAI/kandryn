@@ -31,6 +31,7 @@ import HistoryPage from "@/pages/HistoryPage";
 import SettingsPage from "@/pages/SettingsPage";
 import NewProject from "@/pages/new-project";
 import ProjectSettingsPage from "@/pages/ProjectSettingsPage";
+import GovernancePage from "@/pages/GovernancePage";
 import ProjectBoard from "@/pages/project-board";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
@@ -286,6 +287,7 @@ function ProtectedApp() {
         <Switch>
           <Route path="/projects/new" component={NewProject} />
           <Route path="/projects/:projectId/settings" component={ProjectSettingsPage} />
+          <Route path="/p/:projectId/governance" component={GovernancePage} />
           <Route path="/p/:projectId/board" component={ProjectBoard} />
           <Route path="/p/:projectId/runs" component={RunsPage} />
           <Route path="/p/:projectId/repositories" component={Repositories} />
