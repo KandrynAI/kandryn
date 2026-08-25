@@ -995,6 +995,26 @@ export function fetchSecurityPosture(days: number, projectId?: number): Promise<
   return request<SecurityPosture>(`/api/reports/security-posture?${reportQuery(days, projectId)}`);
 }
 
+/* ---- Executive summary (Reporting Phase C, admin only, MTD) ---- */
+
+export interface ExecutiveSummary {
+  activeProjects: { value: number; delta: number };
+  runs: { value: number; delta: number };
+  // Delivery Rate = commits produced / terminal runs (succeeded/failed/canceled).
+  deliveryRate: { value: number | null; delta: number | null };
+  findingsBlocked: { value: number; delta: number };
+  // Planning-stage only (generation-stage tokens uninstrumented).
+  costPerRun: { valueUsd: number | null; delta: number | null };
+  planAcceptanceTrend: { current: number | null; points: number[]; first: number | null; last: number | null };
+}
+
+export function fetchExecutiveSummary(scope?: number): Promise<ExecutiveSummary> {
+  const p = new URLSearchParams();
+  if (scope != null) p.set('scope', String(scope));
+  const s = p.toString();
+  return request<ExecutiveSummary>(`/api/reports/executive${s ? `?${s}` : ''}`);
+}
+
 /* ---- Audit log (admin only) ---- */
 
 export interface AuditLogItem {

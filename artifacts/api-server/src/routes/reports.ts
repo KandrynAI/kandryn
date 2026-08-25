@@ -917,6 +917,129 @@ router.get("/reports/security-posture", async (req, res): Promise<void> => {
   res.json({ severities, gateBlocked, total, scannedRuns: runs.length, trend });
 });
 
+/**
+ * GET /reports/executive — the six aggregate numbers for the Executive tier.
+ * Admin-only (same gate as the Admin diagnostics), team-scoped, defaulting to
+ * every project; an optional `scope` narrows to one. Range is month-to-date;
+ * deltas compare against last month at the SAME elapsed time into the month
+ * (lastMonthStart + (now - thisMonthStart)) so a mid-month read is fair. Each
+ * number rolls up a metric Phase B already computes — no new data shapes.
+ */
+router.get("/reports/executive", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res); // admin-gated; `days` unused here
+  if (!scope) return;
+
+  const now = new Date();
+  const nowMs = now.getTime();
+  const thisMonthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const lastMonthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
+  const priorEnd = lastMonthStart + (nowMs - thisMonthStart); // equal elapsed time
+  const fetchSince = new Date(Math.min(lastMonthStart, nowMs - 12 * WEEK_MS));
+
+  const runConds = [inArray(runsTable.userId, scope.userIds), gte(runsTable.createdAt, fetchSince)];
+  if (scope.projectId != null) runConds.push(eq(runsTable.projectId, scope.projectId));
+  const runs = await db
+    .select({
+      id: runsTable.id,
+      projectId: runsTable.projectId,
+      status: runsTable.status,
+      committedSuggestionId: runsTable.committedSuggestionId,
+      securityGate: runsTable.securityGate,
+      securityScan: runsTable.securityScan,
+      createdAt: runsTable.createdAt,
+    })
+    .from(runsTable)
+    .where(and(...runConds));
+
+  const runIds = runs.map((r) => r.id);
+  const plans = runIds.length
+    ? await db
+        .select({
+          runId: changePlansTable.runId,
+          revision: changePlansTable.revision,
+          status: changePlansTable.status,
+          input: changePlansTable.inputTokens,
+          output: changePlansTable.outputTokens,
+        })
+        .from(changePlansTable)
+        .where(inArray(changePlansTable.runId, runIds))
+    : [];
+  const planByRun = new Map<number, { hasUsable: boolean; maxRevision: number; rev1Input: number | null; rev1Output: number | null }>();
+  for (const p of plans) {
+    const e = planByRun.get(p.runId) ?? { hasUsable: false, maxRevision: 0, rev1Input: null, rev1Output: null };
+    if (p.status !== "failed" && p.status !== "planning") e.hasUsable = true;
+    if (p.revision > e.maxRevision) e.maxRevision = p.revision;
+    if (p.revision === 1 && p.input != null) {
+      e.rev1Input = p.input;
+      e.rev1Output = p.output ?? 0;
+    }
+    planByRun.set(p.runId, e);
+  }
+
+  type R = (typeof runs)[number];
+  const TERMINAL = new Set(["succeeded", "failed", "canceled"]);
+
+  const activeProjects = (rs: R[]): number => new Set(rs.map((r) => r.projectId)).size;
+  const deliveryRate = (rs: R[]): number | null => {
+    const terminal = rs.filter((r) => TERMINAL.has(r.status));
+    if (!terminal.length) return null;
+    return Math.round((terminal.filter((r) => r.committedSuggestionId != null).length / terminal.length) * 100);
+  };
+  const findingsBlocked = (rs: R[]): number =>
+    rs.reduce((n, r) => (r.securityGate === "blocked" ? n + (r.securityScan?.criticalCount ?? 0) + (r.securityScan?.highCount ?? 0) : n), 0);
+  const costPerRun = (rs: R[]): number | null => {
+    const costs = rs
+      .map((r) => planByRun.get(r.id))
+      .filter((p): p is NonNullable<typeof p> => p?.rev1Input != null)
+      .map((p) => planCostUsd(p.rev1Input!, p.rev1Output ?? 0));
+    return costs.length ? Math.round((costs.reduce((a, b) => a + b, 0) / costs.length) * 10000) / 10000 : null;
+  };
+  const planAcceptance = (rs: R[]): number | null => {
+    let acc = 0, tot = 0;
+    for (const r of rs) {
+      const pf = planByRun.get(r.id);
+      if (!pf?.hasUsable) continue;
+      const o = classifyOutcome(r.status, pf.maxRevision);
+      if (o === "pending") continue;
+      tot++;
+      if (o === "accepted") acc++;
+    }
+    return tot ? Math.round((acc / tot) * 100) : null;
+  };
+
+  const cur = runs.filter((r) => r.createdAt.getTime() >= thisMonthStart && r.createdAt.getTime() <= nowMs);
+  const pri = runs.filter((r) => r.createdAt.getTime() >= lastMonthStart && r.createdAt.getTime() < priorEnd);
+  const ptsDelta = (a: number | null, b: number | null): number | null => (a != null && b != null ? a - b : null);
+
+  // 12-week plan-acceptance trend — non-empty weeks only (a quiet week is a gap,
+  // not a 0%). Range label reads first → last so it's legible without hovering.
+  const trendPoints: number[] = [];
+  for (const b of weekBuckets(nowMs, 84)) {
+    const slice = runs.filter((r) => r.createdAt.getTime() >= b.lo && r.createdAt.getTime() < b.hi);
+    const rate = planAcceptance(slice);
+    if (rate != null) trendPoints.push(rate);
+  }
+
+  const apCur = activeProjects(cur), apPri = activeProjects(pri);
+  const drCur = deliveryRate(cur), drPri = deliveryRate(pri);
+  const fbCur = findingsBlocked(cur), fbPri = findingsBlocked(pri);
+  const cprCur = costPerRun(cur), cprPri = costPerRun(pri);
+
+  res.json({
+    activeProjects: { value: apCur, delta: apCur - apPri },
+    runs: { value: cur.length, delta: cur.length - pri.length },
+    deliveryRate: { value: drCur, delta: ptsDelta(drCur, drPri) },
+    findingsBlocked: { value: fbCur, delta: fbCur - fbPri },
+    costPerRun: { valueUsd: cprCur, delta: cprCur != null && cprPri != null ? Math.round((cprCur - cprPri) * 10000) / 10000 : null },
+    planAcceptanceTrend: {
+      current: planAcceptance(cur),
+      points: trendPoints,
+      first: trendPoints[0] ?? null,
+      last: trendPoints[trendPoints.length - 1] ?? null,
+    },
+  });
+});
+
 // ─── Admin diagnostics (Reporting Phase A) ──────────────────────────────────
 // Operational-health panels for team admins. Every endpoint below is admin-only
 // and team-scoped: it reads across every team member's runs/repositories (the

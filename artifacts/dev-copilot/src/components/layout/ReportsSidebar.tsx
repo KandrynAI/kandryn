@@ -1,13 +1,12 @@
 import { useLocation, useParams } from "wouter";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, LineChart } from "lucide-react";
 import { useTeam } from "@/context/TeamContext";
 
-// The Reports-specific left sidebar. Rendered by AppShell only on the Admin
-// reports screen (/reports/admin), in place of the project-scoped ContextPanel,
-// so it never touches the project sidebar's path. Only the role-gated Admin tab
-// exists this phase — Manager/Executive are hidden entirely (no placeholder)
-// until built. The analytics view (/reports) keeps the normal ContextPanel and
-// is unchanged; it is the starting point for the future Manager tab.
+// The Reports-specific left sidebar. Rendered by AppShell on the Admin and
+// Executive reports screens (/reports/admin, /reports/executive), in place of the
+// project-scoped ContextPanel, so it never touches the project sidebar's path.
+// Both items are admin-only. The Manager analytics view (/reports) keeps the
+// normal ContextPanel and is unchanged.
 
 export function ReportsSidebar() {
   const [, navigate] = useLocation();
@@ -16,7 +15,10 @@ export function ReportsSidebar() {
   const tab = params.tab ?? "";
 
   const items: { key: string; label: string; href: string; icon: typeof ShieldCheck }[] = isAdmin
-    ? [{ key: "admin", label: "Admin", href: "/reports/admin", icon: ShieldCheck }]
+    ? [
+        { key: "admin", label: "Admin", href: "/reports/admin", icon: ShieldCheck },
+        { key: "executive", label: "Executive", href: "/reports/executive", icon: LineChart },
+      ]
     : [];
 
   return (
