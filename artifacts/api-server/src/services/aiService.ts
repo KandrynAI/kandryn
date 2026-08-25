@@ -107,7 +107,17 @@ type ModelOutput = z.infer<typeof ModelOutputSchema>;
 export interface AICreds {
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  /** Per-provider generation model overrides (governance item 2). When unset,
+   *  generation uses the provider defaults below. */
+  claudeModel?: string;
+  openaiModel?: string;
 }
+
+// Default generation models per provider. A project may pin a specific version
+// (projects.pinned_claude_model / pinned_openai_model); when unpinned these
+// apply. Exported so the pinning UI can show the effective default.
+export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5";
+export const DEFAULT_OPENAI_MODEL = "gpt-4o";
 
 // ---------------------------------------------------------------------------
 // Mock providers
@@ -277,10 +287,14 @@ async function resolveFileOps(
 export class AIOrchestrator {
   private readonly anthropicApiKey: string | undefined;
   private readonly openaiApiKey: string | undefined;
+  private readonly claudeModel: string;
+  private readonly openaiModel: string;
 
   constructor(creds?: AICreds) {
     this.anthropicApiKey = creds?.anthropicApiKey;
     this.openaiApiKey = creds?.openaiApiKey;
+    this.claudeModel = creds?.claudeModel || DEFAULT_CLAUDE_MODEL;
+    this.openaiModel = creds?.openaiModel || DEFAULT_OPENAI_MODEL;
   }
 
   async generateSuggestions(
@@ -330,6 +344,10 @@ export class AIOrchestrator {
         // outside it are flagged as deviations (§2.4).
         const { files, valid } = await resolveFileOps(output.files, fileReader, planPaths);
         const primaryPath = files[0]?.filePath ?? "";
+        // Record the exact model that generated this suggestion. Real agents map
+        // to their provider's resolved (possibly pinned) model; mocks have none.
+        const model =
+          agent === "claude" ? this.claudeModel : agent === "openai" ? this.openaiModel : null;
         suggestions.push({
           agent,
           files,
@@ -337,6 +355,7 @@ export class AIOrchestrator {
           stats: statsFor(files),
           explanation: output.explanation,
           language: detectLanguage(primaryPath),
+          model,
         });
       } else {
         logger.warn({ agent, err: result.reason }, `${agent} suggestion failed`);
@@ -349,7 +368,7 @@ export class AIOrchestrator {
   private async callClaude(prompt: string): Promise<ModelOutput> {
     const client = new Anthropic({ apiKey: this.anthropicApiKey });
     const message = await client.messages.create({
-      model: "claude-sonnet-4-5",
+      model: this.claudeModel,
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
     });
@@ -362,7 +381,7 @@ export class AIOrchestrator {
   private async callOpenAI(prompt: string): Promise<ModelOutput> {
     const client = new OpenAI({ apiKey: this.openaiApiKey });
     const response = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: this.openaiModel,
       response_format: { type: "json_object" },
       messages: [
         {

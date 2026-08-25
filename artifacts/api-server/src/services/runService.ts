@@ -174,6 +174,8 @@ async function generateAndPersistSuggestions(params: {
           return {
             runId,
             agent: s.agent,
+            // Exact generation model (governance item 2), from the orchestrator.
+            model: s.model ?? null,
             explanation: s.explanation,
             language: s.language,
             score: sc?.score != null ? Math.round(sc.score) : null,
@@ -233,7 +235,12 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
   // Team scope for the plan audit entries + the project confidence threshold.
   const [proj] = run.projectId
     ? await db
-        .select({ teamId: projectsTable.teamId, confidenceThreshold: projectsTable.confidenceThreshold })
+        .select({
+          teamId: projectsTable.teamId,
+          confidenceThreshold: projectsTable.confidenceThreshold,
+          pinnedClaudeModel: projectsTable.pinnedClaudeModel,
+          pinnedOpenaiModel: projectsTable.pinnedOpenaiModel,
+        })
         .from(projectsTable)
         .where(eq(projectsTable.id, run.projectId))
     : [];
@@ -312,6 +319,9 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     const orchestrator = new AIOrchestrator({
       anthropicApiKey: creds.ANTHROPIC_API_KEY,
       openaiApiKey: creds.OPENAI_API_KEY,
+      // Per-provider pinned model (governance item 2); undefined → provider default.
+      claudeModel: proj?.pinnedClaudeModel ?? undefined,
+      openaiModel: proj?.pinnedOpenaiModel ?? undefined,
     });
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });

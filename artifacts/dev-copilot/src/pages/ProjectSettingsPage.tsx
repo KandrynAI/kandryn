@@ -29,6 +29,9 @@ export default function ProjectSettingsPage() {
   const [savingName, setSavingName] = useState(false);
   const [threshold, setThreshold] = useState("");
   const [savingThreshold, setSavingThreshold] = useState(false);
+  const [claudePin, setClaudePin] = useState("");
+  const [openaiPin, setOpenaiPin] = useState("");
+  const [savingModels, setSavingModels] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -39,6 +42,8 @@ export default function ProjectSettingsPage() {
         setProject(p);
         setName(p.name);
         setThreshold(p.confidenceThreshold);
+        setClaudePin(p.pinnedClaudeModel ?? "");
+        setOpenaiPin(p.pinnedOpenaiModel ?? "");
       })
       .catch(() => setProject(null))
       .finally(() => setLoading(false));
@@ -77,6 +82,24 @@ export default function ProjectSettingsPage() {
       toast({ title: "Could not update threshold", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
     } finally {
       setSavingThreshold(false);
+    }
+  };
+
+  const saveModels = async () => {
+    setSavingModels(true);
+    try {
+      const updated = await updateProject(projectId, {
+        pinnedClaudeModel: claudePin.trim() || null,
+        pinnedOpenaiModel: openaiPin.trim() || null,
+      });
+      setProject(updated);
+      setClaudePin(updated.pinnedClaudeModel ?? "");
+      setOpenaiPin(updated.pinnedOpenaiModel ?? "");
+      toast({ title: "Model pinning updated" });
+    } catch (err) {
+      toast({ title: "Could not update model pinning", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
+    } finally {
+      setSavingModels(false);
     }
   };
 
@@ -170,6 +193,45 @@ export default function ProjectSettingsPage() {
             Before generating code, Blue Mantis scores its confidence in the change plan (0–1). Plans scoring
             below this value pause for your review instead of generating automatically. Set 0 to never pause,
             1 to always pause. Default 0.6 — an uncalibrated starting point.
+          </p>
+        </div>
+      </section>
+
+      <section className="mb-8">
+        <div className={groupLabel}>Model pinning</div>
+        <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-foreground">Raptia (Claude) model</label>
+            <Input
+              value={claudePin}
+              onChange={(e) => setClaudePin(e.target.value)}
+              placeholder="claude-sonnet-4-5 (default)"
+              className="h-9 w-72"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-foreground">Fovea (OpenAI) model</label>
+            <Input
+              value={openaiPin}
+              onChange={(e) => setOpenaiPin(e.target.value)}
+              placeholder="gpt-4o (default)"
+              className="h-9 w-72"
+            />
+          </div>
+          <div>
+            <Button
+              size="sm"
+              className="h-9"
+              onClick={saveModels}
+              disabled={savingModels || (claudePin === (project.pinnedClaudeModel ?? "") && openaiPin === (project.pinnedOpenaiModel ?? ""))}
+            >
+              {savingModels ? "Saving…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Pin generation to a specific model version per provider, for reproducibility and governance. Leave
+            a field blank to use the current default. The exact model that generated each change is recorded on
+            the run's explanation report.
           </p>
         </div>
       </section>

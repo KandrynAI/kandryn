@@ -38,6 +38,10 @@ export const projectsTable = pgTable(
     // below this parks in awaiting_review before generation. 0.6 is an
     // UNCALIBRATED placeholder — the eval harness should tune it.
     confidenceThreshold: numeric("confidence_threshold").notNull().default("0.6"),
+    // Per-provider pinned generation model (0030, governance item 2). Null =
+    // unpinned = use the current default for that provider.
+    pinnedClaudeModel: text("pinned_claude_model"),
+    pinnedOpenaiModel: text("pinned_openai_model"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
