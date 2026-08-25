@@ -85,7 +85,7 @@ const TRUST_ROWS: TrustRow[] = [
   { tone: 'green', control: 'Audit log', status: 'Full action log. Admin-only. 30–365 days by plan. CSV export.', anchor: '#audit-log', link: 'Audit log' },
   { tone: 'green', control: 'AI model transparency', status: 'Named models disclosed. Customer API keys. No training on your data.', anchor: '#ai-and-models', link: 'AI and models' },
   { tone: 'green', control: 'Human-approved commits', status: 'No commit without an explicit click. Optional auto-commit is off by default; Blue Mantis never merges.', anchor: '#ai-and-models', link: 'AI and models' },
-  { tone: 'green', control: 'Security scanning', status: 'Aegis scans every committed change for OWASP Top 10.', anchor: '#ai-and-models', link: 'AI and models' },
+  { tone: 'green', control: 'Security scanning', status: 'Aegis scans committed code for OWASP Top 10 on request (fail-closed); blocks merge when set as a required branch-protection check.', anchor: '#ai-and-models', link: 'AI and models' },
   { tone: 'green', control: 'Sub-processor list', status: 'All processors named with data category and region.', anchor: '#sub-processors', link: 'Sub-processors' },
   { tone: 'green', control: 'US data residency', status: 'All storage and processing in US East (AWS us-east-1).', anchor: '#infrastructure', link: 'Infrastructure' },
   { tone: 'amber', control: 'SSO / SAML', status: 'In progress. Target: Q4 2026. Okta and Azure AD.', anchor: '#access-control', link: 'Access control' },
@@ -210,6 +210,9 @@ const SUBPROC_ROWS = [
   ['Vercel', 'Application hosting', 'All application traffic (no persistent storage)', 'US', 'SOC 2 Type II'],
   ['Resend', 'Email', 'Email address + run outcome summary', 'US', 'SOC 2 Type II'],
   ['Railway', 'Graphify service', 'Repository clone at index time (no persistent storage)', 'US', '—'],
+  ['Atlassian (Jira / Confluence)', 'PLM sync · docs — when connected', 'Work item titles/descriptions; runbooks, if published to Confluence', 'Per customer instance', 'SOC 2 · ISO 27001'],
+  ['Microsoft (Azure DevOps / Repos)', 'PLM · source — when connected', 'Work items, and repository code when Azure is the connected Git provider', 'Per customer tenant', 'SOC 2 · ISO 27001'],
+  ['Notion', 'Docs — when connected', 'Runbooks, if published to Notion', 'US', 'SOC 2 Type II'],
 ];
 
 export default function TrustPage() {
@@ -301,6 +304,17 @@ export default function TrustPage() {
             Blue Mantis does not process end-user PII, financial records, healthcare data, production database contents,
             or any data outside the software development workflow. It never reads repository secrets, environment
             variables, or GitHub Actions secrets.
+          </p>
+        </div>
+        <div style={{ marginTop: 20, borderLeft: '2px solid var(--color-divider)', padding: '16px 20px' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)', marginBottom: 8 }}>
+            Deletion on offboarding
+          </div>
+          <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', margin: 0, maxWidth: 820 }}>
+            Within 30 days of contract termination, customer data — work items, change plans, generated code, and run
+            history — is deleted from Blue Mantis systems. Audit-log records are deleted on the same schedule unless a
+            longer retention period has been contractually agreed. Selected source-code file sections are read at run
+            time and discarded, not retained (see Data handling above).
           </p>
         </div>
       </section>
