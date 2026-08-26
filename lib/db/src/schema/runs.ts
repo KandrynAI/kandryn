@@ -152,6 +152,11 @@ export const runsTable = pgTable(
     // The team member who triggered this run (0017); may differ from userId
     // (project owner) in team context.
     runByUserId: text("run_by_user_id"),
+    // Who approved a parked (awaiting_review) plan, and when (0032, governance
+    // item 6). Null until an awaiting_review run is approved. Durable record for
+    // segregation-of-duties auditing and the explanation report.
+    approvedByUserId: text("approved_by_user_id"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

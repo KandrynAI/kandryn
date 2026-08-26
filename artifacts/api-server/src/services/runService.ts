@@ -557,29 +557,75 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
  * Validates state synchronously (throws RunError for the route), then runs
  * generation in the background (executeRun never throws).
  */
-export async function approvePlan(runId: number, userId: string): Promise<void> {
-  const [run] = await db
-    .select()
-    .from(runsTable)
-    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, userId)));
+/** Who is acting on an awaiting_review run (from the request). */
+export interface ReviewActor {
+  userId: string;
+  teamId: number | null;
+  teamRole: "admin" | "member" | null;
+}
+export interface ApprovalResult {
+  triggeredBy: string | null;
+  approvedBy: string;
+  secondApproverRequired: boolean;
+}
+
+/** Load a run's team + second-approver setting, plus who's authorized to review it. */
+async function reviewContext(run: typeof runsTable.$inferSelect, actor: ReviewActor) {
+  const [proj] = run.projectId
+    ? await db
+        .select({ teamId: projectsTable.teamId, requireSecondApprover: projectsTable.requireSecondApprover })
+        .from(projectsTable)
+        .where(eq(projectsTable.id, run.projectId))
+    : [];
+  const requireSecond = proj?.requireSecondApprover ?? false;
+  const isOwner = run.userId === actor.userId;
+  const isTeamAdmin = proj?.teamId != null && actor.teamId === proj.teamId && actor.teamRole === "admin";
+  // Base behavior (SoD off) is owner-only. With SoD on, a team admin may also
+  // review, so a second person can approve.
+  const authorized = requireSecond ? isOwner || isTeamAdmin : isOwner;
+  const triggeredBy = run.runByUserId ?? run.userId;
+  return { requireSecond, authorized, triggeredBy };
+}
+
+export async function approvePlan(runId: number, actor: ReviewActor): Promise<ApprovalResult> {
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
   if (!run) throw new RunError("Run not found", 404);
   if (run.status !== "awaiting_review") throw new RunError("This run is not awaiting review.", 409);
+
+  const { requireSecond, authorized, triggeredBy } = await reviewContext(run, actor);
+  // Preserve the pre-SoD 404 for a non-owner when SoD is off (don't leak existence).
+  if (!authorized) throw new RunError(requireSecond ? "You are not authorized to approve this run." : "Run not found", requireSecond ? 403 : 404);
+  if (requireSecond) {
+    if (triggeredBy && triggeredBy === actor.userId) {
+      throw new RunError("This run was triggered by you; a different approver is required.", 403);
+    }
+    if (!triggeredBy) {
+      // Allow-with-log: we can't identify the trigger-er, so SoD can't be
+      // enforced on this (legacy) run — proceed but record it.
+      logger.warn({ runId, approver: actor.userId }, "SoD: run trigger-er unknown; allowing approval");
+    }
+  }
+
+  await db.update(runsTable).set({ approvedByUserId: actor.userId, approvedAt: new Date() }).where(eq(runsTable.id, runId));
   void executeRun(runId, { reusePlan: true }).catch((err) => logger.error({ runId, err }, "Approve-generation crashed"));
+  return { triggeredBy, approvedBy: actor.userId, secondApproverRequired: requireSecond };
 }
 
 /**
  * Reject a parked run: it ends cleanly with NO suggestions and no partial state.
  * The run becomes `canceled` (a human declining a plan — distinct from `failed`,
  * a technical error). Nothing downstream (Aegis/Veria/Narratia/tests) runs, as
- * all guard on committedSuggestionId, which is never set.
+ * all guard on committedSuggestionId, which is never set. Rejecting is not a
+ * conflict of interest, so the trigger-er may reject their own run.
  */
-export async function rejectPlan(runId: number, userId: string): Promise<void> {
-  const [run] = await db
-    .select()
-    .from(runsTable)
-    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, userId)));
+export async function rejectPlan(runId: number, actor: ReviewActor): Promise<void> {
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
   if (!run) throw new RunError("Run not found", 404);
   if (run.status !== "awaiting_review") throw new RunError("This run is not awaiting review.", 409);
+
+  const { requireSecond, authorized } = await reviewContext(run, actor);
+  if (!authorized) throw new RunError(requireSecond ? "You are not authorized to reject this run." : "Run not found", requireSecond ? 403 : 404);
+
   await db.update(runsTable).set({ status: "canceled", finishedAt: new Date() }).where(eq(runsTable.id, runId));
 }
 

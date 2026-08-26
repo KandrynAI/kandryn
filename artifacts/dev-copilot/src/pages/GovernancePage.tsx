@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "wouter";
-import { Printer, ArrowLeft, ShieldCheck, UserCheck, Clock, Network, Database } from "lucide-react";
+import { Printer, ArrowLeft, ShieldCheck, UserCheck, Clock, Network, Database, Users } from "lucide-react";
 import { fetchProject, type Project } from "@/services/api";
 import { useTeam } from "@/context/TeamContext";
 
@@ -98,6 +98,17 @@ export default function GovernancePage() {
           {gateOn
             ? `Scheduled runs are held to the same threshold. A scheduled run whose plan scores below ${thresholdPct}% confidence pauses and notifies the project owner rather than generating code unattended — it waits for a human decision instead of proceeding automatically.`
             : `With the confidence gate off, scheduled runs generate without pausing for review.`}
+        </Control>
+
+        <Control
+          icon={Users}
+          title="Segregation of duties"
+          status={project.requireSecondApprover ? "Enforced" : "Off"}
+          statusTone={project.requireSecondApprover ? "on" : "off"}
+        >
+          {project.requireSecondApprover
+            ? "When a change plan is paused for review, the person who triggered the run may not approve it — a different team admin must. The trigger-er and the approver are recorded distinctly on every approved run, so separation of duties is an auditable fact."
+            : "Not enforced for this project — the person who triggers a run may also approve its paused plan. Enable a second approver in project settings to require separate individuals for trigger and approval."}
         </Control>
 
         <Control

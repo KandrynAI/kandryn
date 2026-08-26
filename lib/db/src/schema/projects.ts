@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, numeric, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { repositoriesTable } from "./repositories";
@@ -42,6 +42,9 @@ export const projectsTable = pgTable(
     // unpinned = use the current default for that provider.
     pinnedClaudeModel: text("pinned_claude_model"),
     pinnedOpenaiModel: text("pinned_openai_model"),
+    // Segregation of duties (0032, governance item 6). When true, the user who
+    // triggered a run may not approve its own parked plan — a different admin must.
+    requireSecondApprover: boolean("require_second_approver").notNull().default(false),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

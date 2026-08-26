@@ -32,6 +32,7 @@ export default function ProjectSettingsPage() {
   const [claudePin, setClaudePin] = useState("");
   const [openaiPin, setOpenaiPin] = useState("");
   const [savingModels, setSavingModels] = useState(false);
+  const [savingSoD, setSavingSoD] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -82,6 +83,19 @@ export default function ProjectSettingsPage() {
       toast({ title: "Could not update threshold", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
     } finally {
       setSavingThreshold(false);
+    }
+  };
+
+  const saveSoD = async (value: boolean) => {
+    setSavingSoD(true);
+    try {
+      const updated = await updateProject(projectId, { requireSecondApprover: value });
+      setProject(updated);
+      toast({ title: value ? "Second approver required" : "Second-approver requirement turned off" });
+    } catch (err) {
+      toast({ title: "Could not update", description: err instanceof ApiError ? err.message : undefined, variant: "destructive" });
+    } finally {
+      setSavingSoD(false);
     }
   };
 
@@ -194,6 +208,28 @@ export default function ProjectSettingsPage() {
             below this value pause for your review instead of generating automatically. Set 0 to never pause,
             1 to always pause. Default 0.6 — an uncalibrated starting point.
           </p>
+        </div>
+      </section>
+
+      <section className="mb-8">
+        <div className={groupLabel}>Segregation of duties</div>
+        <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
+          <label className="flex items-start gap-2.5" style={{ cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={project.requireSecondApprover}
+              disabled={savingSoD}
+              onChange={(e) => saveSoD(e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <span className="text-xs font-medium text-foreground">Require a second approver</span>
+              <span className="block text-[11px] text-muted-foreground leading-relaxed">
+                When a run's plan is paused for confidence review, the person who triggered the run cannot approve it —
+                a different team admin must. Rejecting is always allowed. Default off.
+              </span>
+            </span>
+          </label>
         </div>
       </section>
 
