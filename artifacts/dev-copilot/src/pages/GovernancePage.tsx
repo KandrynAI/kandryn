@@ -142,8 +142,10 @@ export default function GovernancePage() {
           statusTone="on"
         >
           Every significant action — sign-ins, credential changes, runs, commits, security scans, membership and role
-          changes — is recorded in an append-only audit log. The log cannot be edited or deleted through the application;
-          entries age out only by the retention policy.
+          changes — is recorded in an append-only audit log. The log cannot be edited or deleted through the application,
+          and every entry is <strong>hash-chained (SHA-256, computed in the database at write time)</strong> so any
+          tampering or deletion is cryptographically detectable — verify it any time under Settings → Audit. Entries age
+          out only by the retention policy.
           {effectiveAuditRetentionDays != null
             ? ` This team retains audit history for ${effectiveAuditRetentionDays} days; admins can extend it for regulated retention (Settings → Team).`
             : ""}

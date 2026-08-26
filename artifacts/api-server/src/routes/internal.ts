@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { sql, eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
-import { runRetentionCleanup } from "../services/auditService.js";
+import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -100,7 +100,16 @@ async function auditCleanupHandler(req: Request, res: Response): Promise<void> {
   }
   const result = await runRetentionCleanup();
   logger.info({ deleted: result.deleted }, "Audit log retention cleanup complete");
-  res.json({ deleted: result.deleted });
+  // Verify the tamper-evident hash chains after retention has pruned old rows
+  // (governance item 7). Verification runs on the retained set; a broken chain is
+  // logged loudly for investigation.
+  const broken = await verifyAllChains();
+  if (broken.length > 0) {
+    logger.error({ broken }, "Audit hash-chain verification FAILED for one or more teams");
+  } else {
+    logger.info("Audit hash-chain verification passed for all teams");
+  }
+  res.json({ deleted: result.deleted, chainsBroken: broken.length });
 }
 
 router.get("/internal/audit-cleanup", auditCleanupHandler);
