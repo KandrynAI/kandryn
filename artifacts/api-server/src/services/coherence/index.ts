@@ -4,6 +4,7 @@ import type { FileSymbols, SymbolTable, RepoSymbolIndex } from "./symbols.js";
 import { buildSymbolTable } from "./symbols.js";
 import { extractCSharpSymbols, checkCSharp } from "./csharp.js";
 import { extractTypeScriptSymbols, checkTypeScript } from "./typescript.js";
+import { extractPythonSymbols, checkPython } from "./python.js";
 
 export type { RepoSymbolIndex } from "./symbols.js";
 
@@ -22,6 +23,7 @@ interface LanguageModule {
 const MODULES: LanguageModule[] = [
   { extensions: [".cs"], extract: extractCSharpSymbols, check: checkCSharp },
   { extensions: [".ts", ".tsx"], extract: extractTypeScriptSymbols, check: checkTypeScript },
+  { extensions: [".py"], extract: extractPythonSymbols, check: checkPython },
 ];
 
 /** The language module owning a file, by extension — or null if unsupported. */
