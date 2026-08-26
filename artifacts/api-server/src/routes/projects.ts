@@ -28,6 +28,8 @@ const UpdateProjectBody = z.object({
   // Per-provider pinned generation model (governance item 2). null/"" = unpin.
   pinnedClaudeModel: z.string().max(100).nullable().optional(),
   pinnedOpenaiModel: z.string().max(100).nullable().optional(),
+  // Segregation of duties (governance item 6).
+  requireSecondApprover: z.boolean().optional(),
 });
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -421,6 +423,20 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
         userAgent: req.headers["user-agent"],
       });
     }
+  }
+
+  // Audit a segregation-of-duties toggle (governance item 6).
+  if (parsed.data.requireSecondApprover != null && parsed.data.requireSecondApprover !== project.requireSecondApprover) {
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "project.updated",
+      entityType: "project",
+      entityId: project.id,
+      metadata: { requireSecondApprover: { from: project.requireSecondApprover, to: parsed.data.requireSecondApprover } },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
   }
   res.json(proj);
 });

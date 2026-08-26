@@ -222,6 +222,8 @@ export interface Project {
   /** Per-provider pinned generation model (governance item 2). null = unpinned. */
   pinnedClaudeModel: string | null;
   pinnedOpenaiModel: string | null;
+  /** Segregation of duties (governance item 6): trigger-er can't self-approve. */
+  requireSecondApprover: boolean;
   lastSyncedAt: string | null;
   createdAt: string;
   counts?: { open: number; running: number; review: number };
@@ -269,6 +271,7 @@ export function updateProject(
     confidenceThreshold?: number;
     pinnedClaudeModel?: string | null;
     pinnedOpenaiModel?: string | null;
+    requireSecondApprover?: boolean;
   },
 ): Promise<Project> {
   return request<Project>(`/api/projects/${id}`, {
@@ -358,6 +361,9 @@ export interface Run {
   prUrl: string | null;
   commitHash: string | null;
   committedSuggestionId: number | null;
+  /** Who approved a parked plan, and when (governance item 6). */
+  approvedByUserId?: string | null;
+  approvedAt?: string | null;
   usedGraphContext?: boolean;
   stackDesc?: string | null;
   review?: ReviewResult | null;

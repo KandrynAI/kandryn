@@ -370,13 +370,25 @@ router.post("/runs/:id/plan/approve", async (req, res): Promise<void> => {
     return;
   }
   try {
-    await approvePlan(params.data.id, req.userId!);
+    const result = await approvePlan(params.data.id, {
+      userId: req.userId!,
+      teamId: req.teamId ?? null,
+      teamRole: req.teamRole ?? null,
+    });
     audit.log({
       userId: req.userId!,
       teamId: req.teamId ?? null,
       action: "run.plan_approved",
       entityType: "run",
       entityId: params.data.id,
+      // Segregation-of-duties fact: who triggered vs. who approved, and whether
+      // the second-approver rule was in force for this run.
+      metadata: {
+        triggeredBy: result.triggeredBy,
+        approvedBy: result.approvedBy,
+        secondApprover: result.secondApproverRequired,
+        distinct: result.triggeredBy != null && result.triggeredBy !== result.approvedBy,
+      },
       ipAddress: audit.getIp(req),
       userAgent: req.headers["user-agent"],
     });
@@ -397,7 +409,11 @@ router.post("/runs/:id/plan/reject", async (req, res): Promise<void> => {
     return;
   }
   try {
-    await rejectPlan(params.data.id, req.userId!);
+    await rejectPlan(params.data.id, {
+      userId: req.userId!,
+      teamId: req.teamId ?? null,
+      teamRole: req.teamRole ?? null,
+    });
     audit.log({
       userId: req.userId!,
       teamId: req.teamId ?? null,
