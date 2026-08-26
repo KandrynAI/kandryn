@@ -12,6 +12,13 @@ export interface MethodSig {
   arity: number;
   line: number;
   isPublic: boolean;
+  /**
+   * Java hint: for an interface member, false when the method is `default`/
+   * `static`/`private` (has a body — not part of the implement contract).
+   * Undefined for other languages and for class members. Consulted only by the
+   * Java interface_impl check.
+   */
+  isAbstract?: boolean;
 }
 export interface TypeSig {
   kind: "class" | "interface" | "record" | "struct" | "enum";
@@ -19,6 +26,12 @@ export interface TypeSig {
   bases: string[]; // base class + implemented interfaces, generics stripped
   methods: MethodSig[];
   line: number;
+  /**
+   * Java hint: the type's member surface may be incomplete because a
+   * method-generating Lombok annotation (@Data, @Getter, …) adds methods not in
+   * source. Consulted only by the Java checks, which fail open against it.
+   */
+  opaque?: boolean;
 }
 export interface FieldSig {
   name: string; // e.g. "_policyService"
