@@ -3,6 +3,7 @@ import { sql, eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
+import { backfillEncryption } from "../services/configService.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -114,6 +115,26 @@ async function auditCleanupHandler(req: Request, res: Response): Promise<void> {
 
 router.get("/internal/audit-cleanup", auditCleanupHandler);
 router.post("/internal/audit-cleanup", auditCleanupHandler);
+
+/**
+ * One-time credential-encryption backfill. Not behind requireAuth — mounted
+ * before it and guarded by the same CRON_SECRET bearer. Encrypts any plaintext
+ * rows in integration_configs / team_integrations in place after
+ * CONFIG_ENCRYPTION_KEY is set in production. Idempotent (skips already-encrypted
+ * rows) and safe to re-run; no-ops when the key is unset.
+ */
+async function encryptConfigsHandler(req: Request, res: Response): Promise<void> {
+  if (!authorized(req.header("authorization"))) {
+    res.sendStatus(401);
+    return;
+  }
+  const result = await backfillEncryption();
+  logger.info(result, "Credential encryption backfill complete");
+  res.json(result);
+}
+
+router.get("/internal/encrypt-configs", encryptConfigsHandler);
+router.post("/internal/encrypt-configs", encryptConfigsHandler);
 
 /**
  * Graphify microservice callback (spec Phase 2). Not behind requireAuth —

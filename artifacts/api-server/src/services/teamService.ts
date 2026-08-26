@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { PLAN_LIMITS, type TeamPlan, type TeamRole } from "../../../../shared/types/team.js";
 import { getConfig, getConfigs, type ConfigKey } from "./configService.js";
+import { encryptSecret, decryptSecret } from "./configCrypto.js";
 
 export class TeamError extends Error {
   constructor(
@@ -147,11 +148,12 @@ export async function deleteInvite(teamId: number, inviteId: number): Promise<bo
 }
 
 export async function listTeamIntegrations(teamId: number) {
-  return db
+  const rows = await db
     .select({ key: teamIntegrationsTable.key, value: teamIntegrationsTable.value, setBy: teamIntegrationsTable.setBy, setAt: teamIntegrationsTable.setAt })
     .from(teamIntegrationsTable)
     .where(eq(teamIntegrationsTable.teamId, teamId))
     .orderBy(asc(teamIntegrationsTable.key));
+  return rows.map((r) => ({ ...r, value: decryptSecret(r.value) }));
 }
 
 export async function setTeamIntegration(
@@ -160,12 +162,13 @@ export async function setTeamIntegration(
   value: string,
   setBy: string,
 ): Promise<void> {
+  const encrypted = encryptSecret(value);
   await db
     .insert(teamIntegrationsTable)
-    .values({ teamId, key, value, setBy })
+    .values({ teamId, key, value: encrypted, setBy })
     .onConflictDoUpdate({
       target: [teamIntegrationsTable.teamId, teamIntegrationsTable.key],
-      set: { value, setBy, setAt: new Date() },
+      set: { value: encrypted, setBy, setAt: new Date() },
     });
 }
 

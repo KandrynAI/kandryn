@@ -4,6 +4,7 @@
  */
 import { and, eq } from "drizzle-orm";
 import { db, integrationConfigsTable, teamIntegrationsTable } from "@workspace/db";
+import { encryptSecret, decryptSecret, isEncrypted, isEncryptionEnabled } from "./configCrypto.js";
 
 export const CONFIG_KEYS = [
   "ANTHROPIC_API_KEY",
@@ -41,7 +42,7 @@ export async function getAllConfigs(
     .from(integrationConfigsTable)
     .where(eq(integrationConfigsTable.userId, userId));
 
-  const dbMap = new Map(rows.map((r) => [r.key, r.value]));
+  const dbMap = new Map(rows.map((r) => [r.key, decryptSecret(r.value)]));
 
   const result: Record<string, { set: boolean; masked: string }> = {};
   for (const key of CONFIG_KEYS) {
@@ -69,7 +70,7 @@ export async function getConfig(
       .select()
       .from(teamIntegrationsTable)
       .where(and(eq(teamIntegrationsTable.teamId, teamId), eq(teamIntegrationsTable.key, key)));
-    if (t?.value) return t.value;
+    if (t?.value) return decryptSecret(t.value);
   }
   const [row] = await db
     .select()
@@ -80,7 +81,7 @@ export async function getConfig(
         eq(integrationConfigsTable.key, key),
       ),
     );
-  return row?.value ?? "";
+  return row?.value ? decryptSecret(row.value) : "";
 }
 
 /**
@@ -97,7 +98,7 @@ export async function getConfigs(
     .select()
     .from(integrationConfigsTable)
     .where(eq(integrationConfigsTable.userId, userId));
-  const personal = new Map(rows.map((r) => [r.key as ConfigKey, r.value]));
+  const personal = new Map(rows.map((r) => [r.key as ConfigKey, decryptSecret(r.value)]));
 
   const team = new Map<ConfigKey, string>();
   if (teamId != null) {
@@ -105,7 +106,7 @@ export async function getConfigs(
       .select()
       .from(teamIntegrationsTable)
       .where(eq(teamIntegrationsTable.teamId, teamId));
-    for (const r of trows) team.set(r.key as ConfigKey, r.value);
+    for (const r of trows) team.set(r.key as ConfigKey, decryptSecret(r.value));
   }
 
   const result: Partial<Record<ConfigKey, string>> = {};
@@ -123,15 +124,64 @@ export async function saveConfigs(
 ): Promise<void> {
   for (const [key, value] of Object.entries(entries) as [ConfigKey, string][]) {
     if (!value || value.trim() === "") continue;
-    const trimmed = value.trim();
+    const encrypted = encryptSecret(value.trim());
     await db
       .insert(integrationConfigsTable)
-      .values({ userId, key, value: trimmed })
+      .values({ userId, key, value: encrypted })
       .onConflictDoUpdate({
         target: [integrationConfigsTable.userId, integrationConfigsTable.key],
-        set: { value: trimmed },
+        set: { value: encrypted },
       });
   }
+}
+
+/**
+ * One-time backfill: encrypt any plaintext rows in `integration_configs` and
+ * `team_integrations` in place. Idempotent — already-enveloped rows are skipped,
+ * so it can be re-run safely. When no key is configured it no-ops (nothing to
+ * encrypt to), reporting `skipped: true`. Invoked by the CRON_SECRET-guarded
+ * `/api/internal/encrypt-configs` endpoint after the key is set in production.
+ */
+export async function backfillEncryption(): Promise<{
+  configs: number;
+  teamIntegrations: number;
+  skipped: boolean;
+}> {
+  if (!isEncryptionEnabled()) return { configs: 0, teamIntegrations: 0, skipped: true };
+
+  let configs = 0;
+  const rows = await db.select().from(integrationConfigsTable);
+  for (const r of rows) {
+    if (isEncrypted(r.value)) continue;
+    await db
+      .update(integrationConfigsTable)
+      .set({ value: encryptSecret(r.value) })
+      .where(
+        and(
+          eq(integrationConfigsTable.userId, r.userId),
+          eq(integrationConfigsTable.key, r.key),
+        ),
+      );
+    configs++;
+  }
+
+  let teamIntegrations = 0;
+  const trows = await db.select().from(teamIntegrationsTable);
+  for (const r of trows) {
+    if (isEncrypted(r.value)) continue;
+    await db
+      .update(teamIntegrationsTable)
+      .set({ value: encryptSecret(r.value) })
+      .where(
+        and(
+          eq(teamIntegrationsTable.teamId, r.teamId),
+          eq(teamIntegrationsTable.key, r.key),
+        ),
+      );
+    teamIntegrations++;
+  }
+
+  return { configs, teamIntegrations, skipped: false };
 }
 
 /** Delete a config key for a specific user */

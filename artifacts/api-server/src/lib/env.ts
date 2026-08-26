@@ -25,6 +25,7 @@ const OPTIONAL_ENV: EnvSpec[] = [
   { name: "CRON_SECRET",       critical: false, description: "Bearer secret guarding /api/internal/dispatch-runs (scheduled runs won't dispatch without it)" },
   { name: "APP_BASE_URL",      critical: false, description: "Public app origin used in run-notification email links (default https://getbluemantis.com)" },
   { name: "ENABLE_DEMO_AGENTS",critical: false, description: "When 'true', adds mock AntiGravity/Copilot suggestions (default off)" },
+  { name: "CONFIG_ENCRYPTION_KEY", critical: false, description: "32-byte key (base64/hex) encrypting integration credentials at rest; when absent, credentials are stored plaintext" },
 ];
 
 /**
