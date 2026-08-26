@@ -1076,6 +1076,18 @@ export function fetchAuditActions(): Promise<{ actions: string[] }> {
   return request<{ actions: string[] }>('/api/audit/actions');
 }
 
+/** Tamper-evidence check of the team's audit hash chain (governance item 7). */
+export interface AuditIntegrity {
+  ok: boolean;
+  firstBrokenId: number | null;
+  rowsChecked: number;
+  checkedAt: string;
+}
+
+export function verifyAuditIntegrity(): Promise<AuditIntegrity> {
+  return request<AuditIntegrity>('/api/audit/verify');
+}
+
 /* ---- Admin diagnostics (Reporting Phase A, admin only) ---- */
 
 /** `scope` is a projectId, or omitted for all team projects. */

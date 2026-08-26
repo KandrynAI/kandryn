@@ -77,4 +77,15 @@ router.get("/audit/actions", (_req, res): void => {
   res.json({ actions: AUDIT_ACTIONS });
 });
 
+// GET /api/audit/verify — verify the team's tamper-evident hash chain (admin
+// only, governance item 7). Reports the first broken row, if any.
+router.get("/audit/verify", async (req, res): Promise<void> => {
+  if (!req.teamId || req.teamRole !== "admin") {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const result = await audit.verifyChain(req.teamId);
+  res.json({ ...result, checkedAt: new Date().toISOString() });
+});
+
 export default router;

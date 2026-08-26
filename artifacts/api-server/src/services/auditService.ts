@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { db, auditLogTable, teamsTable } from "@workspace/db";
 import type { AuditAction } from "../../../../shared/types/auditLog.js";
 import { AUDIT_RETENTION_DAYS } from "../../../../shared/types/auditLog.js";
@@ -113,6 +113,40 @@ function csvEscape(value: string): string {
     return '"' + value.replace(/"/g, '""') + '"';
   }
   return value;
+}
+
+// ── Hash-chain verification (governance item 7) ───────────────────
+export interface ChainVerification {
+  ok: boolean;
+  firstBrokenId: number | null;
+  rowsChecked: number;
+}
+
+/** Verify a team's audit hash chain via the DB verifier (0033). Reports the
+ *  first tampered/deleted row, or ok across all hash-bearing rows. */
+export async function verifyChain(teamId: number): Promise<ChainVerification> {
+  const res = await db.execute(
+    sql`SELECT ok, first_broken_id, rows_checked FROM audit_log_verify(${teamId})`,
+  );
+  const rows = (res as unknown as { rows?: Array<{ ok: boolean; first_broken_id: number | null; rows_checked: string | number }> }).rows ?? [];
+  const r = rows[0];
+  return {
+    ok: Boolean(r?.ok),
+    firstBrokenId: r?.first_broken_id != null ? Number(r.first_broken_id) : null,
+    rowsChecked: r?.rows_checked != null ? Number(r.rows_checked) : 0,
+  };
+}
+
+/** Verify every team's chain (for the nightly monitoring pass). Returns the
+ *  teams whose chain is broken, empty when all verify clean. */
+export async function verifyAllChains(): Promise<Array<{ teamId: number; firstBrokenId: number | null }>> {
+  const teams = await db.select({ id: teamsTable.id }).from(teamsTable);
+  const broken: Array<{ teamId: number; firstBrokenId: number | null }> = [];
+  for (const t of teams) {
+    const r = await verifyChain(t.id);
+    if (!r.ok) broken.push({ teamId: t.id, firstBrokenId: r.firstBrokenId });
+  }
+  return broken;
 }
 
 // ── Retention cleanup (called by the nightly cron) ────────────────

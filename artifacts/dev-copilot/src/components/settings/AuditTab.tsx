@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Download, ShieldCheck } from "lucide-react";
+import { Download, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
 import { useTeam } from "@/context/TeamContext";
 import {
   fetchAuditLog,
   fetchAuditActions,
   fetchTeamMembers,
+  verifyAuditIntegrity,
   auditLogCsvUrl,
   type AuditLogItem,
+  type AuditIntegrity,
   type TeamMemberRow,
 } from "@/services/api";
 
@@ -165,9 +167,20 @@ export default function AuditTab() {
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(true);
 
+  const [integrity, setIntegrity] = useState<AuditIntegrity | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const runVerify = () => {
+    setVerifying(true);
+    verifyAuditIntegrity()
+      .then(setIntegrity)
+      .catch(() => setIntegrity(null))
+      .finally(() => setVerifying(false));
+  };
+
   useEffect(() => {
     fetchAuditActions().then((r) => setActions(r.actions)).catch(() => {});
     if (teamId != null) fetchTeamMembers(teamId).then(setMembers).catch(() => {});
+    if (teamId != null) runVerify();
   }, [teamId]);
 
   const load = async (reset = false) => {
@@ -229,6 +242,38 @@ export default function AuditTab() {
           <a href="/contact/" className="al-pill" style={{ whiteSpace: "nowrap" }}>Upgrade →</a>
         </div>
       )}
+
+      {/* Tamper-evidence (governance item 7) */}
+      <div
+        className="mb-4 flex items-center gap-3 rounded"
+        style={{
+          border: `1px solid ${integrity && !integrity.ok ? "var(--c-red)" : "var(--c-border)"}`,
+          background: integrity && !integrity.ok ? "var(--c-red-bg)" : "var(--c-surface)",
+          padding: "8px 12px",
+          fontSize: "var(--fs-sm)",
+        }}
+      >
+        {integrity && !integrity.ok ? (
+          <ShieldAlert size={15} style={{ color: "var(--c-red)", flexShrink: 0 }} />
+        ) : (
+          <ShieldCheck size={15} style={{ color: integrity ? "var(--c-green)" : "var(--c-ink-4)", flexShrink: 0 }} />
+        )}
+        <span style={{ color: "var(--c-ink-2)" }}>
+          {verifying
+            ? "Verifying audit-log integrity…"
+            : integrity == null
+              ? "Audit log is hash-chained (tamper-evident)."
+              : integrity.ok
+                ? `Integrity verified — ${integrity.rowsChecked} chained ${integrity.rowsChecked === 1 ? "entry" : "entries"}, no tampering detected.`
+                : `Integrity check FAILED — the chain breaks at entry #${integrity.firstBrokenId}. Contact support.`}
+          {integrity && !verifying && (
+            <span style={{ color: "var(--c-ink-4)" }}> · checked {new Date(integrity.checkedAt).toLocaleString()}</span>
+          )}
+        </span>
+        <button className="al-export" style={{ marginLeft: "auto" }} onClick={runVerify} disabled={verifying}>
+          {verifying ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />} Re-check
+        </button>
+      </div>
 
       {/* Filter bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>

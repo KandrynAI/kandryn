@@ -19,6 +19,11 @@ export const auditLogTable = pgTable(
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    // Tamper-evident hash chain (0033, governance item 7). Computed by a DB
+    // BEFORE INSERT trigger — never set by the application. prev_hash links to the
+    // team's previous row; row_hash = sha256(prev_hash || canonical content).
+    prevHash: text("prev_hash"),
+    rowHash: text("row_hash"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
