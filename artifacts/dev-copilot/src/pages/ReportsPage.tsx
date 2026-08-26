@@ -195,7 +195,7 @@ export default function ReportsPage() {
       {/* Print footer */}
       <div className="print-only" style={{ marginTop: 20, paddingTop: 10, borderTop: "1px solid #cbd5e1", fontSize: 10, color: "#64748b", display: "flex", justifyContent: "space-between" }}>
         <span>Generated {new Date().toLocaleString()}</span>
-        <span>getbluemantis.com</span>
+        <span>kandryn.com</span>
       </div>
     </div>
   );

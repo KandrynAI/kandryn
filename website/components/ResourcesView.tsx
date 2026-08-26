@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { RESOURCES, QUICKSTART, CHANGELOG } from '@/lib/site';
+import { RESOURCES, QUICKSTART, CHANGELOG, SITE } from '@/lib/site';
 
 const FILTERS = ['All', 'Guides', 'Patterns', 'Engineering', 'Templates'];
 
@@ -16,7 +16,7 @@ export default function ResourcesView() {
     if (!email.trim()) return;
     setSubscribed(true);
     try {
-      await fetch('/api/waitlist', {
+      await fetch(`${SITE.apiBaseUrl}/api/waitlist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),

@@ -590,8 +590,8 @@ where: and(
         </p>
         <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 12 }}>
           Questions about sub-processors or to request a copy of our DPA:{' '}
-          <a href="mailto:security@getbluemantis.com" style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
-            security@getbluemantis.com
+          <a href="mailto:security@kandryn.com" style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+            security@kandryn.com
           </a>
         </p>
       </section>
@@ -632,8 +632,8 @@ where: and(
           <p style={{ fontSize: 16, lineHeight: 1.55, margin: 0 }}>
             Security questions, vulnerability reports, or to request our security controls documentation:
           </p>
-          <a href="mailto:security@getbluemantis.com" style={{ display: 'inline-block', marginTop: 8, fontSize: 22, fontWeight: 800, color: '#ffffff' }}>
-            security@getbluemantis.com
+          <a href="mailto:security@kandryn.com" style={{ display: 'inline-block', marginTop: 8, fontSize: 22, fontWeight: 800, color: '#ffffff' }}>
+            security@kandryn.com
           </a>
           <p style={{ fontSize: 14, lineHeight: 1.55, marginTop: 10, color: 'var(--color-accent-200)' }}>
             We respond to security questions within 1 business day.
@@ -651,8 +651,8 @@ where: and(
           </div>
           <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', margin: 0, maxWidth: 760 }}>
             To report a security vulnerability, email{' '}
-            <a href="mailto:security@getbluemantis.com" style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
-              security@getbluemantis.com
+            <a href="mailto:security@kandryn.com" style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+              security@kandryn.com
             </a>{' '}
             with details. Please do not disclose publicly until we have had 90 days to investigate and remediate.
           </p>

@@ -48,7 +48,7 @@ router.post("/waitlist", async (req, res) => {
       name: clean(name),
       company: clean(company),
       role: clean(role),
-      source: "getbluemantis.com",
+      source: "kandryn.com",
     })
     .onConflictDoNothing({ target: waitlistTable.email })
     .returning();

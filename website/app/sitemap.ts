@@ -4,7 +4,7 @@ import type { MetadataRoute } from 'next'
 // be statically emitted and the build fails (no sitemap.xml is produced).
 export const dynamic = 'force-static'
 
-const SITE_URL = 'https://getbluemantis.com'
+const SITE_URL = 'https://kandryn.com'
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [

@@ -40,7 +40,29 @@ app.use(
 // Clerk proxy must be mounted BEFORE body parsers (streams raw bytes)
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-app.use(cors({ credentials: true, origin: true }));
+// Cross-origin browser access is limited to the marketing site + app origins and
+// local dev. Requests with no Origin header (server-to-server: Vercel cron, the
+// Graphify callback; same-origin app navigation; curl) are always allowed — CORS
+// only governs cross-origin browser reads. Configurable via CORS_ALLOWED_ORIGINS
+// (comma-separated) so preview deploys can be added without a code change.
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.kandryn.com",
+  "https://kandryn.com",
+  "http://localhost:5173",
+  "http://localhost:3000",
+];
+const ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
+  : DEFAULT_ALLOWED_ORIGINS;
+app.use(
+  cors({
+    credentials: true,
+    origin(origin, cb) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      cb(null, false);
+    },
+  }),
+);
 // 10mb so a repository's Graphify graph.json (can be a few MB) fits.
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));

@@ -30,7 +30,7 @@ export default function PrivacyPage() {
           <>
             Effective: 1 August 2026 · Last updated: 10 August 2026
             <br />
-            Venakan Info Solutions LLC · getbluemantis.com
+            Venakan Info Solutions LLC · kandryn.com
           </>
         }
       />
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
       <Section id="who-we-are" n={1} title="Who we are">
         <P>
           Blue Mantis is a product of Venakan Info Solutions LLC, incorporated in Ohio, United States. We provide an
-          AI-powered software delivery platform at getbluemantis.com that connects project management tools with version
+          AI-powered software delivery platform at kandryn.com that connects project management tools with version
           control systems to assist engineering teams in generating, reviewing, and committing code. This policy applies
           to the platform and all related services.
         </P>
@@ -128,7 +128,7 @@ export default function PrivacyPage() {
         <P>
           Complete list at{' '}
           <a href="/trust/#sub-processors" style={{ color: '#1a4fd6', fontWeight: 600, textDecoration: 'none' }}>
-            getbluemantis.com/trust/#sub-processors
+            kandryn.com/trust/#sub-processors
           </a>
           :
         </P>
@@ -169,13 +169,13 @@ export default function PrivacyPage() {
       <Section id="your-rights" n={6} title="Your rights and choices">
         <Bullets
           items={[
-            <><strong>Access:</strong> Request a copy of your data — <Mail addr="privacy@getbluemantis.com" /></>,
+            <><strong>Access:</strong> Request a copy of your data — <Mail addr="privacy@kandryn.com" /></>,
             <><strong>Correction:</strong> Update account info in Settings at any time.</>,
             <>
-              <strong>Deletion:</strong> Request account deletion — <Mail addr="privacy@getbluemantis.com" />. Processed
+              <strong>Deletion:</strong> Request account deletion — <Mail addr="privacy@kandryn.com" />. Processed
               within 30 days. Some data retained for legal compliance.
             </>,
-            <><strong>Data portability:</strong> Request an export — <Mail addr="privacy@getbluemantis.com" /></>,
+            <><strong>Data portability:</strong> Request an export — <Mail addr="privacy@kandryn.com" /></>,
             <><strong>Objection/restriction:</strong> Contact us to object to certain processing.</>,
           ]}
         />
@@ -186,7 +186,7 @@ export default function PrivacyPage() {
           non-discrimination.
         </P>
         <P>
-          Contact: <Mail addr="privacy@getbluemantis.com" />
+          Contact: <Mail addr="privacy@kandryn.com" />
         </P>
         <P>We verify identity before processing requests and respond within 30 days.</P>
       </Section>
@@ -205,14 +205,14 @@ export default function PrivacyPage() {
         />
         <P>
           No transmission method is 100% secure. If you discover a vulnerability, report it to{' '}
-          <Mail addr="security@getbluemantis.com" /> — we respond within 1 business day.
+          <Mail addr="security@kandryn.com" /> — we respond within 1 business day.
         </P>
       </Section>
 
       <Section id="childrens-privacy" n={8} title="Children's privacy">
         <P>
           Blue Mantis is not directed to children under 16. We do not knowingly collect information from children under
-          16. Contact <Mail addr="privacy@getbluemantis.com" /> to report any inadvertent collection.
+          16. Contact <Mail addr="privacy@kandryn.com" /> to report any inadvertent collection.
         </P>
       </Section>
 
@@ -230,14 +230,14 @@ export default function PrivacyPage() {
       <Section id="contact" n={10} title="Contact us">
         <ContactBlock>
           <p style={{ fontSize: 15, lineHeight: 1.7, color: '#2c3e50', margin: 0 }}>
-            <Mail addr="privacy@getbluemantis.com" />
+            <Mail addr="privacy@kandryn.com" />
             <br />
             <br />
             Venakan Info Solutions LLC
             <br />
             Ohio, United States
             <br />
-            getbluemantis.com
+            kandryn.com
             <br />
             <br />
             <em>We respond to all privacy inquiries within 5 business days.</em>
