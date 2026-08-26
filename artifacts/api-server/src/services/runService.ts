@@ -15,7 +15,7 @@ import { getRunRepository } from "./repoResolver.js";
 import { loadSuggestionFiles } from "./suggestionFiles.js";
 import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
 import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
-import { checkCoherence, buildRepoSymbolIndex, type RepoSymbolIndex } from "./coherence/index.js";
+import { checkCoherence, buildRepoSymbolIndex, coherenceSupported, sameCoherenceLanguage, type RepoSymbolIndex } from "./coherence/index.js";
 import { isGraphServable, triggerRepoIndex } from "./graphifyService.js";
 import {
   runPlanning,
@@ -64,11 +64,12 @@ async function primaryEmail(userId: string): Promise<string | null> {
 const COHERENCE_CONTEXT_CAP = 40;
 
 /**
- * Build the coherence checker's repo context: the UNCHANGED .cs files that sit
- * in the same directories as a suggestion's changed .cs files (Phase 3). These
- * hold the sibling interfaces/services/DTOs a multi-file change must stay
- * coherent with. Bounded and best-effort — any read failure just yields a
- * smaller index (the checker skips what it cannot resolve, never guesses).
+ * Build the coherence checker's repo context: the UNCHANGED files that sit in
+ * the same directories as a suggestion's changed files AND are in the same
+ * coherence language (Phase 3; multi-language). These hold the sibling
+ * interfaces/services/DTOs a multi-file change must stay coherent with. Bounded
+ * and best-effort — any read failure just yields a smaller index (the checker
+ * skips what it cannot resolve, never guesses).
  */
 async function buildCoherenceRepoContext(
   suggestions: CodeSuggestion[],
@@ -76,11 +77,10 @@ async function buildCoherenceRepoContext(
 ): Promise<RepoSymbolIndex> {
   const changed = new Set<string>();
   for (const s of suggestions) for (const f of s.files) changed.add(f.filePath);
-  const changedCs = [...changed].filter((p) => p.endsWith(".cs"));
-  if (changedCs.length === 0) return buildRepoSymbolIndex([]);
+  const changedSupported = [...changed].filter(coherenceSupported);
+  if (changedSupported.length === 0) return buildRepoSymbolIndex([]);
 
   const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/") + 1);
-  const dirs = new Set(changedCs.map(dirOf));
 
   let tree: string[];
   try {
@@ -89,7 +89,12 @@ async function buildCoherenceRepoContext(
     return buildRepoSymbolIndex([]);
   }
   const siblings = tree
-    .filter((p) => p.endsWith(".cs") && !changed.has(p) && dirs.has(dirOf(p)))
+    .filter(
+      (p) =>
+        coherenceSupported(p) &&
+        !changed.has(p) &&
+        changedSupported.some((c) => dirOf(c) === dirOf(p) && sameCoherenceLanguage(c, p)),
+    )
     .slice(0, COHERENCE_CONTEXT_CAP);
 
   const read = await Promise.all(

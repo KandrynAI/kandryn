@@ -1,4 +1,6 @@
-import type { CoherenceSkip } from "../../../../../shared/types/coherence.js";
+import type { CoherenceFinding, CoherenceSkip } from "../../../../../shared/types/coherence.js";
+import type { FileSymbols, SymbolTable, TypeSig } from "./symbols.js";
+import { pickChanged } from "./symbols.js";
 
 // ---------------------------------------------------------------------------
 // C# symbol extraction (pattern-based, v1). Deliberately conservative: an idiom
@@ -6,44 +8,6 @@ import type { CoherenceSkip } from "../../../../../shared/types/coherence.js";
 // guessed — a false positive on a correct multi-file change erodes trust in the
 // score far more than missing an occasional real issue.
 // ---------------------------------------------------------------------------
-
-export interface MethodSig {
-  name: string;
-  arity: number;
-  line: number;
-  isPublic: boolean;
-}
-export interface TypeSig {
-  kind: "class" | "interface" | "record" | "struct" | "enum";
-  name: string;
-  bases: string[]; // base class + implemented interfaces, generics stripped
-  methods: MethodSig[];
-  line: number;
-}
-export interface FieldSig {
-  name: string; // e.g. "_policyService"
-  typeName: string; // base identifier, generics stripped, e.g. "IPolicyService"
-}
-export interface CallSig {
-  receiver: string | null; // field/var name the call is on, or null (bare/this/chained)
-  method: string;
-  arity: number | null; // null when the args were too complex to count reliably
-  line: number;
-}
-export interface TypeRefSig {
-  name: string;
-  line: number;
-}
-export interface FileSymbols {
-  filePath: string;
-  namespace: string | null;
-  usings: string[];
-  types: TypeSig[];
-  fields: FieldSig[];
-  calls: CallSig[];
-  typeRefs: TypeRefSig[];
-  skipped: CoherenceSkip[];
-}
 
 // C# BCL / framework types the checker treats as always-resolvable.
 const BCL = new Set([
@@ -180,4 +144,158 @@ export function extractCSharpSymbols(filePath: string, content: string): FileSym
   }
 
   return sym;
+}
+
+// ---------------------------------------------------------------------------
+// The four C# checks. Operates on the neutral FileSymbols/SymbolTable model, so
+// only the C#-specific rules live here (interface method arity, namespace/using
+// completeness). Registered as the C# language module in index.ts.
+// ---------------------------------------------------------------------------
+
+export function checkCSharp(sug: FileSymbols[], combined: SymbolTable, changedPaths: Set<string>): { findings: CoherenceFinding[]; skipped: CoherenceSkip[] } {
+  const findings: CoherenceFinding[] = [];
+  const skipped: CoherenceSkip[] = sug.flatMap((f) => f.skipped);
+
+  // 1 — interface/implementation agreement.
+  for (const fs of sug) {
+    for (const iface of fs.types.filter((t) => t.kind === "interface")) {
+      const impls = combined.implementorsOf(iface.name);
+      if (impls.length === 0) {
+        skipped.push({ filePath: fs.filePath, line: iface.line, reason: "no implementor indexed", detail: iface.name });
+        continue;
+      }
+      for (const m of iface.methods) {
+        for (const impl of impls) {
+          const arities = combined.methodArities(impl.type.name, m.name);
+          if (arities == null || arities.length === 0) {
+            // Same fail-open guard as caller_callee: an implementor indexed with
+            // ZERO extracted methods means extraction was incomplete (single-line
+            // body), not proof it doesn't implement the interface — skip instead
+            // of raising a false error.
+            if (impl.type.methods.length === 0) {
+              skipped.push({ filePath: impl.filePath, line: iface.line, reason: "implementor methods not parsed", detail: impl.type.name });
+              continue;
+            }
+            findings.push({
+              check: "interface_impl",
+              severity: "error",
+              filePath: pickChanged(changedPaths, impl.filePath, fs.filePath),
+              line: m.line,
+              message: `${iface.name} declares ${m.name}(${m.arity} param${m.arity === 1 ? "" : "s"}), but ${impl.type.name} does not implement it.`,
+              relatedFilePath: impl.filePath === fs.filePath ? undefined : impl.filePath,
+            });
+          } else if (!arities.includes(m.arity)) {
+            findings.push({
+              check: "interface_impl",
+              severity: "warning",
+              filePath: pickChanged(changedPaths, impl.filePath, fs.filePath),
+              line: m.line,
+              message: `${iface.name}.${m.name} takes ${m.arity} param(s), but ${impl.type.name}.${m.name} takes ${arities.join("/")}.`,
+              relatedFilePath: impl.filePath === fs.filePath ? undefined : impl.filePath,
+            });
+          }
+        }
+      }
+    }
+    // Direction 2 (conservative warning): a public method on a class whose sole
+    // base is a known interface, not declared on that interface. The most
+    // false-positive-prone check — a class may legitimately expose helpers.
+    for (const cls of fs.types.filter((t) => t.kind === "class")) {
+      const ifaceBases = cls.bases.filter((b) => combined.files.some((f) => f.types.some((t) => t.name === b && t.kind === "interface")));
+      if (ifaceBases.length !== 1) continue;
+      const iface = ifaceBases[0];
+      for (const m of cls.methods.filter((mm) => mm.isPublic)) {
+        const onIface = combined.methodArities(iface, m.name);
+        if (onIface && onIface.length === 0) {
+          findings.push({
+            check: "interface_impl",
+            severity: "warning",
+            filePath: fs.filePath,
+            line: m.line,
+            message: `${cls.name}.${m.name} is public but ${iface} does not declare it.`,
+            relatedFilePath: combined.typeFiles(iface).find((p) => p !== fs.filePath),
+          });
+        }
+      }
+    }
+  }
+
+  // 2 — caller/callee agreement (only for calls whose receiver resolves to a
+  // known internal type — framework/LINQ calls are skipped, not guessed).
+  for (const fs of sug) {
+    const fieldType = new Map(fs.fields.map((f) => [f.name, f.typeName]));
+    for (const call of fs.calls) {
+      const recvType = call.receiver ? fieldType.get(call.receiver) : undefined;
+      if (!recvType) {
+        skipped.push({ filePath: fs.filePath, line: call.line, reason: "unresolved call receiver", detail: `${call.receiver ?? "<none>"}.${call.method}` });
+        continue;
+      }
+      const arities = combined.methodArities(recvType, call.method);
+      if (arities == null) {
+        skipped.push({ filePath: fs.filePath, line: call.line, reason: "receiver type not indexed", detail: `${recvType}.${call.method}` });
+      } else if (arities.length === 0) {
+        // The receiver type is indexed but no method of this name was extracted.
+        // Only an ERROR when we actually parsed methods on the type — a type
+        // indexed with ZERO methods means extraction was incomplete (e.g. a
+        // single-line `interface IFoo { void Bar(); }` body drops its inline
+        // members), so we cannot assert the method is absent. Fail open: skip.
+        if (!combined.typeHasAnyMethod(recvType)) {
+          skipped.push({ filePath: fs.filePath, line: call.line, reason: "receiver type methods not parsed", detail: `${recvType}.${call.method}` });
+        } else {
+          findings.push({
+            check: "caller_callee",
+            severity: "error",
+            filePath: fs.filePath,
+            line: call.line,
+            message: `${fs.filePath.split("/").pop()} calls ${call.method}, but ${recvType} declares no such method.`,
+            relatedFilePath: combined.typeFiles(recvType).find((p) => p !== fs.filePath),
+          });
+        }
+      }
+    }
+  }
+
+  // 3 — type resolution (warning: a referenced type could live in an unread
+  // namespace, so this never blocks — it flags).
+  for (const fs of sug) {
+    for (const ref of fs.typeRefs) {
+      if (!combined.typeExists(ref.name)) {
+        findings.push({
+          check: "type_resolution",
+          severity: "warning",
+          filePath: fs.filePath,
+          line: ref.line,
+          message: `Type ${ref.name} is referenced but not defined in this change or the repository.`,
+        });
+      }
+    }
+  }
+
+  // 4 — import/using completeness (warning): a type defined elsewhere in THIS
+  // change, in a different namespace, referenced without a using.
+  const nsOfType = new Map<string, string>();
+  for (const fs of sug) for (const t of fs.types) if (fs.namespace) nsOfType.set(t.name, fs.namespace);
+  for (const fs of sug) {
+    // A file with no explicit usings is likely relying on global/implicit
+    // usings (C# 10+), which the checker cannot see — skip rather than false-fire.
+    if (fs.usings.length === 0) {
+      if (fs.typeRefs.length > 0) skipped.push({ filePath: fs.filePath, reason: "no explicit usings (global usings not visible)" });
+      continue;
+    }
+    for (const ref of fs.typeRefs) {
+      const ns = nsOfType.get(ref.name);
+      if (!ns || ns === fs.namespace) continue;
+      if (!fs.usings.includes(ns)) {
+        findings.push({
+          check: "imports",
+          severity: "warning",
+          filePath: fs.filePath,
+          line: ref.line,
+          message: `Type ${ref.name} is in namespace ${ns} but ${fs.filePath.split("/").pop()} has no matching using.`,
+        });
+      }
+    }
+  }
+
+  return { findings, skipped };
 }
