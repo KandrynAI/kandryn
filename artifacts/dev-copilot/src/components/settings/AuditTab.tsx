@@ -301,8 +301,10 @@ export default function AuditTab() {
         </button>
       </div>
 
-      {/* Table */}
-      <div className="rounded-md border" style={{ borderColor: "var(--c-border)", overflow: "hidden" }}>
+      {/* Table — scrolls horizontally so no column is ever clipped in the
+          settings panel; the inner min-width keeps the columns aligned. */}
+      <div className="rounded-md border" style={{ borderColor: "var(--c-border)", overflowX: "auto" }}>
+        <div style={{ minWidth: 880 }}>
         {/* Header */}
         <div style={{ display: "grid", gridTemplateColumns: GRID, background: "var(--c-surface)", borderBottom: "1px solid var(--c-border)" }}>
           {["Timestamp", "User", "Action", "Entity", "Details", "IP"].map((h) => (
@@ -345,6 +347,7 @@ export default function AuditTab() {
             </div>
           ))
         )}
+        </div>
       </div>
 
       {hasMore && (
