@@ -185,6 +185,11 @@ function buildRows(lines: DiffLine[], expanded: Set<number>): Row[] {
 const DIFF_CSS = `
 .bmd-pane { background: var(--c-diff-surface); color: var(--c-diff-fg); border: 1px solid var(--c-diff-border); border-radius: 6px; overflow: hidden; }
 .bmd-scroll { overflow-x: auto; }
+/* Thin, visible scrollbar on the file-tab strip so overflowing tabs (e.g. 7+
+   files) are discoverable and reachable, not silently clipped. */
+.bmd-tabs::-webkit-scrollbar { height: 6px; }
+.bmd-tabs::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 3px; }
+.bmd-tabs::-webkit-scrollbar-track { background: transparent; }
 .bmd-lines { min-width: max-content; font-family: var(--mono); font-size: 12px; line-height: 20px; }
 .bmd-lines.wrap { min-width: 0; }
 .bmd-row { display: flex; align-items: flex-start; }
@@ -534,7 +539,7 @@ export function DiffViewer({
         </select>
       ) : (
         <div style={{ position: "relative", margin: "8px 0" }}>
-          <div style={{ display: "flex", gap: 2, overflowX: "auto", scrollbarWidth: "none" }}>
+          <div className="bmd-tabs" style={{ display: "flex", gap: 2, overflowX: "auto", scrollbarWidth: "thin" }}>
             {files.map((f, i) => {
               const OpIcon = OP_ICON[f.op];
               const active = i === fileIdx;

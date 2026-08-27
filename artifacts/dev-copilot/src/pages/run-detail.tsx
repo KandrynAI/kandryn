@@ -109,7 +109,6 @@ export default function RunDetailPage() {
   const [aegisLoading, setAegisLoading] = useState(false);
   const [narratiaLoading, setNarratiaLoading] = useState(false);
   const [runbookTarget, setRunbookTarget] = useState<RunbookTarget>("markdown");
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
     async (silent = false) => {
@@ -120,7 +119,10 @@ export default function RunDetailPage() {
         setData(d);
         setError(null);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Could not load the run.");
+        // A background poll failure must not replace a good view with an error
+        // screen (`if (error || !data)` short-circuits the whole page). Keep the
+        // last-good data and let the next poll retry.
+        if (!silent) setError(err instanceof ApiError ? err.message : "Could not load the run.");
       } finally {
         if (!silent) setLoading(false);
       }
@@ -142,10 +144,13 @@ export default function RunDetailPage() {
       data.run.securityScanStatus === "running" ||
       data.run.runbookStatus === "running";
     if (!active) return;
-    timer.current = setTimeout(() => load(true), 4000);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
+    // Interval, not a one-shot timeout: a single failed poll leaves `data`
+    // unchanged, so this effect does not re-run — a timeout would never be
+    // rescheduled and polling would silently die, freezing the page on a stale
+    // in-progress state. An interval keeps ticking through transient errors and
+    // stops via cleanup once a successful poll flips the run out of progress.
+    const id = setInterval(() => load(true), 4000);
+    return () => clearInterval(id);
   }, [data, load]);
 
   // In-app completion notification: when a run we're watching (e.g. a background
