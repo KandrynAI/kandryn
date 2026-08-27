@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Play, CalendarClock, Loader2 } from "lucide-react";
-import { createRun, ApiError, type WorkItem, type RunDetail } from "@/services/api";
+import { createRun, ApiError, type RunDetail } from "@/services/api";
 
 /**
  * Convert a `datetime-local` value (local wall-clock, no zone) to an ISO UTC
@@ -42,13 +42,22 @@ export function RunPanel({
   onOpenChange,
   onScheduled,
   scheduleDefault = false,
+  initialPrompt,
+  parentRunId,
+  triggerContext,
 }: {
-  item: WorkItem | null;
+  // Only id + title are used, so the full board WorkItem also satisfies this.
+  item: { id: number; title: string } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onScheduled?: () => void;
   /** Presentational: pre-check "Schedule for later" when the panel opens. */
   scheduleDefault?: boolean;
+  /** Pre-fill the refinement box (e.g. a drafted remediation prompt); editable. */
+  initialPrompt?: string;
+  /** Remediation re-run: link the new run to its source and tag its context. */
+  parentRunId?: number;
+  triggerContext?: "remediation";
 }) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -58,10 +67,14 @@ export function RunPanel({
   const [scheduleAt, setScheduleAt] = useState(defaultScheduleValue);
   const [busy, setBusy] = useState<"run" | "schedule" | null>(null);
 
-  // Reflect the requested default whenever the panel is opened.
+  // Reflect the requested default and any pre-filled prompt when opened. The
+  // prompt stays fully editable — this only seeds it.
   useEffect(() => {
-    if (open) setScheduleOn(scheduleDefault);
-  }, [open, scheduleDefault]);
+    if (open) {
+      setScheduleOn(scheduleDefault);
+      setRefinePrompt(initialPrompt ?? "");
+    }
+  }, [open, scheduleDefault, initialPrompt]);
 
   const reset = () => {
     setRefinePrompt("");
@@ -84,6 +97,8 @@ export function RunPanel({
       const result = await createRun(item.id, {
         refinePrompt: refinePrompt.trim() || undefined,
         autoCommit,
+        parentRunId,
+        triggerContext,
       });
       // Inline runs resolve to a RunDetail.
       const runId = (result as RunDetail).run?.id;
@@ -116,6 +131,8 @@ export function RunPanel({
         refinePrompt: refinePrompt.trim() || undefined,
         autoCommit,
         scheduledAt: iso,
+        parentRunId,
+        triggerContext,
       });
       toast({
         title: "Run scheduled",

@@ -217,3 +217,49 @@ export function validateFindingPaths<T extends { filePath?: string }>(findings: 
   if (dropped > 0) logger.warn({ dropped, total: findings.length }, "Veria finding filePath not in the change set — dropped");
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Remediation draft (model-assisted). Turns a completed Veria review into a
+// concise, imperative refinement prompt the developer can edit before re-running
+// the work item. Only actionable signal (gaps, risks, unmet AC) feeds the draft;
+// strengths are ignored.
+// ---------------------------------------------------------------------------
+
+function buildDraftPrompt(itemTitle: string, review: ReviewResult): string {
+  const unmet = [
+    ...review.acCoverage.missed.map((c) => `- MISSED: ${c}`),
+    ...review.acCoverage.partial.map((c) => `- PARTIAL: ${c}`),
+  ].join("\n");
+  const issues = review.findings
+    .filter((f) => f.type === "gap" || f.type === "risk")
+    .map((f) => `- [${f.severity ?? f.type}] ${f.title}: ${f.detail}${f.filePath ? ` (${f.filePath})` : ""}`)
+    .join("\n");
+  return `You are preparing a fix brief for the code-generation agents (Raptia and Fovea) that will RE-RUN a work item whose previous attempt was reviewed and found wanting.
+
+Work item: ${itemTitle}
+
+Reviewer's summary: ${review.summary}
+
+${unmet ? `Acceptance criteria not fully met:\n${unmet}\n` : ""}
+${issues ? `Issues to fix (from the reviewer):\n${issues}\n` : ""}
+Write a single, concise, imperative refinement instruction telling the agents exactly what to fix on the next attempt. Reference the specific files, methods, and types named above. Be direct; no preamble, no praise, no restating the summary. Return ONLY the instruction text — plain text, no markdown, no JSON — under ~150 words.`;
+}
+
+export async function buildVeriaRemediationDraft(
+  input: { itemTitle: string; review: ReviewResult },
+  creds: { anthropicApiKey?: string },
+): Promise<string> {
+  const client = new Anthropic({ apiKey: creds.anthropicApiKey });
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 1500,
+    messages: [{ role: "user", content: buildDraftPrompt(input.itemTitle, input.review) }],
+  });
+  const draft = response.content
+    .filter((b) => b.type === "text")
+    .map((b) => (b as { type: "text"; text: string }).text)
+    .join("")
+    .trim();
+  if (!draft) throw new VeriaError("Could not draft a remediation prompt. Please try again.", 502);
+  return draft;
+}

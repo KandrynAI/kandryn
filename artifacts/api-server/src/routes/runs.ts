@@ -6,7 +6,7 @@ import { executeRun, commitFromSuggestion, reviseAndRegenerate, approvePlan, rej
 import { loadRunPlanDTO } from "../services/planningService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
-import { runVeriaReview, VeriaError } from "../services/veriaService.js";
+import { runVeriaReview, buildVeriaRemediationDraft, VeriaError } from "../services/veriaService.js";
 import { runAegisScan } from "../services/aegisService.js";
 import {
   createAegisPlmTicket,
@@ -39,6 +39,11 @@ const CreateRunBody = z.object({
   autoCommit: z.boolean().optional().default(false),
   // ISO-8601 UTC instant; only present for scheduled runs.
   scheduledAt: z.string().datetime({ offset: true }).optional(),
+  // Remediation re-run: links the new run to the source run whose review it
+  // addresses. `triggerContext` is restricted to "remediation" from clients —
+  // the other contexts are set server-side only.
+  parentRunId: z.coerce.number().int().positive().optional(),
+  triggerContext: z.enum(["remediation"]).optional(),
 });
 
 const CommitRunBody = z.object({
@@ -102,7 +107,19 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
     return;
   }
 
-  const { refinePrompt, autoCommit, scheduledAt } = parsed.data;
+  const { refinePrompt, autoCommit, scheduledAt, parentRunId, triggerContext } = parsed.data;
+
+  // A remediation link must point at one of the user's own runs (multi-tenancy).
+  if (parentRunId != null) {
+    const [parent] = await db
+      .select({ id: runsTable.id })
+      .from(runsTable)
+      .where(and(eq(runsTable.id, parentRunId), eq(runsTable.userId, req.userId)));
+    if (!parent) {
+      res.status(404).json({ error: "Parent run not found." });
+      return;
+    }
+  }
 
   // --- Scheduled path -------------------------------------------------------
   if (scheduledAt) {
@@ -139,6 +156,8 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
         autoCommit,
         scheduledAt: when,
         runByUserId: req.userId,
+        parentRunId: parentRunId ?? null,
+        triggerContext: triggerContext ?? null,
       })
       .returning();
     req.log.info({ runId: run.id, workItemId: workItem.id, scheduledAt }, "Run scheduled");
@@ -174,6 +193,8 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
       refinePrompt: refinePrompt ?? null,
       autoCommit,
       runByUserId: req.userId,
+      parentRunId: parentRunId ?? null,
+      triggerContext: triggerContext ?? null,
     })
     .returning();
 
@@ -673,6 +694,57 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
     const status = err instanceof VeriaError ? err.status : 502;
     const message = err instanceof VeriaError ? err.message : "Veria could not complete the review. Try again.";
+    res.status(status).json({ error: message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/remediation-draft — model-assisted: turn this run's Veria
+// review into an editable refinement prompt for a remediation re-run. Read-only;
+// creates nothing. The client pre-fills the run panel with the returned draft.
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/remediation-draft", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const runId = params.data.id;
+
+  const [run] = await db
+    .select()
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found." });
+    return;
+  }
+  if (run.reviewStatus !== "done" || !run.review) {
+    res.status(409).json({ error: "Run Veria on this run before drafting a remediation prompt." });
+    return;
+  }
+
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY"]);
+  if (!creds.ANTHROPIC_API_KEY) {
+    res.status(424).json({ error: "Add your Anthropic API key in Integrations to draft a remediation prompt." });
+    return;
+  }
+
+  const [workItem] = await db
+    .select({ title: tasksTable.title })
+    .from(tasksTable)
+    .where(and(eq(tasksTable.id, run.workItemId), eq(tasksTable.userId, req.userId)));
+
+  try {
+    const draft = await buildVeriaRemediationDraft(
+      { itemTitle: workItem?.title ?? "Untitled work item", review: run.review },
+      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+    );
+    res.status(200).json({ draft });
+  } catch (err) {
+    req.log.error({ err }, "Remediation draft failed");
+    const status = err instanceof VeriaError ? err.status : 502;
+    const message = err instanceof VeriaError ? err.message : "Could not draft a remediation prompt. Try again.";
     res.status(status).json({ error: message });
   }
 });
