@@ -618,13 +618,25 @@ export interface RunDetail {
  */
 export function createRun(
   workItemId: number,
-  opts: { refinePrompt?: string; autoCommit?: boolean; scheduledAt?: string } = {},
+  opts: {
+    refinePrompt?: string;
+    autoCommit?: boolean;
+    scheduledAt?: string;
+    // Remediation re-run: links the new run to the source run whose review it addresses.
+    parentRunId?: number;
+    triggerContext?: 'remediation';
+  } = {},
 ): Promise<RunDetail | Run> {
   return request<RunDetail | Run>(`/api/work-items/${workItemId}/runs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts),
   });
+}
+
+/** Model-assisted: draft an editable refinement prompt from a run's Veria review. */
+export function fetchRemediationDraft(runId: number): Promise<{ draft: string }> {
+  return request<{ draft: string }>(`/api/runs/${runId}/remediation-draft`, { method: 'POST' });
 }
 
 /**

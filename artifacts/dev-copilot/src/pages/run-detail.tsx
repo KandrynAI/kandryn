@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, FileCheck, Copy, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network, Upload, Zap } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, RotateCcw, ChevronDown, ChevronRight, FileText, FileCheck, Copy, GitPullRequest, ShieldCheck, ShieldAlert, ShieldX, Check, X, AlertCircle, AlertTriangle, ThumbsUp, Eye, Network, Upload, Zap, Wand2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
@@ -32,6 +32,7 @@ import {
   runAegisScan,
   runNarratia,
   remediateAegisFinding,
+  fetchRemediationDraft,
   pushWorkItemToPlm,
   fetchTeamIntegrations,
   ApiError,
@@ -44,6 +45,7 @@ import {
   type AegisFinding,
   type RunbookTarget,
 } from "@/services/api";
+import { RunPanel } from "@/components/runs/RunPanel";
 
 /** Extract "123" from a PR URL (GitHub /pull/123 or ADO /pullrequest/123). */
 function prNumber(url: string | null): string | null {
@@ -106,6 +108,11 @@ export default function RunDetailPage() {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  // Remediation re-run: draft an editable prompt from the Veria review, then
+  // open the run panel pre-filled with it.
+  const [drafting, setDrafting] = useState(false);
+  const [remediateOpen, setRemediateOpen] = useState(false);
+  const [remediateDraft, setRemediateDraft] = useState("");
   const [aegisLoading, setAegisLoading] = useState(false);
   const [narratiaLoading, setNarratiaLoading] = useState(false);
   const [runbookTarget, setRunbookTarget] = useState<RunbookTarget>("markdown");
@@ -187,6 +194,26 @@ export default function RunDetailPage() {
         description: err instanceof ApiError ? err.message : "Something went wrong.",
         variant: "destructive",
       });
+    }
+  };
+
+  // Draft a remediation prompt from this run's Veria review, then open the run
+  // panel pre-filled with it (developer edits before running).
+  const onRemediate = async () => {
+    if (!data || drafting) return;
+    setDrafting(true);
+    try {
+      const { draft } = await fetchRemediationDraft(data.run.id);
+      setRemediateDraft(draft);
+      setRemediateOpen(true);
+    } catch (err) {
+      toast({
+        title: "Could not draft a remediation prompt",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setDrafting(false);
     }
   };
 
@@ -497,6 +524,32 @@ export default function RunDetailPage() {
             {rerunning ? "Starting…" : "Re-run this item"}
           </button>
         )}
+        {run.reviewStatus === "done" && run.review && (
+          <button
+            onClick={onRemediate}
+            disabled={drafting}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: "var(--fs-base)",
+              fontWeight: 600,
+              padding: "6px 14px",
+              borderRadius: 3,
+              background: "transparent",
+              color: "var(--c-blue)",
+              border: "1px solid var(--c-blue)",
+              cursor: drafting ? "default" : "pointer",
+              opacity: drafting ? 0.7 : 1,
+              marginLeft: RERUNNABLE.has(run.status) ? 8 : 0,
+              marginBottom: 16,
+            }}
+            title="Draft a fix prompt from the review, then re-run"
+          >
+            {drafting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+            {drafting ? "Drafting…" : "Re-run with fixes"}
+          </button>
+        )}
         {run.refinePrompt && (
           <div style={{ marginBottom: 16, fontSize: "var(--fs-base)", color: "var(--c-ink-2)" }}>
             <span style={{ fontWeight: 600, color: "var(--c-ink)" }}>Refinement: </span>{run.refinePrompt}
@@ -609,7 +662,7 @@ export default function RunDetailPage() {
 
       {isCommitted && run.reviewStatus && (
         <div style={{ padding: "0 20px 8px", maxWidth: 760 }}>
-          <VeriaReview run={run} onReview={onReview} reviewing={reviewing} />
+          <VeriaReview run={run} onReview={onReview} reviewing={reviewing} onRemediate={onRemediate} drafting={drafting} />
         </div>
       )}
 
@@ -645,6 +698,18 @@ export default function RunDetailPage() {
           onSaved={() => load(true)}
         />
       )}
+
+      {/* Remediation re-run: opened by "Re-run with fixes" / "Remediate review
+          comments", pre-filled with the drafted (editable) prompt and linked to
+          this run. */}
+      <RunPanel
+        item={{ id: run.workItemId, title: wi?.externalId ?? "this work item" }}
+        open={remediateOpen}
+        onOpenChange={setRemediateOpen}
+        initialPrompt={remediateDraft}
+        parentRunId={run.id}
+        triggerContext="remediation"
+      />
     </div>
   );
 }
@@ -1170,7 +1235,7 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
   );
 }
 
-function VeriaReview({ run, onReview, reviewing }: { run: Run; onReview: () => void; reviewing: boolean }) {
+function VeriaReview({ run, onReview, reviewing, onRemediate, drafting }: { run: Run; onReview: () => void; reviewing: boolean; onRemediate: () => void; drafting: boolean }) {
   if (run.reviewStatus === "running") {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
@@ -1244,6 +1309,32 @@ function VeriaReview({ run, onReview, reviewing }: { run: Run; onReview: () => v
           </span>
         </div>
       )}
+
+      {/* Remediate — draft an editable fix prompt from these findings, then re-run. */}
+      <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+        <button
+          onClick={onRemediate}
+          disabled={drafting}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: "var(--fs-sm)",
+            fontWeight: 600,
+            padding: "6px 12px",
+            borderRadius: 3,
+            background: "transparent",
+            color: "var(--c-blue)",
+            border: "1px solid var(--c-blue)",
+            cursor: drafting ? "default" : "pointer",
+            opacity: drafting ? 0.7 : 1,
+          }}
+          title="Draft a fix prompt from these findings, then re-run"
+        >
+          {drafting ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+          {drafting ? "Drafting…" : "Remediate review comments"}
+        </button>
+      </div>
     </div>
   );
 }
