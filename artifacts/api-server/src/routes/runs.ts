@@ -6,7 +6,7 @@ import { executeRun, commitFromSuggestion, reviseAndRegenerate, approvePlan, rej
 import { loadRunPlanDTO } from "../services/planningService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
-import { runVeriaReview } from "../services/veriaService.js";
+import { runVeriaReview, VeriaError } from "../services/veriaService.js";
 import { runAegisScan } from "../services/aegisService.js";
 import {
   createAegisPlmTicket,
@@ -671,7 +671,9 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
   } catch (err) {
     req.log.error({ err }, "Veria review failed");
     await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
-    res.status(502).json({ error: "Veria could not complete the review. Try again." });
+    const status = err instanceof VeriaError ? err.status : 502;
+    const message = err instanceof VeriaError ? err.message : "Veria could not complete the review. Try again.";
+    res.status(status).json({ error: message });
   }
 });
 

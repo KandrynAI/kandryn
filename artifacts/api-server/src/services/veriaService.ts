@@ -3,6 +3,18 @@ import { z } from "zod/v4";
 import { logger } from "../lib/logger.js";
 import type { ReviewResult } from "../../../../shared/types/reviewResult.js";
 
+/** Veria failure with an HTTP status — lets the route surface a clean, specific
+ *  message (e.g. an output-truncation retry hint) instead of a generic 502. */
+export class VeriaError extends Error {
+  constructor(
+    message: string,
+    public status = 502,
+  ) {
+    super(message);
+    this.name = "VeriaError";
+  }
+}
+
 /** One file in the committed change set Veria reviews. */
 export interface VeriaFile {
   filePath: string;
@@ -145,10 +157,26 @@ export async function runVeriaReview(
   const client = new Anthropic({ apiKey: creds.anthropicApiKey });
 
   const response = await client.messages.create({
+    // 8192 (matching the generation agents) so a full structured review of a
+    // large multi-file change fits — 1500 truncated the JSON mid-string.
     model: "claude-sonnet-4-5",
-    max_tokens: 1500,
+    max_tokens: 8192,
     messages: [{ role: "user", content: buildVeriaPrompt(input) }],
   });
+
+  // Truncation guard: if the model ran out of output budget the JSON is cut off
+  // mid-string, so fail with a clear, retryable message instead of an opaque
+  // "Unterminated string in JSON" parse error.
+  if (response.stop_reason === "max_tokens") {
+    logger.warn(
+      { itemTitle: input.itemTitle, files: input.files.length },
+      "Veria review hit the output token limit — truncated",
+    );
+    throw new VeriaError(
+      "Veria's review was too long to finish in one pass and was cut off. Please try again.",
+      503,
+    );
+  }
 
   const raw = response.content
     .filter((b) => b.type === "text")
