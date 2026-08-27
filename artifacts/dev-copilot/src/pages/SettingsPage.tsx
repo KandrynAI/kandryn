@@ -447,7 +447,7 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-6">
+    <div className={`mx-auto px-6 py-6 ${tab === "audit" ? "max-w-5xl" : "max-w-2xl"}`}>
       <p className="mb-4 text-xs text-muted-foreground">
         Connect your tools. Credentials are stored securely in the database and loaded automatically on startup.
       </p>
