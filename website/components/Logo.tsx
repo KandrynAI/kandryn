@@ -31,8 +31,8 @@ export function Logo({
   const src = `/logos/${prefix}${variant}.svg`;
 
   // Width from original SVG viewBox ratios:
-  // Full lockup 312×76 → 4.105 · Mark only 117×76 → 1.539
-  const ratio = type === 'mark' ? 1.539 : 4.105;
+  // Full lockup 395.63×80 → 4.945 · Mark only 80×80 → 1
+  const ratio = type === 'mark' ? 1 : 4.945;
   const width = Math.round(height * ratio);
 
   return (

@@ -98,8 +98,8 @@ code, pre {
 .bm-mark {
   display: inline-block;
   background-color: currentColor;
-  -webkit-mask: url(/bluemantis-mark.png) no-repeat center / contain;
-  mask: url(/bluemantis-mark.png) no-repeat center / contain;
+  -webkit-mask: url(/kandryn-mark.png) no-repeat center / contain;
+  mask: url(/kandryn-mark.png) no-repeat center / contain;
   flex-shrink: 0;
 }
 
