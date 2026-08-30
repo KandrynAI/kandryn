@@ -611,7 +611,16 @@ export async function approvePlan(runId: number, actor: ReviewActor): Promise<Ap
     }
   }
 
-  await db.update(runsTable).set({ approvedByUserId: actor.userId, approvedAt: new Date() }).where(eq(runsTable.id, runId));
+  // Seed `queued` in the same UPDATE that records the approver. executeRun sets
+  // `running` itself, but only once it has loaded the run and resolved the repo —
+  // so without this the run is still `awaiting_review` when the client refetches
+  // after the 202, and the page has nothing to transition to. `queued` is already
+  // the dispatcher's "claimed, not yet started" status and executeRun accepts it
+  // (it only short-circuits on canceled/succeeded).
+  await db
+    .update(runsTable)
+    .set({ status: "queued", approvedByUserId: actor.userId, approvedAt: new Date() })
+    .where(eq(runsTable.id, runId));
   void executeRun(runId, { reusePlan: true }).catch((err) => logger.error({ runId, err }, "Approve-generation crashed"));
   return { triggeredBy, approvedBy: actor.userId, secondApproverRequired: requireSecond };
 }

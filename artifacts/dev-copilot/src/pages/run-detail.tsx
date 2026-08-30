@@ -88,6 +88,9 @@ const STATUS_LABEL: Record<RunStatus, string> = {
 };
 
 const IN_PROGRESS: RunStatus[] = ["scheduled", "queued", "running"];
+// How often to re-read the run while something is happening. Only runs while the
+// tab is visible (see the polling effect).
+const POLL_MS = 3000;
 
 export default function RunDetailPage() {
   const params = useParams<{ runId: string }>();
@@ -147,6 +150,12 @@ export default function RunDetailPage() {
     if (!data) return;
     const active =
       IN_PROGRESS.includes(data.run.status) ||
+      // A just-approved plan can still read as awaiting_review for a moment: the
+      // approve endpoint returns 202 and executeRun transitions the run from a
+      // background task. Poll through that window too. Deliberately not added to
+      // IN_PROGRESS — that constant also picks the render branch and drives the
+      // completion toast, and awaiting_review belongs in neither.
+      data.run.status === "awaiting_review" ||
       data.run.reviewStatus === "running" ||
       data.run.securityScanStatus === "running" ||
       data.run.runbookStatus === "running";
@@ -156,8 +165,32 @@ export default function RunDetailPage() {
     // rescheduled and polling would silently die, freezing the page on a stale
     // in-progress state. An interval keeps ticking through transient errors and
     // stops via cleanup once a successful poll flips the run out of progress.
-    const id = setInterval(() => load(true), 4000);
-    return () => clearInterval(id);
+    // Don't poll a backgrounded tab — but re-read once the moment it comes back,
+    // so returning to the tab shows current state rather than waiting a tick.
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id === null) id = setInterval(() => load(true), POLL_MS);
+    };
+    const stop = () => {
+      if (id !== null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        load(true);
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [data, load]);
 
   // In-app completion notification: when a run we're watching (e.g. a background
