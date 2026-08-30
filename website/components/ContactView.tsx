@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { SITE } from '../lib/site';
 
 export default function ContactView() {
   const [name, setName] = useState('');
@@ -13,7 +14,7 @@ export default function ContactView() {
   const submit = async (type: 'request-access' | 'walkthrough') => {
     setBusy(true);
     try {
-      await fetch('/api/contact', {
+      await fetch(`${SITE.apiBaseUrl}/api/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

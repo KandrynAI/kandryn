@@ -1,6 +1,6 @@
 import Image from 'next/image';
-import type { LogoContext, LogoVariant, LogoType } from '../../shared/types/logo';
-import { LOGO_CONTEXT_MAP } from '../../shared/types/logo';
+import type { LogoContext, LogoVariant, LogoType } from '../lib/logo';
+import { LOGO_CONTEXT_MAP } from '../lib/logo';
 
 interface LogoProps {
   context: LogoContext; // determines variant automatically

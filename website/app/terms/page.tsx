@@ -144,7 +144,7 @@ export default function TermsPage() {
 
       <Section id="payment" n={9} title="Payment and subscription">
         <P>
-          Pricing available at getbluemantis.com. Changes notified 30 days in advance. Subscriptions billed in advance
+          Pricing available at kandryn.com. Changes notified 30 days in advance. Subscriptions billed in advance
           monthly or annually. Fees non-refundable except as required by law. Free plan limits may change at any time.
         </P>
         <P>Cancellation: access continues until end of billing period. You are responsible for all applicable taxes.</P>
@@ -206,9 +206,9 @@ export default function TermsPage() {
       <Section id="contact" n={17} title="Contact">
         <ContactBlock>
           <p style={{ fontSize: 15, lineHeight: 1.7, color: '#2c3e50', margin: 0 }}>
-            Legal questions: <Mail addr="legal@getbluemantis.com" />
+            Legal questions: <Mail addr="legal@kandryn.com" />
             <br />
-            General support: <Mail addr="support@getbluemantis.com" />
+            General support: <Mail addr="support@kandryn.com" />
             <br />
             Venakan Info Solutions LLC · Ohio, United States
           </p>

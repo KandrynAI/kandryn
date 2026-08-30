@@ -23,9 +23,10 @@ const OPTIONAL_ENV: EnvSpec[] = [
   { name: "JIRA_EMAIL",        critical: false, description: "Jira account email for PLM sync" },
   { name: "JIRA_TOKEN",        critical: false, description: "Jira API token for PLM sync" },
   { name: "CRON_SECRET",       critical: false, description: "Bearer secret guarding /api/internal/dispatch-runs (scheduled runs won't dispatch without it)" },
-  { name: "APP_BASE_URL",      critical: false, description: "Public app origin used in run-notification email links (default https://getbluemantis.com)" },
+  { name: "APP_BASE_URL",      critical: false, description: "Public app origin used in run-notification email links and commit-status URLs (default https://app.kandryn.com)" },
   { name: "ENABLE_DEMO_AGENTS",critical: false, description: "When 'true', adds mock AntiGravity/Copilot suggestions (default off)" },
   { name: "CONFIG_ENCRYPTION_KEY", critical: false, description: "32-byte key (base64/hex) encrypting integration credentials at rest; when absent, credentials are stored plaintext" },
+  { name: "CORS_ALLOWED_ORIGINS", critical: false, description: "Comma-separated cross-origin browser allowlist (default: app.kandryn.com, kandryn.com, localhost dev). Add preview-deploy origins here." },
 ];
 
 /**

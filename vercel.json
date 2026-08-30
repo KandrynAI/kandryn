@@ -7,11 +7,6 @@
       "config": { "maxDuration": 300 }
     },
     {
-      "src": "website/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "out" }
-    },
-    {
       "src": "artifacts/dev-copilot/package.json",
       "use": "@vercel/static-build",
       "config": { "distDir": "dist/public" }
@@ -19,12 +14,9 @@
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/artifacts/api-server/api/index.js" },
-    { "src": "/app/(.*)", "dest": "/artifacts/dev-copilot/$1" },
-    { "src": "/(.*)", "dest": "/website/$1" },
+    { "src": "/(.*)", "dest": "/artifacts/dev-copilot/$1" },
     { "handle": "filesystem" },
-    { "src": "/app(?:/.*)?", "dest": "/artifacts/dev-copilot/index.html" },
-    { "src": "/artifacts/dev-copilot(?:/.*)?", "dest": "/artifacts/dev-copilot/index.html" },
-    { "src": "/(.*)", "dest": "/website/404.html", "status": 404 }
+    { "src": "/(.*)", "dest": "/artifacts/dev-copilot/index.html" }
   ],
   "crons": [
     { "path": "/api/internal/dispatch-runs", "schedule": "*/5 * * * *" },

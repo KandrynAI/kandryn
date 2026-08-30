@@ -150,7 +150,7 @@ export function triggerRepoIndex({ repoUrl, githubToken, repoId, log }: TriggerI
     .where(eq(repositoriesTable.id, repoId))
     .catch((err) => log?.warn({ err }, "Graphify status update to indexing failed"));
 
-  const callbackUrl = `${process.env.APP_BASE_URL ?? "https://getbluemantis.com"}/api/internal/graphify-callback`;
+  const callbackUrl = `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/api/internal/graphify-callback`;
   void fetch(`${graphifyUrl}/index`, {
     method: "POST",
     headers: {

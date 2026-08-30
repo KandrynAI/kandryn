@@ -230,8 +230,8 @@ router.post("/teams/:teamId/invites", requireAdmin, async (req, res): Promise<vo
   try {
     const invite = await createInvite(params.data.teamId, req.userId, body.data.email, body.data.role);
     const [team] = await db.select().from(teamsTable).where(eq(teamsTable.id, params.data.teamId));
-    const base = process.env.APP_BASE_URL ?? "https://getbluemantis.com";
-    await sendTeamInvite(body.data.email, team?.name ?? "your team", `${base}/app/invite?token=${invite.token}`).catch(
+    const base = process.env.APP_BASE_URL ?? "https://app.kandryn.com";
+    await sendTeamInvite(body.data.email, team?.name ?? "your team", `${base}/invite?token=${invite.token}`).catch(
       (e) => req.log.warn({ err: e }, "Invite email failed"),
     );
     audit.log({

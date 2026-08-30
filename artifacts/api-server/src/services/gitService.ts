@@ -685,7 +685,7 @@ export async function postSecurityStatus(
     state,
     context: "blue-mantis/security",
     description: details.slice(0, 140), // GitHub 140-char limit
-    target_url: `https://getbluemantis.com/app/runs/${commitHash}`,
+    target_url: `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/runs/${commitHash}`,
   };
 
   try {

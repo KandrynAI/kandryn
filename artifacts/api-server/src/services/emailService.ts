@@ -79,7 +79,7 @@ export async function sendWaitlistNotification(entry: WaitlistEntry): Promise<vo
     entry.company ? `Company: ${entry.company}` : null,
     entry.role ? `Role:    ${entry.role}` : null,
     "",
-    "— getbluemantis.com",
+    "— kandryn.com",
   ]
     .filter((l) => l !== null)
     .join("\n");
@@ -142,7 +142,7 @@ export async function sendWaitlistConfirmation(entry: WaitlistEntry): Promise<vo
           <tr><td style="padding:24px 32px 28px;border-top:1px solid #1A3D58;margin-top:16px;">
             <p style="margin:16px 0 0;color:#607D93;font-size:12px;line-height:1.5;text-align:center;">
               Powered by <strong style="color:#02B8A0;">Venakan Info Solutions</strong><br/>
-              You're receiving this because you joined the waitlist at getbluemantis.com
+              You're receiving this because you joined the waitlist at kandryn.com
             </p>
           </td></tr>
         </table>
@@ -185,7 +185,7 @@ export async function sendContactEmail(sub: ContactSubmission): Promise<void> {
     sub.preferredTime ? `Preferred time: ${sub.preferredTime}` : null,
     sub.message ? `\nMessage:\n${sub.message}` : null,
     "",
-    "— getbluemantis.com",
+    "— kandryn.com",
   ]
     .filter((l) => l !== null)
     .join("\n");
@@ -198,7 +198,7 @@ export async function sendContactEmail(sub: ContactSubmission): Promise<void> {
   });
 }
 
-const APP_BASE = process.env.APP_BASE_URL || "https://getbluemantis.com";
+const APP_BASE = process.env.APP_BASE_URL || "https://app.kandryn.com";
 
 /** Notify the run owner that a scheduled run finished (§5.5). */
 export async function sendRunCompleted(
@@ -212,9 +212,9 @@ export async function sendRunCompleted(
     `Agents: ${d.agentCount}${d.topScore != null ? `, top score ${d.topScore}/10` : ""}`,
     d.prUrl ? `Pull request: ${d.prUrl}` : "Suggestions are ready for your review.",
     "",
-    `Review the run: ${APP_BASE}/app/runs/${d.runId}`,
+    `Review the run: ${APP_BASE}/runs/${d.runId}`,
     "",
-    "— getbluemantis.com",
+    "— kandryn.com",
   ].join("\n");
   await sendViaResend({ to: [to], subject: `Run finished: ${d.itemTitle}`, text });
 }
@@ -230,9 +230,9 @@ export async function sendRunFailed(
     `Work item: ${d.itemTitle}`,
     `Reason: ${d.error}`,
     "",
-    `Details: ${APP_BASE}/app/runs/${d.runId}`,
+    `Details: ${APP_BASE}/runs/${d.runId}`,
     "",
-    "— getbluemantis.com",
+    "— kandryn.com",
   ].join("\n");
   await sendViaResend({ to: [to], subject: `Run failed: ${d.itemTitle}`, text });
 }
@@ -254,9 +254,9 @@ export async function sendRunParked(
     `Why: ${d.reason}`,
     "",
     "No code was generated. It will wait for your decision — approve, edit, or reject:",
-    `${APP_BASE}/app/runs/${d.runId}`,
+    `${APP_BASE}/runs/${d.runId}`,
     "",
-    "— getbluemantis.com",
+    "— kandryn.com",
   ].join("\n");
   await sendViaResend({ to: [to], subject: `Run needs review: ${d.itemTitle}`, text });
 }

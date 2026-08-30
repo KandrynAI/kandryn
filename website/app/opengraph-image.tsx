@@ -41,7 +41,7 @@ export default function OgImage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 40 }}>
             <div style={{ width: 10, height: 10, background: BLUE }} />
-            <div style={{ color: DIM, fontSize: 26 }}>Two models, one ranked shortlist, and the pull request · getbluemantis.com</div>
+            <div style={{ color: DIM, fontSize: 26 }}>Two models, one ranked shortlist, and the pull request · kandryn.com</div>
           </div>
         </div>
       </div>
