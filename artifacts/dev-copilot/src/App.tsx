@@ -9,7 +9,6 @@ import {
   ClerkLoading,
   useAuth,
 } from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
 import { useTheme } from "next-themes";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -50,11 +49,12 @@ const queryClient = new QueryClient({
   },
 });
 
-const clerkPubKey =
-  publishableKeyFromHost(
-    window.location.hostname,
-    import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-  ) ?? (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string);
+// The publishable key encodes its own Frontend API host, so it is the single
+// source of truth. Deriving it from window.location.hostname instead (the
+// previous behaviour) breaks whenever the app's host and the Clerk domain
+// differ — on app.kandryn.com it produced clerk.app.kandryn.com, which does
+// not exist. The Clerk domain is clerk.kandryn.com.
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
 // In dev this is empty; in prod Replit sets it automatically
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL as string | undefined;

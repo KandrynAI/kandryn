@@ -38,10 +38,9 @@ export const CLERK_PROXY_PATH = "/api/__clerk";
  *     replaced the header (Node folds duplicate headers this way), or a
  *     string[] in some Express typings
  * In the multi-value case, the leftmost value is the original client-
- * facing host. Take that one in all forms. Exported so that app.ts
- * (clerkMiddleware callback) and this proxy middleware agree on which
- * hostname is canonical — otherwise multi-domain/custom-domain flows
- * break.
+ * facing host. Take that one in all forms. Used to build the
+ * Clerk-Proxy-Url header, which Clerk requires to carry the full,
+ * client-facing proxy URL.
  */
 export function getClerkProxyHost(req: {
   headers: IncomingHttpHeaders;

@@ -6,11 +6,9 @@ import cors from "cors";
 // bundler and nodenext modes (and the runtime sets module.exports.pinoHttp).
 import { pinoHttp } from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
-import { publishableKeyFromHost } from "@clerk/shared/keys";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
-  getClerkProxyHost,
 } from "./middlewares/clerkProxyMiddleware.js";
 import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
@@ -67,16 +65,11 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Resolve publishable key from request host so same server can serve multiple
-// Clerk custom domains. Falls back to CLERK_PUBLISHABLE_KEY env var.
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
-);
+// The publishable key encodes its own Frontend API host, so it is the single
+// source of truth. Deriving it from the request host instead (the previous
+// behaviour) breaks whenever the app's host and the Clerk domain differ — on
+// app.kandryn.com it produced clerk.app.kandryn.com, which does not exist.
+app.use(clerkMiddleware());
 
 // ---------------------------------------------------------------------------
 // Rate limiting
