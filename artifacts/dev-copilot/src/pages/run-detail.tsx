@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { DiffViewer } from "@/components/diff/DiffViewer";
+import { GeneratingProgress } from "@/components/runs/GeneratingProgress";
 import { PlanPanel } from "@/components/plan/PlanPanel";
 import { EditPlanDialog } from "@/components/plan/EditPlanDialog";
 import { agentDisplay } from "@/lib/agents";
@@ -629,25 +630,12 @@ export default function RunDetailPage() {
                 </p>
               </div>
             ) : (
-              <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 16 }}>
-                {!plan && (
-                  <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", animation: "bmblink 1.4s infinite" }}>Reading repository…</div>
-                )}
-                {["claude", "openai"].map((agent) => (
-                  <div key={agent}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}>{agentDisplay(agent).name}</span>
-                      <span style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>{planReady ? "implementing…" : "generating…"}</span>
-                    </div>
-                    <div style={{ height: 4, background: "var(--c-raised)", borderRadius: 2 }}>
-                      <div style={{ height: 4, background: "var(--c-blue)", borderRadius: 2, animation: "bmbar 4s ease-out forwards" }} />
-                    </div>
-                  </div>
-                ))}
-                <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", animation: "bmblink 1.4s infinite", marginTop: 4 }}>
-                  Running Raptia and Fovea in parallel…
-                </div>
-              </div>
+                <GeneratingProgress
+                  plannedPaths={planReady ? plan!.files.map((f) => f.filePath) : []}
+                  startedAt={run.startedAt}
+                  stackDesc={run.stackDesc}
+                  usedGraph={run.usedGraphContext}
+                />
             )}
           </div>
         ) : suggestions.length === 0 ? (
