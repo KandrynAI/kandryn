@@ -12,7 +12,7 @@ interface LogoProps {
 }
 
 /**
- * Context-aware Blue Mantis logo (marketing site / Next.js — next/image).
+ * Context-aware Kandryn logo (marketing site / Next.js — next/image).
  * Picks the correct variant + full-vs-mark from LOGO_CONTEXT_MAP unless overridden.
  * SVGs are served from /logos/{logo|mark}-{variant}.svg (public/logos).
  */
@@ -38,7 +38,7 @@ export function Logo({
   return (
     <Image
       src={src}
-      alt="Blue Mantis"
+      alt="Kandryn"
       width={width}
       height={height}
       className={className}

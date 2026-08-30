@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { LegalPage, LegalHeader, Toc, Section, H3, P, Bullets, ContactBlock, Mail } from '@/components/legal/legal-ui';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | Blue Mantis',
-  description: 'How Blue Mantis collects, uses, and protects your information.',
+  title: 'Privacy Policy | Kandryn',
+  description: 'How Kandryn collects, uses, and protects your information.',
   alternates: { canonical: '/privacy/' },
 };
 
@@ -25,7 +25,7 @@ export default function PrivacyPage() {
     <LegalPage>
       <LegalHeader
         title="Privacy Policy"
-        sub="How Blue Mantis collects, uses, shares, and protects your information."
+        sub="How Kandryn collects, uses, shares, and protects your information."
         meta={
           <>
             Effective: 1 August 2026 · Last updated: 10 August 2026
@@ -39,7 +39,7 @@ export default function PrivacyPage() {
 
       <Section id="who-we-are" n={1} title="Who we are">
         <P>
-          Blue Mantis is a product of Venakan Info Solutions LLC, incorporated in Ohio, United States. We provide an
+          Kandryn is a product of Venakan Info Solutions LLC, incorporated in Ohio, United States. We provide an
           AI-powered software delivery platform at kandryn.com that connects project management tools with version
           control systems to assist engineering teams in generating, reviewing, and committing code. This policy applies
           to the platform and all related services.
@@ -72,7 +72,7 @@ export default function PrivacyPage() {
         <Bullets
           items={[
             'Work items from Jira or Azure DevOps',
-            'Selected source code file sections (3-8 files) read at run time from GitHub or Azure Repos. Sent to AI model providers. NOT stored by Blue Mantis after the run completes.',
+            'Selected source code file sections (3-8 files) read at run time from GitHub or Azure Repos. Sent to AI model providers. NOT stored by Kandryn after the run completes.',
             'Repository metadata: file paths, branch names, commit hashes',
           ]}
         />
@@ -158,7 +158,7 @@ export default function PrivacyPage() {
           items={[
             <><strong>Account data:</strong> Until account deletion plus 30 days.</>,
             <><strong>Run metadata:</strong> Indefinitely while account is active; deletable on request.</>,
-            <><strong>Source code sent to AI:</strong> Not stored by Blue Mantis after run completion.</>,
+            <><strong>Source code sent to AI:</strong> Not stored by Kandryn after run completion.</>,
             <><strong>Audit log:</strong> 30 days (Free), 90 days (Pro/Max), 365 days (Enterprise).</>,
             <><strong>Credentials:</strong> Until deleted from Settings or account deletion.</>,
             <><strong>Database backups:</strong> Up to 30 days.</>,
@@ -211,7 +211,7 @@ export default function PrivacyPage() {
 
       <Section id="childrens-privacy" n={8} title="Children's privacy">
         <P>
-          Blue Mantis is not directed to children under 16. We do not knowingly collect information from children under
+          Kandryn is not directed to children under 16. We do not knowingly collect information from children under
           16. Contact <Mail addr="privacy@kandryn.com" /> to report any inadvertent collection.
         </P>
       </Section>

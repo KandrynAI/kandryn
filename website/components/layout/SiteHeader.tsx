@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { NAV_ITEMS } from '@/lib/site';
+import { NAV_ITEMS, SITE } from '@/lib/site';
 import Btn from '@/components/ui/Btn';
 import { Logo } from '@/components/Logo';
 
@@ -29,7 +29,7 @@ export default function SiteHeader() {
       <Link
         href="/"
         style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, whiteSpace: 'nowrap' }}
-        aria-label="Blue Mantis home"
+        aria-label="Kandryn home"
       >
         <Logo context="nav-light" height={26} />
       </Link>
@@ -59,7 +59,7 @@ export default function SiteHeader() {
 
       {/* RIGHT */}
       <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', flexShrink: 0 }}>
-        <Btn variant="ghost" href="/app/sign-in">Sign in</Btn>
+        <Btn variant="ghost" href={`${SITE.appUrl}/sign-in`}>Sign in</Btn>
         <Btn variant="primary" href="/contact">Request access</Btn>
       </div>
     </header>

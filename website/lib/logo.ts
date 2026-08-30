@@ -1,4 +1,4 @@
-// The 8 contexts where a logo appears in Blue Mantis.
+// The 8 contexts where a logo appears in Kandryn.
 // The Logo component uses this to pick the right variant automatically.
 export type LogoContext =
   | 'nav-light' // top nav on white/light backgrounds

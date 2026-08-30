@@ -16,7 +16,7 @@ export default function IntegrationsPage() {
     <>
       <PageHeader
         title={<>Your tracker.<br />Your repository. Your keys.</>}
-        lead="Blue Mantis stores every credential against your user record, tests it before it's saved, and tells you plainly what each one can reach."
+        lead="Kandryn stores every credential against your user record, tests it before it's saved, and tells you plainly what each one can reach."
       />
 
       {/* Connectors */}

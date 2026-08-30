@@ -4,7 +4,7 @@ import { SECURITY_PRINCIPLES, PROCESSORS } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'Security',
-  description: 'Least privilege, stated plainly. What Blue Mantis holds, what it touches, and what it refuses to do.',
+  description: 'Least privilege, stated plainly. What Kandryn holds, what it touches, and what it refuses to do.',
 };
 
 export default function SecurityPage() {
@@ -12,7 +12,7 @@ export default function SecurityPage() {
     <>
       <PageHeader
         title={<>Least privilege,<br />stated plainly.</>}
-        lead="Blue Mantis is a delivery tool with write access to your repository. Here is exactly what it holds, what it touches, and what it refuses to do."
+        lead="Kandryn is a delivery tool with write access to your repository. Here is exactly what it holds, what it touches, and what it refuses to do."
       />
 
       {/* Principles */}

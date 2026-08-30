@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { LegalPage, LegalHeader, Toc, Section, P, Bullets, DisclaimerBox, ContactBlock, Mail } from '@/components/legal/legal-ui';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service | Blue Mantis',
-  description: 'Terms governing your use of the Blue Mantis platform.',
+  title: 'Terms of Service | Kandryn',
+  description: 'Terms governing your use of the Kandryn platform.',
   alternates: { canonical: '/terms/' },
 };
 
@@ -32,7 +32,7 @@ export default function TermsPage() {
     <LegalPage>
       <LegalHeader
         title="Terms of Service"
-        sub="The agreement between you and Blue Mantis governing use of the platform."
+        sub="The agreement between you and Kandryn governing use of the platform."
         meta={
           <>
             Effective: 1 August 2026 · Last updated: 10 August 2026
@@ -46,13 +46,13 @@ export default function TermsPage() {
 
       <Section id="acceptance" n={1} title="Acceptance of terms">
         <P>
-          By using Blue Mantis you agree to these Terms. If using on behalf of an organisation, you represent you have
+          By using Kandryn you agree to these Terms. If using on behalf of an organisation, you represent you have
           authority to bind it. If you disagree, do not use the Service.
         </P>
       </Section>
 
       <Section id="description" n={2} title="Description of service">
-        <P>Blue Mantis is an AI-powered software delivery platform that:</P>
+        <P>Kandryn is an AI-powered software delivery platform that:</P>
         <Bullets
           items={[
             'Connects to Jira, Azure DevOps, GitHub, Azure Repos',
@@ -95,7 +95,7 @@ export default function TermsPage() {
           <strong>Ownership:</strong> You retain all rights to your content and source code.
         </P>
         <P>
-          <strong>Licence:</strong> You grant Blue Mantis a limited licence to process your content solely to provide
+          <strong>Licence:</strong> You grant Kandryn a limited licence to process your content solely to provide
           the Service. This licence ends when you stop using the Service.
         </P>
         <P>
@@ -106,7 +106,7 @@ export default function TermsPage() {
 
       <Section id="intellectual-property" n={6} title="Intellectual property">
         <P>
-          Blue Mantis owns all IP in the Service including the platform, agent pipeline, and scoring algorithms. These
+          Kandryn owns all IP in the Service including the platform, agent pipeline, and scoring algorithms. These
           Terms grant no rights to use our trademarks or brand features without written consent.
         </P>
       </Section>
@@ -126,7 +126,7 @@ export default function TermsPage() {
           outputs. You are responsible for ensuring generated code does not infringe third-party rights.
         </P>
         <P>
-          <strong>Human review required:</strong> Blue Mantis requires explicit human approval before any code is
+          <strong>Human review required:</strong> Kandryn requires explicit human approval before any code is
           committed. You acknowledge you have reviewed and approved all committed code.
         </P>
         <P>
@@ -138,7 +138,7 @@ export default function TermsPage() {
         <P>
           Your use of Jira, Azure DevOps, GitHub, Anthropic, OpenAI, and other connected services is subject to their
           own terms. You are responsible for having the right to connect these services and complying with their terms.
-          Blue Mantis is not responsible for third-party service availability or security.
+          Kandryn is not responsible for third-party service availability or security.
         </P>
       </Section>
 

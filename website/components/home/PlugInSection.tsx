@@ -10,7 +10,7 @@ const PLUG_ROWS = [
 
 const DONT = [
   ['We don’t hold shared credentials.', 'Every key is stored against your user record and tested the moment you save it. No pooled key, no environment fallback in production.'],
-  ['We don’t merge anything.', 'Blue Mantis opens the pull request. Your review rules and your CI decide whether it lands.'],
+  ['We don’t merge anything.', 'Kandryn opens the pull request. Your review rules and your CI decide whether it lands.'],
   ['We don’t rewrite your board.', 'Items and test cases go upstream only when you ask. The single automatic write-back is a status change when an item closes.'],
   ['We don’t guess your stack.', 'Stack detection reads the bound repository so the agents write your framework, not generic pseudocode.'],
 ];
@@ -34,7 +34,7 @@ export default function PlugInSection() {
           <thead>
             <tr>
               <th>System</th>
-              <th>What Blue Mantis does</th>
+              <th>What Kandryn does</th>
             </tr>
           </thead>
           <tbody>

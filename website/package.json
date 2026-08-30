@@ -1,8 +1,8 @@
 {
-  "name": "blue-mantis-website",
+  "name": "kandryn-website",
   "version": "1.0.0",
   "private": true,
-  "description": "Blue Mantis public website — a Venakan Info Solutions product",
+  "description": "Kandryn public website — a Venakan Info Solutions product",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

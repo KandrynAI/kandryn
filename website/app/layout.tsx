@@ -21,17 +21,17 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 const SITE_URL = `https://${SITE.domain}`;
-const TITLE = 'Blue Mantis — the backlog writes the code back to you';
+const TITLE = 'Kandryn — the backlog writes the code back to you';
 const DESC =
   'An AI delivery assistant that reads a work item, runs six agents against it — Raptia and Fovea generate, Synthesia ranks, Veria reviews, Aegis scans for security, Narratia writes the runbook — and opens the pull request. Run it now, or queue tonight and read the diffs in the morning.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: TITLE, template: '%s | Blue Mantis' },
+  title: { default: TITLE, template: '%s | Kandryn' },
   description: DESC,
-  applicationName: 'Blue Mantis',
+  applicationName: 'Kandryn',
   alternates: { canonical: '/' },
-  openGraph: { type: 'website', siteName: 'Blue Mantis', title: TITLE, description: DESC, url: SITE_URL },
+  openGraph: { type: 'website', siteName: 'Kandryn', title: TITLE, description: DESC, url: SITE_URL },
   twitter: { card: 'summary_large_image', title: TITLE, description: DESC },
   robots: { index: true, follow: true },
 };

@@ -2,13 +2,16 @@
 // from this file and never inline strings. (Rebuild spec — site.ts.)
 
 export const SITE = {
-  name: 'Blue Mantis',
+  name: 'Kandryn',
   tagline: 'An AI delivery assistant for teams whose backlog is bigger than their week.',
   domain: 'kandryn.com',
   email: 'sales@bluemantis.io',
   // The API lives with the app project (app.kandryn.com); the marketing site is
   // a separate origin, so its form posts are absolute cross-origin calls (A1).
   apiBaseUrl: 'https://app.kandryn.com',
+  // The app SPA is a separate Vercel project on its own domain. It builds with
+  // BASE_PATH=/, so its sign-in route is /sign-in (App.tsx <Route path="/sign-in">).
+  appUrl: 'https://app.kandryn.com',
 };
 
 export const NAV_ITEMS = [
@@ -81,7 +84,7 @@ export const HOW_SECTIONS = [
   },
   {
     n: 'STAGE 07', title: 'Aegis secures',
-    body: 'After commit, Aegis scans the change for security vulnerabilities — injection flaws, hardcoded secrets, authentication bypasses, OWASP Top 10. High and Critical findings block the PR via a GitHub commit status check. Medium and Low findings create sub-tasks in your tracker. Remediate Now creates the ticket, syncs it to the board, and starts a new run with the remediation brief pre-filled — closing the security loop without leaving Blue Mantis.',
+    body: 'After commit, Aegis scans the change for security vulnerabilities — injection flaws, hardcoded secrets, authentication bypasses, OWASP Top 10. High and Critical findings block the PR via a GitHub commit status check. Medium and Low findings create sub-tasks in your tracker. Remediate Now creates the ticket, syncs it to the board, and starts a new run with the remediation brief pre-filled — closing the security loop without leaving Kandryn.',
     detailLabel: 'WHAT AEGIS CHECKS',
     details: ['OWASP Top 10 (2021) — all ten categories', 'Injection: SQL, NoSQL, command, LDAP', 'Hardcoded secrets, API keys, and credentials', 'Authentication and authorisation flaws', 'Missing input validation on sensitive endpoints', 'High/Critical → PR blocked · Medium/Low → tracker ticket'],
   },
@@ -104,11 +107,11 @@ export const INTEGRATIONS = [
   { name: 'Azure DevOps', tag: 'TRACKER', body: 'The same sync against Azure Boards, with Feature mapped onto epic so the hierarchy lines up with Jira projects.', creds: 'AZURE_DEVOPS_ORG · AZURE_DEVOPS_PROJECT · AZURE_DEVOPS_PAT', note: 'Work-item creation and test-case push both supported.' },
   { name: 'GitHub', tag: 'PRIMARY REPO', body: 'Branch, commit and pull request. Stack detection reads the repository on connect, and the test-script commit stacks onto the existing PR rather than overwriting it.', creds: 'GITHUB_TOKEN (PAT) or the OAuth token from sign-in', note: 'The primary provider, and the one we test first on every release.' },
   { name: 'Azure Repos', tag: 'REPO', body: 'Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.', creds: 'AZURE_REPOS_ORG · AZURE_REPOS_TOKEN', note: 'Edits to existing files are reliable; brand-new file adds can fail.' },
-  { name: 'Raptia', tag: 'AGENT', body: 'The first of two generation agents that runs on every Blue Mantis pipeline. Raptia is optimised for precision — it reads the work item, the acceptance criteria, and the repository context, then commits to a single well-reasoned answer. Stack-aware: detects React, Angular, Vue, Node.js, .NET, Java Spring Boot, Python, and Go — and writes idiomatic code for each without being told.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'Raptia and Fovea always run together in parallel.' },
-  { name: 'Fovea', tag: 'AGENT', body: 'The second generation agent. Fovea takes a wider view of the same context — it considers more of the repository before settling on an approach, which means it often catches what Raptia misses. Also stack-aware — uses the same detected profile to ensure both suggestions follow the same framework conventions.', creds: 'Configured by Blue Mantis — no separate credential required', note: 'The Synthesia agent scores both and flags the stronger answer.' },
+  { name: 'Raptia', tag: 'AGENT', body: 'The first of two generation agents that runs on every Kandryn pipeline. Raptia is optimised for precision — it reads the work item, the acceptance criteria, and the repository context, then commits to a single well-reasoned answer. Stack-aware: detects React, Angular, Vue, Node.js, .NET, Java Spring Boot, Python, and Go — and writes idiomatic code for each without being told.', creds: 'Configured by Kandryn — no separate credential required', note: 'Raptia and Fovea always run together in parallel.' },
+  { name: 'Fovea', tag: 'AGENT', body: 'The second generation agent. Fovea takes a wider view of the same context — it considers more of the repository before settling on an approach, which means it often catches what Raptia misses. Also stack-aware — uses the same detected profile to ensure both suggestions follow the same framework conventions.', creds: 'Configured by Kandryn — no separate credential required', note: 'The Synthesia agent scores both and flags the stronger answer.' },
   { name: 'Synthesia', tag: 'AGENT', body: 'The ranking agent. After Raptia and Fovea complete, Synthesia scores both suggestions on correctness, readability, diff size, convention adherence, and acceptance-criteria coverage — then recommends the better one with a confidence score. Two behaviour signals — ambiguity handling and surgical precision — flag whether an agent silently assumed something or changed more than the work item required.', creds: 'Runs automatically after every generation — no configuration needed', note: 'Synthesia\'s verdict is visible on every run. You can always override it.' },
   { name: 'Veria', tag: 'AGENT', body: 'The review agent. After you commit a suggestion, Veria reads the committed code against the work item\'s acceptance criteria and produces a structured review: strengths, gaps, risks, and a one-sentence focus note for the human reviewer.', creds: 'User-triggered post-commit — runs on demand, not automatically', note: 'Veria only activates after a suggestion is committed to a branch. Veria explicitly checks for scope creep, silent assumptions, and over-engineering in the committed code.' },
-  { name: 'Aegis', tag: 'AGENT', body: 'The security agent. Runs after commit using a frontier security model. Scans the committed change for OWASP Top 10 vulnerabilities, hardcoded secrets, injection flaws, and authentication bypasses. Outputs structured findings with severity, OWASP category, line reference, and remediation steps. High and Critical findings block the PR via a GitHub status check. Remediate Now creates a tracker ticket, syncs the board, and starts a new run to fix the issue — without leaving Blue Mantis.', creds: 'Configured automatically — no separate credential required', note: 'Aegis uses claude-fable-5, the safeguarded frontier model. Configure GitHub branch protection once to enforce the stop gate.' },
+  { name: 'Aegis', tag: 'AGENT', body: 'The security agent. Runs after commit using a frontier security model. Scans the committed change for OWASP Top 10 vulnerabilities, hardcoded secrets, injection flaws, and authentication bypasses. Outputs structured findings with severity, OWASP category, line reference, and remediation steps. High and Critical findings block the PR via a GitHub status check. Remediate Now creates a tracker ticket, syncs the board, and starts a new run to fix the issue — without leaving Kandryn.', creds: 'Configured automatically — no separate credential required', note: 'Aegis uses claude-fable-5, the safeguarded frontier model. Configure GitHub branch protection once to enforce the stop gate.' },
   { name: 'Narratia', tag: 'AGENT', body: 'The documentation agent. After a run completes, Narratia generates an operational runbook: a summary of what changed, deployment steps specific to this change, rollback procedure, validation commands, test cases from the generated suite, and security findings from Aegis. Pushed to Confluence, Notion, or committed as Markdown to the PR branch.', creds: 'Confluence: CONFLUENCE_DOMAIN · CONFLUENCE_EMAIL · CONFLUENCE_API_TOKEN · CONFLUENCE_SPACE_KEY\nNotion: NOTION_API_TOKEN · NOTION_PARENT_PAGE\nMarkdown: no credentials required', note: 'The Markdown option commits docs/runbooks/ITEM-KEY.md directly to the PR branch — visible in the PR with no extra setup.' },
 ];
 
@@ -131,7 +134,7 @@ export const CAPABILITY_FOOTNOTE =
   'requires separate credentials in Settings.';
 
 export const RESOURCES = [
-  { kind: 'GUIDE', cat: 'Guides', meta: '9 min', title: 'Connecting Jira without over-scoping the token', body: 'The three Jira permissions Blue Mantis needs, and the four it will never ask for.', cta: 'Read' },
+  { kind: 'GUIDE', cat: 'Guides', meta: '9 min', title: 'Connecting Jira without over-scoping the token', body: 'The three Jira permissions Kandryn needs, and the four it will never ask for.', cta: 'Read' },
   { kind: 'GUIDE', cat: 'Guides', meta: '12 min', title: 'From epic to eight children in one breakdown', body: 'How to review an AI breakdown quickly: what to accept, what to rewrite, what to delete outright.', cta: 'Read' },
   { kind: 'PATTERN', cat: 'Patterns', meta: '6 min', title: 'Refinement prompts that survive code review', body: 'Short, repository-specific instructions beat long style essays. Nine examples with their diffs.', cta: 'Read' },
   { kind: 'PATTERN', cat: 'Patterns', meta: '7 min', title: 'When to switch auto-commit on', body: 'A rule of thumb: auto-commit for mechanical work, review-first for anything touching money or auth.', cta: 'Read' },
@@ -168,11 +171,11 @@ export const CHANGELOG = [
 export const SECURITY_PRINCIPLES = [
   { title: 'Credentials are per user', body: 'Every key is stored against your user record in an isolated config table. There is no shared pool, no fallback to an environment variable in production, and no key is ever written to a log line.' },
   { title: 'Every query is scoped', body: 'Projects, work items, runs and suggestions are all filtered by user on every read and write. There is no global collection a bug could expose.' },
-  { title: 'Write access is narrow', body: 'Blue Mantis creates branches, commits and pull requests. It does not merge, force-push, or touch your default branch.' },
+  { title: 'Write access is narrow', body: 'Kandryn creates branches, commits and pull requests. It does not merge, force-push, or touch your default branch.' },
   { title: 'The tracker stays yours', body: 'Items and test cases are pushed only when you ask. The single automatic write-back is a status change when an item closes.' },
   { title: 'Agents see a case file, not a repository', body: 'Only the files selected as relevant to the work item, plus the detected stack profile, are passed to the agent pipeline — scoped to what the keyword extractor judges relevant.' },
   { title: 'Failures are contained', body: 'A run that fails records the error and stops. Nothing half-written reaches your repository, and stuck runs are swept after twenty minutes. A blocked Aegis gate records every finding and stops without writing anything to main. Nothing with a High or Critical finding can be promoted until it is resolved and the gate clears.' },
-  { title: 'High findings never reach main', body: 'Aegis posts a blue-mantis/security status check to every PR. Configure one branch protection rule on main and GitHub enforces it — no High or Critical security finding can be merged until it is resolved. Blue Mantis never merges anything itself.' },
+  { title: 'High findings never reach main', body: 'Aegis posts a blue-mantis/security status check to every PR. Configure one branch protection rule on main and GitHub enforces it — no High or Critical security finding can be merged until it is resolved. Kandryn never merges anything itself.' },
 ];
 
 export const PROCESSORS = [
@@ -184,15 +187,15 @@ export const PROCESSORS = [
 ];
 
 export const FAQS = [
-  { q: 'Does Blue Mantis merge code?', a: 'No. It creates a branch named task/<id>, commits the suggestion you chose, and opens a pull request. Merging stays with your review rules and your CI.' },
-  { q: 'How are credentials handled?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored against your user, tested when you save them, and never written to a log line. Agent infrastructure is managed by Blue Mantis — no model API keys required from you.' },
+  { q: 'Does Kandryn merge code?', a: 'No. It creates a branch named task/<id>, commits the suggestion you chose, and opens a pull request. Merging stays with your review rules and your CI.' },
+  { q: 'How are credentials handled?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored against your user, tested when you save them, and never written to a log line. Agent infrastructure is managed by Kandryn — no model API keys required from you.' },
   { q: 'How much of my repository do the agents see?', a: 'The files the keyword extractor selects as relevant to the work item, plus the detected stack profile. Not the whole tree, and nothing outside the repository you bound to the project.' },
   { q: 'What happens if a scheduled run fails?', a: 'The run row records the error, the item is left untouched, and the owner gets an email. Runs stuck longer than twenty minutes are swept to failed by the dispatcher.' },
   { q: 'Can it write to my tracker?', a: 'Only where you ask it to: new items and test cases you explicitly push, and a status change when an item closes. Nothing else propagates upstream.' },
   { q: 'Which providers work best?', a: 'GitHub is the primary, auto-synced provider. Azure Repos works for edits to existing files; adding a brand-new file can fail there.' },
   { q: 'Six agents — why so many?', a: 'Each agent has a distinct role. Raptia and Fovea generate competing suggestions in parallel — they reason differently by design, so when one misreads the ticket, the other usually does not. Synthesia scores both on five dimensions and recommends the stronger answer with a confidence score. Veria reviews the committed code against the acceptance criteria after commit. Aegis scans for security vulnerabilities and blocks High findings from reaching main. Narratia writes the operational runbook. Together they cover the full delivery loop from generation to documentation.' },
   { q: 'What does Aegis scan for?', a: 'Aegis checks for OWASP Top 10 (2021) vulnerabilities: injection flaws (SQL, NoSQL, command), broken access control, cryptographic failures, hardcoded secrets, insecure design, authentication bypasses, and SSRF. Each finding has a severity (Critical, High, Medium, Low, Info), an OWASP category, a line reference, and a remediation step. High and Critical findings block the PR. Medium and Low findings create tracker tickets.' },
-  { q: 'Can Blue Mantis fix its own security findings?', a: 'Yes — that is what Remediate Now is for. Click it on any Aegis finding and Blue Mantis creates the tracker ticket, syncs it to the board, and immediately starts a new run with the security finding and its remediation as the brief for Raptia and Fovea. The loop closes in the same session without switching tools.' },
+  { q: 'Can Kandryn fix its own security findings?', a: 'Yes — that is what Remediate Now is for. Click it on any Aegis finding and Kandryn creates the tracker ticket, syncs it to the board, and immediately starts a new run with the security finding and its remediation as the brief for Raptia and Fovea. The loop closes in the same session without switching tools.' },
   { q: 'What does Narratia put in the runbook?', a: 'Seven sections: a summary of what changed and why, deployment steps specific to this change, a rollback procedure referencing the branch and PR, validation commands to confirm it is working in production, the generated test cases, security findings from Aegis, and a references section with the work item key, branch, commit hash, and PR link. Pushed to Confluence, Notion, or committed as Markdown to the same PR branch.' },
   { q: 'Can I try it on one project?', a: 'That is how every pilot starts: one tracker project, one repository, one real work item run end to end on a shared call.' },
 ];
