@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useUser } from "@clerk/react";
 import { LayoutDashboard, Kanban, Play, GitBranch, History, BarChart2, Settings } from "lucide-react";
-import { fetchProjects, type Project } from "@/services/api";
 import { useTeam } from "@/context/TeamContext";
+import { useActiveProject } from "@/context/ActiveProjectContext";
 import { Logo } from "@/components/Logo";
 
 interface RailIcon {
@@ -18,15 +17,13 @@ export function CommandRail() {
   const [location, navigate] = useLocation();
   const { user } = useUser();
   const { team } = useTeam();
-  const [projects, setProjects] = useState<Project[]>([]);
-
-  useEffect(() => {
-    fetchProjects().then(setProjects).catch(() => {});
-  }, []);
-
-  const routeMatch = location.match(/\/p\/(\d+)/);
-  const routeId = routeMatch ? Number(routeMatch[1]) : null;
-  const activeId = routeId ?? projects[0]?.id ?? null;
+  // Board and Runs are project-scoped, so they must mean "the project I am
+  // currently working in". That is exactly what ActiveProjectProvider derives
+  // (URL → resource → stored → first), and the rail must not re-derive it: the
+  // rail's own `routeId ?? projects[0]` sent Board to the OLDEST project from
+  // any un-prefixed route, regardless of which project you had switched to.
+  const { activeProject } = useActiveProject();
+  const activeId = activeProject?.id ?? null;
 
   const boardHref = activeId ? `/p/${activeId}/board` : "/projects/new";
   const runsHref = activeId ? `/p/${activeId}/runs` : "/projects/new";

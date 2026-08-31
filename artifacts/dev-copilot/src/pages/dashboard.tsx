@@ -5,7 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { GitCommit, CheckSquare, FileText, FlaskConical, ChevronRight, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { fetchRuns, fetchProjects, reRunItem, ApiError, type Run, type Project } from "@/services/api";
+import { useActiveProject } from "@/context/ActiveProjectContext";
+import { fetchRuns, reRunItem, ApiError, type Run } from "@/services/api";
 
 const RERUNNABLE = new Set(["failed", "canceled"]);
 
@@ -17,15 +18,12 @@ export default function Dashboard() {
 
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [rerunning, setRerunning] = useState<Set<number>>(new Set());
-  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
-
-  useEffect(() => {
-    // The dashboard isn't on a /p/:id route, so the "active" project is the
-    // first one (same fallback the ContextPanel uses).
-    fetchProjects()
-      .then((ps: Project[]) => setActiveProjectId(ps[0]?.id ?? null))
-      .catch(() => setActiveProjectId(null));
-  }, []);
+  // The dashboard itself is cross-project — its stats and recent runs are
+  // user-wide — but these tiles jump INTO a project, so they must use the same
+  // active project the rest of the shell shows. Picking the first project here
+  // sent them to the oldest one no matter which project you had switched to.
+  const { activeProject } = useActiveProject();
+  const activeProjectId = activeProject?.id ?? null;
 
   useEffect(() => {
     fetchRuns({ limit: 5 })

@@ -24,7 +24,12 @@ const ActiveProjectContext = createContext<ActiveProjectContextValue | null>(nul
 export function ActiveProjectProvider({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [storedProjectId] = useState<number | null>(() => {
+  // State, not a one-shot read: the provider mounts once for the whole session,
+  // so a value captured only in the initializer stays frozen at whatever was
+  // stored at page load. Switching projects would then write localStorage but
+  // leave this fallback pointing at the previous project — and every route
+  // without /p/:id (the dashboard, settings) would resolve back to it.
+  const [storedProjectId, setStoredProjectId] = useState<number | null>(() => {
     try {
       const v = localStorage.getItem(ACTIVE_PROJECT_KEY);
       return v ? Number(v) : null;
@@ -48,16 +53,19 @@ export function ActiveProjectProvider({ children }: { children: ReactNode }) {
     [projects, routeId, resourceProjectId, storedProjectId],
   );
 
-  // Persist the active project so it is restored on the next load.
+  // Persist the active project, and keep the in-memory fallback in step with it
+  // so a later un-prefixed route resolves to the project you are actually in.
+  // The equality check is what stops this from looping: once stored matches the
+  // resolved project, re-running the memo produces the same project again.
   useEffect(() => {
-    if (activeProject) {
-      try {
-        localStorage.setItem(ACTIVE_PROJECT_KEY, String(activeProject.id));
-      } catch {
-        /* storage unavailable — non-fatal */
-      }
+    if (!activeProject || activeProject.id === storedProjectId) return;
+    setStoredProjectId(activeProject.id);
+    try {
+      localStorage.setItem(ACTIVE_PROJECT_KEY, String(activeProject.id));
+    } catch {
+      /* storage unavailable — non-fatal */
     }
-  }, [activeProject]);
+  }, [activeProject, storedProjectId]);
 
   // Dev-only regression guard: catch a project-resource route that forgot to call
   // useActiveProjectFromResource. Checked on a deferred tick so the page's own

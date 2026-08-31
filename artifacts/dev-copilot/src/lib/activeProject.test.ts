@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveActiveProject, projectRouteId, RESOURCE_ROUTE_RE } from "./activeProject.js";
+import { resolveActiveProject, projectRouteId, RESOURCE_ROUTE_RE } from "./activeProject.ts";
 
 const projects = [{ id: 4, name: "PinnacleCube" }, { id: 5, name: "PnC Insurance Demo" }];
 
