@@ -149,7 +149,7 @@ export default function ReportsPage() {
 
       {/* Print header (only in the PDF) */}
       <div className="print-only" style={{ marginBottom: 16, fontSize: 12, color: "#334155" }}>
-        Blue Mantis — Delivery Report · Last {days} days
+        Kandryn — Delivery Report · Last {days} days
         {activeProject ? ` · ${activeProject.name}` : " · All projects"}
       </div>
 

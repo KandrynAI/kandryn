@@ -266,7 +266,7 @@ export class JiraAdapter implements PLMAdapter {
               content: [
                 {
                   type: "text",
-                  text: `Closed via Blue Mantis. Commit: ${commitHash}`,
+                  text: `Closed via Kandryn. Commit: ${commitHash}`,
                 },
               ],
             },

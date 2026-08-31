@@ -217,7 +217,7 @@ router.post("/work-items/:id/tests/commit-script", async (req, res): Promise<voi
   const commitHash = await git.commitChanges({
     branchName,
     baseSha: headSha,
-    message: `Blue Mantis: tests for ${workItem.title}`,
+    message: `Kandryn: tests for ${workItem.title}`,
     files: [{ path: parsed.data.filePath, content: parsed.data.code }],
   });
 

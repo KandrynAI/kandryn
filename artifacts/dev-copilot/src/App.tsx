@@ -162,7 +162,7 @@ function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
           <p style={{ color: "#3c4553", fontSize: 14, lineHeight: 1.5, margin: "8px 0 22px" }}>
             {mode === "sign-in"
               ? "Access your AI delivery workspace."
-              : "Set up your Blue Mantis workspace."}
+              : "Set up your Kandryn workspace."}
           </p>
 
           {mode === "sign-in" ? (

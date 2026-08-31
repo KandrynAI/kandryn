@@ -77,7 +77,7 @@ router.patch("/work-items/:id", async (req, res): Promise<void> => {
       await plm.closeTask(
         item.source as "azure-devops" | "jira",
         item.externalId,
-        item.linkedCommit ?? "(closed from Blue Mantis)",
+        item.linkedCommit ?? "(closed from Kandryn)",
       );
     } catch (err) {
       req.log.warn({ workItemId: item.id, err }, "Failed to propagate close to PLM");

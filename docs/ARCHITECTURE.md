@@ -1,6 +1,6 @@
-# Blue Mantis — End-to-End Architecture & Handoff
+# Kandryn — End-to-End Architecture & Handoff
 
-> Living reference for the Blue Mantis platform, current as of the latest `main`.
+> Living reference for the Kandryn platform, current as of the latest `main`.
 > Written to be handed to an AI assistant (or engineer) for further development.
 > Covers product, system map, tech, and both the **unauthenticated** (marketing +
 > auth pages) and **authenticated** (product app) areas, plus the API, database,
@@ -8,9 +8,9 @@
 
 ---
 
-## 1. What Blue Mantis is
+## 1. What Kandryn is
 
-Blue Mantis is an **autonomous AI engineering platform** by **Venakan Info Solutions**. It connects to a team's PLM tools (Jira, Azure DevOps; Linear on the roadmap) and code repositories (GitHub, Azure Repos; GitLab/Bitbucket on the roadmap). An orchestrator reads intent from tickets, dispatches specialist AI agents (build / review / security / QA) that work concurrently, and returns a finished pull request for human engineers to review and promote.
+Kandryn is an **autonomous AI engineering platform** by **Venakan Info Solutions**. It connects to a team's PLM tools (Jira, Azure DevOps; Linear on the roadmap) and code repositories (GitHub, Azure Repos; GitLab/Bitbucket on the roadmap). An orchestrator reads intent from tickets, dispatches specialist AI agents (build / review / security / QA) that work concurrently, and returns a finished pull request for human engineers to review and promote.
 
 Positioning: **the team's process does not change at the edges** — tickets go in the same way, reviews happen the same way; only the routine engineering work in the middle is automated.
 
@@ -22,20 +22,20 @@ There are two audiences and two product surfaces:
 
 ## 2. System map & deployment routing
 
-One Vercel project serves everything on **`getbluemantis.com`**, routed by path prefix in the root **`vercel.json`**:
+**Two** Vercel projects since #127 — `kandryn_marketing` (root dir `website/`, **kandryn.com**) and `kandryn-ai-app` (repo root, **app.kandryn.com**), each with its own `vercel.json`:
 
 | Path | Surface | Package | Auth |
 |---|---|---|---|
-| `/` (and `/how-it-works`, `/security`, `/faq`, `/contact`, `/privacy`, `/terms`) | **Marketing website** | `website/` (Next.js 15, static export) | Public |
-| `/app/*` | **Product app** | `artifacts/dev-copilot` (React + Vite SPA) | Clerk-authenticated |
-| `/api/*` | **REST API** | `artifacts/api-server` (Express 5, `@vercel/node` function) | Clerk (most routes); 2 public routes |
+| `kandryn.com/` (and `/how-it-works`, `/security`, `/faq`, `/contact`, `/privacy`, `/terms`) | **Marketing website** | `website/` (Next.js 15, static export) | Public |
+| `app.kandryn.com/*` | **Product app** | `artifacts/dev-copilot` (React + Vite SPA, `BASE_PATH=/`) | Clerk-authenticated |
+| `app.kandryn.com/api/*` | **REST API** | `artifacts/api-server` (Express 5, `@vercel/node` function) | Clerk (most routes); 2 public routes |
 
 ```
-                         getbluemantis.com  (Vercel, one project)
-                                   │
-        ┌──────────────────────────┼──────────────────────────┐
-        │ /                        │ /app/*                    │ /api/*
-        ▼                          ▼                           ▼
+      kandryn.com                        app.kandryn.com
+   (kandryn_marketing)                   (kandryn-ai-app)
+            │                    ┌──────────────┴──────────────┐
+            │ /                  │ /*                          │ /api/*
+            ▼                    ▼                             ▼
   website/ (Next.js)        dev-copilot (Vite SPA)       api-server (Express)
   marketing, forms          the product, Clerk auth      REST, per-user creds
         │                          │                           │
@@ -46,7 +46,7 @@ One Vercel project serves everything on **`getbluemantis.com`**, routed by path 
 
 **Auth boundary:** everything under `/app` requires a signed-in Clerk session. The marketing site links into the app at `/app/sign-in`.
 
-**Note on the legacy marketing site:** `artifacts/blue-mantis` (a Vite marketing + waitlist site) still exists in the repo but is **no longer deployed** — `website/` replaced it at `/`. Treat `artifacts/blue-mantis` as retained/legacy unless intentionally revived.
+**Note on the legacy marketing site:** `artifacts/kandryn` (a Vite marketing + waitlist site) still exists in the repo but is **no longer deployed** — `website/` replaced it at `/`. Treat `artifacts/kandryn` as retained/legacy unless intentionally revived.
 
 ---
 
@@ -57,7 +57,7 @@ website/                 NEW public marketing site (Next.js 15). Deployed at /.
 artifacts/
   api-server/            Express 5 REST API. Deployed at /api.
   dev-copilot/           React + Vite app (the product). Deployed at /app.
-  blue-mantis/           LEGACY Vite marketing + waitlist. Not currently deployed.
+  kandryn/           LEGACY Vite marketing + waitlist. Not currently deployed.
   mockup-sandbox/        Isolated component preview server (dev only).
 lib/
   db/                    Drizzle ORM schema + PostgreSQL client (@workspace/db).
@@ -149,7 +149,7 @@ This is the primary functional behavior of the marketing site.
 - **Submission:** `POST /api/contact` with `{ type, name, email, company, teamSize?, preferredTime?, message? }`. The api-server emails **arvind.kandula@venakaninfo.com** and **accounts@venakaninfo.com** (reply-to the prospect) via Resend. Requires `RESEND_API_KEY` set on the api-server; without it the endpoint still returns 200 but sends nothing (same as the waitlist).
 
 ### 5.5 SEO & performance
-One H1 per page; unique Next Metadata per route; canonical + OpenGraph + Twitter tags; static OG image (`opengraph-image.tsx`, three-color, no screenshots); JSON-LD as above; `sitemap.xml` + `robots.txt`; semantic HTML; skip-to-content link; 2px blue focus rings. Client JS ~110KB First Load (well under budget gzipped). `metadataBase` and all URLs use `https://getbluemantis.com`.
+One H1 per page; unique Next Metadata per route; canonical + OpenGraph + Twitter tags; static OG image (`opengraph-image.tsx`, three-color, no screenshots); JSON-LD as above; `sitemap.xml` + `robots.txt`; semantic HTML; skip-to-content link; 2px blue focus rings. Client JS ~110KB First Load (well under budget gzipped). `metadataBase` and all URLs use `https://kandryn.com`.
 
 ## 6. Auth pages (Clerk sign-in / sign-up)
 
@@ -292,7 +292,7 @@ JIRA_DOMAIN  JIRA_EMAIL  JIRA_API_TOKEN
 
 ## 12. Known gaps, TODOs & caveats (read before extending)
 
-- **Clerk is a development instance** (`pk_test_…`). The "Development mode" badge is hidden by a text-based JS helper as a stopgap; move to a **production Clerk instance** (prod keys + `getbluemantis.com` in allowed origins / GitHub OAuth redirects) for real removal, production limits, and security.
+- **Clerk is a production instance** (`pk_live_…`), Frontend API `clerk.kandryn.com`, with app.kandryn.com in allowed origins. The "Development mode" badge helper (`HideClerkDevBadge`) is now inert and could be removed.
 - **Emails need `RESEND_API_KEY`** (+ `WAITLIST_FROM_EMAIL`) on the api-server, or waitlist/contact submissions send nothing.
 - **`/contact` booking URL** is still `#` (`SITE.bookingUrl`, TODO) — wire a Cal.com-style scheduling link.
 - **Privacy/Terms** pages are intentional stubs pending counsel text.
@@ -300,7 +300,7 @@ JIRA_DOMAIN  JIRA_EMAIL  JIRA_API_TOKEN
 - **Suggestion rate limiting removed** for serverless (`TODO(serverless)` in `app.ts`) — the endpoint is Clerk-auth-only. Add a durable limiter (e.g. Supabase-backed) before heavy use.
 - **Two of four AI agents are mocks** (`antigravity`, `copilot`) — canned output, not real models.
 - **`WorkspacePage` has placeholder UI** (diff header, sub-scores) and **`HistoryPage` is an empty stub**.
-- **Legacy `artifacts/blue-mantis`** (Vite marketing + waitlist) is retained but not deployed; the deployed marketing site is `website/`.
+- **Legacy `artifacts/kandryn`** (Vite marketing + waitlist) is retained but not deployed; the deployed marketing site is `website/`.
 - **Vercel mixed-build risk:** the single `vercel.json` combines a Next static build + a Vite static build + a Node function. If it misbehaves, the documented fallback is to split `website/` into its own Vercel project and proxy `/app` + `/api`.
 
 ## 13. Conventions & pitfalls

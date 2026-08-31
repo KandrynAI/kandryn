@@ -1,10 +1,10 @@
 # Graphify Microservice
 
 Standalone Python service that builds Graphify knowledge graphs
-for Blue Mantis repositories.
+for Kandryn repositories.
 
 Graphify is Python; Vercel Node functions cannot spawn Python, so this
-service runs separately (Railway/Render) and the Blue Mantis API calls it
+service runs separately (Railway/Render) and the Kandryn API calls it
 over HTTPS. It is **not** part of the pnpm workspace and does not deploy on
 Vercel.
 
@@ -12,7 +12,7 @@ Vercel.
 
 - `GET  /health` → `{"status": "ok"}`
 - `POST /index`  → clone a repo, run `graphify extract`, POST `graph.json` back
-  to the Blue Mantis callback URL. Returns `202` immediately (runs in the
+  to the Kandryn callback URL. Returns `202` immediately (runs in the
   background).
 - `POST /query`  → keyword-query a supplied `graph.json` (mirrors the Phase 1
   JS logic); returns `{ direct, neighbors }`.
@@ -31,7 +31,7 @@ this service needs — `/index` returns `202` immediately and does the clone +
        openssl rand -hex 16
 
 2. Render dashboard → **New** → **Web Service** → connect the
-   `pinnaclecube/bluemantis` repo.
+   `KandrynAI/kandryn` repo.
 3. Configure:
    - **Root Directory:** `graphify-service`
    - **Runtime:** `Docker` (Render auto-detects the Dockerfile)
@@ -44,7 +44,7 @@ this service needs — `/index` returns `202` immediately and does the clone +
 
 > Render injects `$PORT`; the Dockerfile already binds `uvicorn` to it.
 
-## Set in Blue Mantis (Vercel)
+## Set in Kandryn (Vercel)
 
 Add these environment variables (Production), then **Redeploy**:
 
@@ -56,5 +56,5 @@ Add these environment variables (Production), then **Redeploy**:
     curl https://bm-graphify.onrender.com/health
     # → {"status": "ok"}
 
-Then, in Blue Mantis, reconnect a repository (or open its detail page) and wait
+Then, in Kandryn, reconnect a repository (or open its detail page) and wait
 ~1–2 min for the **Graphify context** dot to turn green ("Graph current").

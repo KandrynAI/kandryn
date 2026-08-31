@@ -329,7 +329,7 @@ export default function TaskDetail() {
           <div className="flex-1 min-w-0">
             <span className="font-medium text-amber-500">No repository linked</span>
             <span className="text-muted-foreground ml-2">
-              Link a repository in the Details panel so Blue Mantis can scan your codebase and generate targeted code suggestions.
+              Link a repository in the Details panel so Kandryn can scan your codebase and generate targeted code suggestions.
             </span>
           </div>
           <Button

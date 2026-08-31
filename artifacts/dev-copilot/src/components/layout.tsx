@@ -59,7 +59,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {!collapsed && (
             <div className="flex items-center gap-2 font-mono font-bold tracking-tight">
               <Terminal className="h-5 w-5 text-primary" />
-              <span>Blue Mantis</span>
+              <span>Kandryn</span>
             </div>
           )}
           {collapsed && <Terminal className="h-5 w-5 text-primary mx-auto" />}

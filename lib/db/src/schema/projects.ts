@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { repositoriesTable } from "./repositories";
 
 /**
- * A Blue Mantis project binds exactly one PLM project (Jira or Azure DevOps)
+ * A Kandryn project binds exactly one PLM project (Jira or Azure DevOps)
  * to exactly one repository (strict 1:1:1 in v1).
  *
  * NOTE: the spec models ids as uuid, but the existing tables (repositories,

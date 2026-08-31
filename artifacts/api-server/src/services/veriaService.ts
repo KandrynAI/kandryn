@@ -76,7 +76,7 @@ function buildVeriaPrompt(input: VeriaInput): string {
       ? input.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")
       : "No acceptance criteria provided — review the code quality generally.";
   const paths = input.files.map((f) => f.filePath).join(", ");
-  return `You are Veria, a senior code reviewer for Blue Mantis. You review
+  return `You are Veria, a senior code reviewer for Kandryn. You review
 committed code changes against the original acceptance criteria.
 
 Work item: ${input.itemTitle}

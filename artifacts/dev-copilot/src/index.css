@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* =========================================================================
-   Blue Mantis — dev-copilot — "Command Rail" design system (light only).
+   Kandryn — dev-copilot — "Command Rail" design system (light only).
    Dense productivity shell: white ground, one blue accent (#1a56db),
    small radii, Inter + JetBrains Mono, 40px rail + 180px context panel.
    - shadcn semantic vars (HSL triples) drive src/components/ui/* primitives

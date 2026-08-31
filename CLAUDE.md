@@ -1,38 +1,42 @@
-# Blue Mantis — Project Knowledge for AI Assistants
+# Kandryn — Project Knowledge for AI Assistants
 
 > Single source of truth for continuing development. Covers **what the product does**,
 > the **UI/UX**, the **functional flows**, and the **technical architecture**. Kept current
-> with the shipped app (Phases 1–5 live on getbluemantis.com).
+> with the shipped app (Phases 1–5 live on kandryn.com + app.kandryn.com).
 
 ---
 
 ## 1. What this project is
 
-Blue Mantis is an **AI-powered developer delivery assistant**. It connects to Azure DevOps, Jira, and GitHub, syncs a project's work-item hierarchy (epic → story → task), and uses multiple AI agents (Claude + OpenAI) to generate, rank, and commit code. From a work item a user can:
+Kandryn is an **AI-powered developer delivery assistant**. It connects to Azure DevOps, Jira, and GitHub, syncs a project's work-item hierarchy (epic → story → task), and uses multiple AI agents (Claude + OpenAI) to generate, rank, and commit code. From a work item a user can:
 
 - **Run** the agent pipeline — now (inline) or on a **schedule** (background, via cron).
 - Review ranked suggestions and **commit** the chosen one → branch + PR.
-- **Create** work items from Blue Mantis (optionally pushed into the PLM) and **break down** an epic/story into children with AI.
+- **Create** work items from Kandryn (optionally pushed into the PLM) and **break down** an epic/story into children with AI.
 - **Generate tests** for a committed change, commit the test script to the same PR, and **push test cases** back into the PLM.
 
 Three deployables share one backend + database:
-- **Marketing website** (`website/`) — public Next.js site at `/` (getbluemantis.com)
-- **App** (`artifacts/dev-copilot`) — authenticated React SPA at `/app`
-- **API** (`artifacts/api-server`) — Express 5 REST server at `/api`
+- **Marketing website** (`website/`) — public Next.js site at `/` (kandryn.com)
+- **App** (`artifacts/dev-copilot`) — authenticated React SPA at `/` on app.kandryn.com
+- **API** (`artifacts/api-server`) — Express 5 REST server at `/api` on app.kandryn.com
 
-> `artifacts/blue-mantis` (older Vite marketing site) and `artifacts/mockup-sandbox` still exist but are **not deployed** — the Next.js `website/` superseded the Vite site.
+> `artifacts/kandryn` (older Vite marketing site) and `artifacts/mockup-sandbox` still exist but are **not deployed** — the Next.js `website/` superseded the Vite site.
 
 ---
 
 ## 2. Deployment & routing (Vercel)
 
-Single **Vercel** project (Vercel **Pro**), domain **getbluemantis.com**. **No shared reverse proxy** — path routing is in root **`vercel.json`**:
+**Two** Vercel projects (Vercel **Pro**), split by #127. **No shared reverse proxy** — each project has its own `vercel.json`:
 
-| Path | Serves | Build |
-|---|---|---|
-| `/api/*` | `artifacts/api-server/api/index.js` | `@vercel/node` serverless fn (`maxDuration: 300`) |
-| `/app/*` | `artifacts/dev-copilot` | Vite static (`dist/public`) |
-| `/*` | `website/` | Next.js static export (`out`) |
+| Project | Root dir | Domain | Serves |
+|---|---|---|---|
+| `kandryn_marketing` | `website/` | **kandryn.com** | Next.js 15 static export (`out`), `website/vercel.json` |
+| `kandryn-ai-app` | repo root | **app.kandryn.com** | root `vercel.json`: `/api/*` → `artifacts/api-server/api/index.js` (`@vercel/node`, `maxDuration: 300`); `/*` → `artifacts/dev-copilot` Vite static (`dist/public`) |
+
+The app project builds with `BASE_PATH=/`, so the SPA and its sign-in route live at the
+root of app.kandryn.com (`/sign-in`, not `/app/sign-in`). It also needs
+`ENABLE_EXPERIMENTAL_COREPACK=1` and Node 24 — Vercel otherwise infers pnpm 9 from
+`lockfileVersion: 9.0` and the pnpm-workspace overrides fail to match.
 
 - **Cron:** `vercel.json → crons: [{ path: "/api/internal/dispatch-runs", schedule: "*/5 * * * *" }]`.
 - Always use **relative URLs** (`/api/...`) or `import.meta.env.BASE_URL` in app code.
@@ -47,7 +51,7 @@ website/            Next.js 15 marketing site (/) — standalone npm project, NO
 artifacts/
   api-server/       Express 5 REST API (/api); esbuild → dist/serverless.mjs for Vercel
   dev-copilot/      React + Vite app (/app)
-  blue-mantis/      Legacy Vite marketing site — not deployed
+  kandryn/      Legacy Vite marketing site — not deployed
   mockup-sandbox/   Local component preview — not deployed
 lib/
   api-spec/  api-client-react/  api-zod/   OpenAPI + Orval codegen (LEGACY task flow only)
@@ -72,7 +76,7 @@ scripts/            @workspace/scripts
 | Validation | Zod (`zod/v4`) — inline in newer routes; `drizzle-zod` for insert schemas |
 | App frontend | React + Vite + **wouter** + **TanStack Query** + Tailwind + shadcn/ui |
 | Marketing | Next.js 15 (static export) |
-| Auth | Clerk (standalone **development** instance, `pk_test`) |
+| Auth | Clerk (standalone **production** instance, `pk_live`, domain kandryn.com) |
 | Email | Resend |
 | Models | Claude `claude-sonnet-4-5`, OpenAI `gpt-4o` |
 
@@ -80,7 +84,8 @@ scripts/            @workspace/scripts
 
 ## 5. Authentication
 
-Standalone **Clerk development instance** (`pk_test_…`), not Replit-managed.
+Standalone **Clerk production instance** (`pk_live_…`), Frontend API at `clerk.kandryn.com`, not Replit-managed.
+- **The publishable key is the single source of truth** — it base64-encodes its own Frontend API host. Do **not** derive it from the request/browser host (removed in `d2f13ed`): on app.kandryn.com that yields `clerk.app.kandryn.com`, which does not exist. `CLERK_PUBLISHABLE_KEY` must be set server-side or `clerkMiddleware()` throws "Publishable key is missing" on every request.
 - **Backend:** `@clerk/express` — `clerkMiddleware` in `app.ts`; `requireAuth` gates all authenticated `/api` routes and sets `req.userId`.
 - **Frontend:** `@clerk/react` — `ClerkProvider` wraps the app; unauthenticated → `/app/sign-in`.
 - **Sign-in is intentionally simplified** (`App.tsx` + `HideClerkDevBadge`): Clerk "Development mode" badge hidden, GitHub/Google social logins hidden, "Sign up" replaced by **"Request Your Access"** → a full-page link to the marketing **`/contact/`** page. Clerk sign-up still exists at `/app/sign-up`.
@@ -192,7 +197,7 @@ artifacts/api-server/src/
 - Dense, quiet, monochrome. Tokens live in **`src/index.css`** (dark is default `.dark`; light mirrors). Accent is **teal** `--accent-blue:#19c39a` (misnamed). Key dark tokens: `--bg-app:#0b1110`, `--bg-surface:#0f1614`, `--bg-raised:#141b18`, `--bg-hover:#1b2420`, `--hairline:#1e2a26`, `--text-primary:#e6efea`, `--text-secondary:#8fa39a`, `--text-muted:#5c6e66`. Type scale `--fs-2xl…--fs-xs` (22→11px). Fonts **Inter** + **JetBrains Mono**. **Do not** re-point to the legacy `src/styles/tokens.css` blue palette.
 
 ### Sidebar (`components/layout/Sidebar.tsx`)
-Small type, **monochrome single-color SVG icons** (muted, brighten to primary on hover/active), quiet bordered actions. Top→bottom: logo + "Blue Mantis" wordmark; **Projects** switcher (dropdown → board / "New project…"); **repository** switcher (dropdown → set active / "Manage"); a quiet bordered **New task** button; **Search tasks** (⌘K → `/tasks`); **Workspace** nav (Dashboard/Tasks/Repositories/History) with a subtle active background; footer with **Azure/Jira** status dots (green when connected), **theme toggle** ("Light/Dark mode"), user avatar+name, and **Settings** + **Sign out** icon buttons. Collapses to an icon rail below 1100px.
+Small type, **monochrome single-color SVG icons** (muted, brighten to primary on hover/active), quiet bordered actions. Top→bottom: logo + "Kandryn" wordmark; **Projects** switcher (dropdown → board / "New project…"); **repository** switcher (dropdown → set active / "Manage"); a quiet bordered **New task** button; **Search tasks** (⌘K → `/tasks`); **Workspace** nav (Dashboard/Tasks/Repositories/History) with a subtle active background; footer with **Azure/Jira** status dots (green when connected), **theme toggle** ("Light/Dark mode"), user avatar+name, and **Settings** + **Sign out** icon buttons. Collapses to an icon rail below 1100px.
 
 ### TabBar (`components/layout/TabBar.tsx`)
 Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown to open Tasks/Repositories/Dashboard/History/Settings. `open(href)` focuses an existing tab or opens a new one.
@@ -238,7 +243,7 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 | `CLERK_SECRET_KEY` / `CLERK_PUBLISHABLE_KEY` / `VITE_CLERK_PUBLISHABLE_KEY` | ✅ | Clerk |
 | `CRON_SECRET` | ⚠️ | Bearer for the dispatcher — **scheduled runs need it**; inline runs don't |
 | `RESEND_API_KEY` / `WAITLIST_FROM_EMAIL` | ⚠️ | Email; without the key, email is a no-op |
-| `APP_BASE_URL` | ❌ | Email link origin (default `https://getbluemantis.com`) |
+| `APP_BASE_URL` | ❌ | Email link origin (default `https://app.kandryn.com`) |
 | `ENABLE_DEMO_AGENTS` | ❌ | `true` adds mock agents (default off) |
 | `AEGIS_FORCE_FAIL_PATH` | ❌ | Diagnostic fault-injection (default **unset**). When set, any changed file whose path contains this substring is forced to fail its Aegis scan → lands in `unscannedFiles` → **fail-closed block**. For reproducing the fail-closed gate on a real run; never set in normal prod. |
 | `GRAPHIFY_SERVICE_URL` | ❌ | Graphify microservice base URL (optional; enables server-side auto-indexing) |
@@ -297,7 +302,7 @@ These are the natural next tasks; none are blocking today:
 ## Developer behaviour guidelines (Karpathy principles)
 
 These rules govern how Claude Code should behave when working on
-Blue Mantis. They apply to every task regardless of size.
+Kandryn. They apply to every task regardless of size.
 Derived from Andrej Karpathy's observations on LLM coding pitfalls.
 
 ---
@@ -319,7 +324,7 @@ implementing the asked-for approach.
 Stop and ask rather than guess. A wrong assumption discovered after
 300 lines of code costs far more than a one-line clarification question.
 
-Specific to Blue Mantis:
+Specific to Kandryn:
 - If a prompt says "update the runs table", state which columns you
   plan to add/change and wait for confirmation before writing SQL
 - If a prompt references a component that has two possible locations
@@ -343,7 +348,7 @@ Write the minimum code that solves the stated problem. Nothing else.
 The test: would a senior engineer reading this PR say "why is
 all this extra code here"? If yes, remove it.
 
-Specific to Blue Mantis:
+Specific to Kandryn:
 - Do not add Zod schemas for endpoints that do not validate input today
   unless the task says to add validation
 - Do not extract a shared utility function unless it is called in
@@ -375,7 +380,7 @@ When your changes create orphans:
 Every changed line must trace directly to the task. If you cannot
 explain why a line changed, revert it.
 
-Specific to Blue Mantis:
+Specific to Kandryn:
 - Never touch integration_configs, waitlist, or auth middleware
   unless the task explicitly covers those
 - Never change vercel.json
@@ -416,7 +421,7 @@ For every DB change:
   have been updated. Verify that the SQL is idempotent
   (uses IF NOT EXISTS / ON CONFLICT DO NOTHING).
 
-Specific to Blue Mantis success criteria that must always be met:
+Specific to Kandryn success criteria that must always be met:
 - Unique constraint violations: err.cause.code === '23505' → 409
   (never leak raw SQL error messages to the client)
 - Every new DB query must filter by userId

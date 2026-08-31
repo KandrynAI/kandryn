@@ -38,7 +38,7 @@ export default function NewProject() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight">New project</h1>
         <p className="text-muted-foreground mt-1 text-xs">
-          Bind one PLM project and one repository. Blue Mantis keeps them in sync.
+          Bind one PLM project and one repository. Kandryn keeps them in sync.
         </p>
       </div>
 

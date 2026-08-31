@@ -49,7 +49,7 @@ async function verifyGithubUrl(url: string, token: string | undefined): Promise<
     res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": "blue-mantis",
+        "User-Agent": "Kandryn",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });

@@ -527,7 +527,7 @@ function GraphifySection({ repoId }: { repoId: number }) {
           <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 4, padding: "14px 16px", marginTop: 10 }}>
             <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-ink-4)", marginBottom: 8, fontWeight: 600 }}>Graph context</div>
             <p style={{ fontSize: 13, color: "var(--c-ink-2)", lineHeight: 1.6 }}>
-              Blue Mantis uses a Graphify knowledge graph to send Raptia and Fovea precise file context instead of guessing
+              Kandryn uses a Graphify knowledge graph to send Raptia and Fovea precise file context instead of guessing
               from keywords. This reduces tokens per run by up to 5×.
             </p>
             <ol style={{ fontSize: 13, color: "var(--c-ink-2)", marginTop: 10, paddingLeft: 18, lineHeight: 1.8 }}>
@@ -550,7 +550,7 @@ function GraphifySection({ repoId }: { repoId: number }) {
         {built && (
           <p style={{ fontSize: 12, color: "var(--c-ink-4)", marginTop: 8, lineHeight: 1.5 }}>
             Rebuild re-indexes from the latest default branch via the Graphify service. The graph also
-            re-indexes automatically after Blue Mantis commits code.
+            re-indexes automatically after Kandryn commits code.
           </p>
         )}
       </CardContent>

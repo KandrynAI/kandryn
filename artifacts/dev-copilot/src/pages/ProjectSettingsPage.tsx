@@ -204,7 +204,7 @@ export default function ProjectSettingsPage() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Before generating code, Blue Mantis scores its confidence in the change plan (0–1). Plans scoring
+            Before generating code, Kandryn scores its confidence in the change plan (0–1). Plans scoring
             below this value pause for your review instead of generating automatically. Set 0 to never pause,
             1 to always pause. Default 0.6 — an uncalibrated starting point.
           </p>

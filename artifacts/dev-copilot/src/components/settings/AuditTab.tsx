@@ -322,7 +322,7 @@ export default function AuditTab() {
           <div style={{ padding: "40px 16px", textAlign: "center" }}>
             <ShieldCheck size={22} style={{ color: "var(--c-ink-4)", margin: "0 auto 8px" }} />
             <div style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-3)" }}>No audit events in this period.</div>
-            <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", marginTop: 2 }}>Events appear as your team uses Blue Mantis.</div>
+            <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", marginTop: 2 }}>Events appear as your team uses Kandryn.</div>
           </div>
         ) : (
           items.map((it) => (

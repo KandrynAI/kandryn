@@ -28,7 +28,7 @@ interface ResendPayload {
  *
  * Env:
  *   RESEND_API_KEY      — Resend API key
- *   WAITLIST_FROM_EMAIL — verified from address, e.g. "Blue Mantis <hello@venakaninfo.com>"
+ *   WAITLIST_FROM_EMAIL — verified from address, e.g. "Kandryn <hello@kandryn.com>"
  */
 async function sendViaResend(payload: ResendPayload): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
@@ -36,7 +36,7 @@ async function sendViaResend(payload: ResendPayload): Promise<boolean> {
     logger.warn("RESEND_API_KEY not set — email skipped");
     return false;
   }
-  const from = process.env.WAITLIST_FROM_EMAIL || "Blue Mantis <onboarding@resend.dev>";
+  const from = process.env.WAITLIST_FROM_EMAIL || "Kandryn <hello@kandryn.com>";
 
   const res = await fetch(RESEND_ENDPOINT, {
     method: "POST",
@@ -56,7 +56,7 @@ async function sendViaResend(payload: ResendPayload): Promise<boolean> {
 /** Send a team invite email with the accept link (0017 multi-tenancy). */
 export async function sendTeamInvite(to: string, teamName: string, inviteUrl: string): Promise<void> {
   const text = [
-    `You've been invited to join ${teamName} on Blue Mantis.`,
+    `You've been invited to join ${teamName} on Kandryn.`,
     "",
     `Accept the invite: ${inviteUrl}`,
     "",
@@ -64,7 +64,7 @@ export async function sendTeamInvite(to: string, teamName: string, inviteUrl: st
   ].join("\n");
   await sendViaResend({
     to: [to],
-    subject: `You've been invited to join ${teamName} on Blue Mantis`,
+    subject: `You've been invited to join ${teamName} on Kandryn`,
     text,
   });
 }
@@ -72,7 +72,7 @@ export async function sendTeamInvite(to: string, teamName: string, inviteUrl: st
 /** Internal notification to the team about a new signup. */
 export async function sendWaitlistNotification(entry: WaitlistEntry): Promise<void> {
   const text = [
-    "New Blue Mantis waitlist signup",
+    "New Kandryn waitlist signup",
     "",
     `Email:   ${entry.email}`,
     entry.name ? `Name:    ${entry.name}` : null,
@@ -98,9 +98,9 @@ export async function sendWaitlistConfirmation(entry: WaitlistEntry): Promise<vo
   const text = [
     `Hi ${firstName},`,
     "",
-    "Thanks for joining the Blue Mantis waitlist — you're on the list! 🎉",
+    "Thanks for joining the Kandryn waitlist — you're on the list! 🎉",
     "",
-    "Blue Mantis is the AI dev team that ships your backlog: it connects to your PLMs and",
+    "Kandryn is the AI dev team that ships your backlog: it connects to your PLMs and",
     "code repositories, picks up open work autonomously, and hands you the authority to",
     "review and deploy — cutting delivery time on routine work from days to minutes.",
     "",
@@ -153,7 +153,7 @@ export async function sendWaitlistConfirmation(entry: WaitlistEntry): Promise<vo
 
   await sendViaResend({
     to: [entry.email],
-    subject: "You're on the Blue Mantis waitlist 🎉",
+    subject: "You're on the Kandryn waitlist 🎉",
     text,
     html,
   });
@@ -176,7 +176,7 @@ export interface ContactSubmission {
 export async function sendContactEmail(sub: ContactSubmission): Promise<void> {
   const label = sub.type === "walkthrough" ? "Book a walkthrough" : "Request access";
   const text = [
-    `New Blue Mantis ${label} submission`,
+    `New Kandryn ${label} submission`,
     "",
     `Name:    ${sub.name}`,
     `Email:   ${sub.email}`,
@@ -206,7 +206,7 @@ export async function sendRunCompleted(
   d: { itemTitle: string; itemKey?: string | null; runId: number; agentCount: number; topScore?: number | null; prUrl?: string | null },
 ): Promise<void> {
   const text = [
-    "Your scheduled Blue Mantis run finished.",
+    "Your scheduled Kandryn run finished.",
     "",
     `Work item: ${d.itemKey ? `${d.itemKey} — ` : ""}${d.itemTitle}`,
     `Agents: ${d.agentCount}${d.topScore != null ? `, top score ${d.topScore}/10` : ""}`,
@@ -225,7 +225,7 @@ export async function sendRunFailed(
   d: { itemTitle: string; runId: number; error: string },
 ): Promise<void> {
   const text = [
-    "Your scheduled Blue Mantis run did not complete.",
+    "Your scheduled Kandryn run did not complete.",
     "",
     `Work item: ${d.itemTitle}`,
     `Reason: ${d.error}`,
@@ -247,7 +247,7 @@ export async function sendRunParked(
   d: { itemTitle: string; itemKey?: string | null; runId: number; reason: string; confidencePct?: number | null },
 ): Promise<void> {
   const text = [
-    "Your scheduled Blue Mantis run paused for review before generating code.",
+    "Your scheduled Kandryn run paused for review before generating code.",
     "",
     `Work item: ${d.itemKey ? `${d.itemKey} — ` : ""}${d.itemTitle}`,
     d.confidencePct != null ? `Plan confidence: ${d.confidencePct}% (below your project threshold)` : "Plan confidence is below your project threshold.",

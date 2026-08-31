@@ -85,7 +85,7 @@ export default function GovernancePage() {
           statusTone={gateOn ? "on" : "off"}
         >
           {gateOn
-            ? `Before any code is generated, Blue Mantis scores its confidence in the change plan. Plans scoring below ${thresholdPct}% confidence pause and require explicit human approval before generation proceeds. A reviewer can approve, edit, or reject the plan.`
+            ? `Before any code is generated, Kandryn scores its confidence in the change plan. Plans scoring below ${thresholdPct}% confidence pause and require explicit human approval before generation proceeds. A reviewer can approve, edit, or reject the plan.`
             : `The confidence gate is disabled for this project (threshold 0%). Change plans generate without a pre-generation review. Set a confidence threshold in project settings to require human approval below it.`}
         </Control>
 
@@ -119,7 +119,7 @@ export default function GovernancePage() {
         >
           Committed changes can be scanned for security vulnerabilities across every changed file. Any High or Critical
           finding — or a file that cannot be scanned — fails the security check (fail-closed: an unscannable file blocks
-          rather than being waved through). When Blue Mantis&#39;s security status check is configured as a{" "}
+          rather than being waved through). When Kandryn&#39;s security status check is configured as a{" "}
           <em>required</em> status in the repository&#39;s branch-protection rules, a failing scan blocks the merge.
         </Control>
 

@@ -9,9 +9,9 @@ from pydantic import BaseModel
 import git
 import httpx
 
-app = FastAPI(title="Blue Mantis Graphify Service")
+app = FastAPI(title="Kandryn Graphify Service")
 
-# Simple auth — Blue Mantis API sends this header
+# Simple auth — Kandryn API sends this header
 GRAPHIFY_SERVICE_SECRET = os.environ.get("GRAPHIFY_SERVICE_SECRET", "")
 
 
@@ -23,8 +23,8 @@ def check_auth(x_service_secret: str = Header(default="")):
 class IndexRequest(BaseModel):
     repo_url: str        # e.g. https://github.com/owner/repo
     github_token: str    # user's GitHub PAT
-    repo_id: int         # Blue Mantis repository ID
-    callback_url: str    # Blue Mantis endpoint to POST graph when done
+    repo_id: int         # Kandryn repository ID
+    callback_url: str    # Kandryn endpoint to POST graph when done
 
 
 class QueryRequest(BaseModel):
@@ -112,7 +112,7 @@ def query_graph(
     x_service_secret: str = Header(default="")
 ):
     """
-    Query a graph.json (already stored in Blue Mantis DB) with a
+    Query a graph.json (already stored in Kandryn DB) with a
     plain text query. Returns relevant node list.
     """
     check_auth(x_service_secret)

@@ -5,7 +5,7 @@ export const SITE = {
   name: 'Kandryn',
   tagline: 'An AI delivery assistant for teams whose backlog is bigger than their week.',
   domain: 'kandryn.com',
-  email: 'sales@bluemantis.io',
+  email: 'hello@kandryn.com',
   // The API lives with the app project (app.kandryn.com); the marketing site is
   // a separate origin, so its form posts are absolute cross-origin calls (A1).
   apiBaseUrl: 'https://app.kandryn.com',

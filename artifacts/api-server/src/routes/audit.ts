@@ -66,7 +66,7 @@ router.get("/audit/export.csv", async (req, res): Promise<void> => {
 
   const csv = await audit.exportCsv(req.teamId, days);
 
-  const filename = `bluemantis-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `kandryn-audit-${new Date().toISOString().slice(0, 10)}.csv`;
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(csv);

@@ -586,7 +586,7 @@ function buildScoreAnalysisPrompt(
   const ac = context?.acceptanceCriteria?.length
     ? context.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")
     : "(none provided)";
-  return `You are the Synthesis engine for Blue Mantis. You evaluate two code
+  return `You are the Synthesis engine for Kandryn. You evaluate two code
 suggestions for the same work item and explain your reasoning clearly.
 
 Work item: ${context?.title ?? "(untitled)"}

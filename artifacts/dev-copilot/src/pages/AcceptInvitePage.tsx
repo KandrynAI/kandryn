@@ -37,7 +37,7 @@ export default function AcceptInvitePage() {
       <Logo context="signin" height={28} style={{ marginBottom: 20 }} />
       <div style={{ width: "100%", maxWidth: 420, background: "#fff", border: "2px solid color-mix(in srgb, #161b24 38%, transparent)", padding: 28 }}>
         <div style={{ fontSize: 13, color: "#3c4553" }}>You've been invited to join</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#161b24", margin: "4px 0 6px", letterSpacing: "-0.01em" }}>a Blue Mantis team</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#161b24", margin: "4px 0 6px", letterSpacing: "-0.01em" }}>a Kandryn team</div>
         <p style={{ fontSize: 13, color: "#3c4553", lineHeight: 1.5, marginBottom: 20 }}>
           Accepting adds this workspace to your account. You can switch between your own work and the team's.
         </p>

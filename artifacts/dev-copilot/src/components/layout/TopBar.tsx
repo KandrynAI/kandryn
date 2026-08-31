@@ -49,7 +49,7 @@ function usePageTitle(): { title: string; subtitle: string } {
   if (location === "/tasks/new") return { title: "New task", subtitle: "" };
   if (location.startsWith("/tasks/")) return { title: "Task", subtitle: "" };
   if (location.startsWith("/workspace/")) return { title: "Workspace", subtitle: "" };
-  return { title: "Blue Mantis", subtitle: "" };
+  return { title: "Kandryn", subtitle: "" };
 }
 
 export function TopBar() {

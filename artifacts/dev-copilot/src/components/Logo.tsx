@@ -11,7 +11,7 @@ interface LogoProps {
 }
 
 /**
- * Context-aware Blue Mantis logo (app / Vite build — plain <img>).
+ * Context-aware Kandryn logo (app / Vite build — plain <img>).
  * Picks the correct variant + full-vs-mark from LOGO_CONTEXT_MAP unless overridden.
  * SVGs are served from /logos/{logo|mark}-{variant}.svg (BASE_URL-prefixed for /app).
  */
@@ -38,7 +38,7 @@ export function Logo({
   return (
     <img
       src={src}
-      alt="Blue Mantis"
+      alt="Kandryn"
       width={width}
       height={height}
       className={className}

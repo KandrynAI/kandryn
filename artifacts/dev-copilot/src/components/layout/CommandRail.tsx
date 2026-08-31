@@ -75,7 +75,7 @@ export function CommandRail() {
         }
       `}</style>
       <nav className="cr-root" data-testid="command-rail">
-        <button className="cr-logo" onClick={() => navigate("/dashboard")} title="Blue Mantis" aria-label="Blue Mantis — Dashboard">
+        <button className="cr-logo" onClick={() => navigate("/dashboard")} title="Kandryn" aria-label="Kandryn — Dashboard">
           <Logo context="sidebar" height={16} />
         </button>
 

@@ -1,6 +1,10 @@
-# Blue Mantis — Vercel Deployment Guide
+# Kandryn — Vercel Deployment Guide
 
-This is the runbook for deploying Blue Mantis to **Vercel** with **Supabase** (Postgres)
+> **Stale:** this describes the pre-#127 single-project layout (`/app` prefix,
+> `artifacts/blue-mantis` as the marketing SPA). Since #127 there are two Vercel
+> projects — see CLAUDE.md §2. Kept for the Supabase/env sections.
+
+This is the runbook for deploying Kandryn to **Vercel** with **Supabase** (Postgres)
 and the project's **own Clerk** instance. It covers what's already in the repo and the
 manual dashboard steps to finish the cutover.
 
@@ -11,7 +15,7 @@ manual dashboard steps to finish the cutover.
     (`artifacts/api-server/src/serverless.ts`), `maxDuration: 300` for the
     multi-agent suggestion endpoint.
   - `/app` and `/app/*` → `dev-copilot` (the app SPA).
-  - `/` → `blue-mantis` (the marketing SPA).
+  - `/` → `blue-mantis` (the legacy marketing SPA; superseded by `website/`).
 - **Serverless handler** — `artifacts/api-server/src/serverless.ts` exports the Express
   `app` as the function handler. Local dev still uses `src/index.ts`
   (`validateEnv()` + `app.listen()`); it is unchanged.

@@ -104,7 +104,7 @@ router.post("/auth/github-sync", async (req, res): Promise<void> => {
 
     // Verify the token is usable and fetch the GitHub login name
     const ghRes = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${token}`, "User-Agent": "BlueMantis" },
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": "Kandryn" },
     });
     const login = ghRes.ok ? ((await ghRes.json()) as { login?: string }).login : undefined;
     await saveConfigs(userId, { GITHUB_TOKEN: token });
@@ -212,7 +212,7 @@ router.post("/config/test/:integration", async (req, res): Promise<void> => {
         const token = await resolve(body, "GITHUB_TOKEN", uid, "GITHUB_TOKEN", teamId);
         if (!token) { res.status(400).json({ ok: false, message: "Token not set" }); return; }
         const r = await fetch("https://api.github.com/user", {
-          headers: { Authorization: `Bearer ${token}`, "User-Agent": "RedMantis" },
+          headers: { Authorization: `Bearer ${token}`, "User-Agent": "Kandryn" },
         });
         if (!r.ok) throw new Error(`GitHub returned ${r.status}`);
         const data = (await r.json()) as { login?: string };
