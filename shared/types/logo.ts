@@ -10,15 +10,12 @@ export type LogoContext =
   | 'print' // PDF exports, reports
   | 'email'; // transactional emails (white bg)
 
+// The brand ships three colourways and its guidelines forbid recolouring, so
+// these are the only variants that exist as files.
 export type LogoVariant =
-  | 'signal-blue' // #076DF2 — primary brand
-  | 'midnight-navy' // #0A1F44 — formal/dark
-  | 'black' // #000000 — print
-  | 'white' // #FFFFFF — on dark bg
-  | 'slate-grey' // #64748B — muted
-  | 'duo-blue-navy' // mark blue + wordmark navy
-  | 'duo-cyan-white' // mark cyan + wordmark white (dark bg)
-  | 'duo-orange-black'; // mark orange + wordmark black
+  | 'slate' // #1D4E76 — primary brand colour, light backgrounds
+  | 'ink' // #141821 — single-colour print
+  | 'white'; // #FFFFFF — on dark backgrounds
 
 export type LogoType = 'full' | 'mark';
 
@@ -27,12 +24,12 @@ export const LOGO_CONTEXT_MAP: Record<
   LogoContext,
   { variant: LogoVariant; type: LogoType; note: string }
 > = {
-  'nav-light': { variant: 'duo-blue-navy', type: 'full', note: 'White/light nav — blue mark, navy wordmark' },
-  'nav-dark': { variant: 'duo-cyan-white', type: 'full', note: 'Dark/navy nav — cyan mark, white wordmark' },
-  'footer-light': { variant: 'slate-grey', type: 'full', note: 'Light footer — muted, does not compete' },
-  'footer-dark': { variant: 'duo-cyan-white', type: 'full', note: 'Dark footer — cyan mark, white wordmark' },
-  signin: { variant: 'duo-blue-navy', type: 'full', note: 'Sign-in card on white — blue mark, navy wordmark' },
-  sidebar: { variant: 'signal-blue', type: 'mark', note: 'App rail — mark only, brand blue' },
-  print: { variant: 'midnight-navy', type: 'full', note: 'PDF/print — navy, no blue halftone risk' },
-  email: { variant: 'duo-blue-navy', type: 'full', note: 'Email — blue mark, navy wordmark on white' },
+  'nav-light': { variant: 'slate', type: 'full', note: 'White/light nav — primary slate lockup' },
+  'nav-dark': { variant: 'white', type: 'full', note: 'Dark/navy nav — white lockup' },
+  'footer-light': { variant: 'slate', type: 'full', note: 'Light footer — primary slate lockup' },
+  'footer-dark': { variant: 'white', type: 'full', note: 'Dark footer — white lockup' },
+  signin: { variant: 'slate', type: 'full', note: 'Sign-in card on white — primary slate lockup' },
+  sidebar: { variant: 'slate', type: 'mark', note: 'App rail — mark only, brand slate' },
+  print: { variant: 'ink', type: 'full', note: 'PDF/print — single-colour ink' },
+  email: { variant: 'slate', type: 'full', note: 'Email — primary slate lockup on white' },
 };
