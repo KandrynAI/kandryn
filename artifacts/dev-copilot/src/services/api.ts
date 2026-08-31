@@ -1069,10 +1069,18 @@ export function fetchPlanningCost(days: number, projectId?: number): Promise<Pla
 
 export interface SecurityPosture {
   severities: { critical: number; high: number; medium: number; low: number; info: number };
+  /** Runs Aegis DECIDED to block — not runs whose gate is currently blocked, so
+   *  an override never makes a past block disappear from the report. */
   gateBlocked: number;
   total: number;
   scannedRuns: number;
   trend: { label: string; count: number | null }[];
+  /** Blocks that were subsequently overridden (0034). */
+  overrides: number;
+  /** overrides ÷ gateBlocked, as a percentage. Null when nothing was blocked. */
+  overrideRate: number | null;
+  /** Weekly override rate. `rate` is null in a week with no blocks — not 0%. */
+  overrideTrend: { label: string; blocked: number; overrides: number; rate: number | null }[];
 }
 
 export function fetchSecurityPosture(days: number, projectId?: number): Promise<SecurityPosture> {
@@ -1087,6 +1095,8 @@ export interface ExecutiveSummary {
   // Delivery Rate = commits produced / terminal runs (succeeded/failed/canceled).
   deliveryRate: { value: number | null; delta: number | null };
   findingsBlocked: { value: number; delta: number };
+  /** Strictly a subset of findingsBlocked: those on blocks later overridden. */
+  findingsOverridden: { value: number; delta: number };
   // Planning-stage only (generation-stage tokens uninstrumented).
   costPerRun: { valueUsd: number | null; delta: number | null };
   planAcceptanceTrend: { current: number | null; points: number[]; first: number | null; last: number | null };
@@ -1214,6 +1224,33 @@ export interface AegisFailure {
 
 export function fetchAegisFailures(scope?: number, days?: number): Promise<{ items: AegisFailure[] }> {
   return request<{ items: AegisFailure[] }>(`/api/reports/admin/aegis-failures${adminQuery(scope, days)}`);
+}
+
+/** A cleared security gate, for the admin override log (0034). */
+export interface AegisOverrideReportRow {
+  id: number;
+  runId: number;
+  projectId: number | null;
+  projectName: string | null;
+  overriddenBy: string;
+  triggeredBy: string | null;
+  /** True when the same person triggered the run and cleared its gate. */
+  sameActor: boolean | null;
+  secondApproverRequired: boolean;
+  reason: string;
+  gateReason: string | null;
+  criticalCount: number;
+  highCount: number;
+  unscannedCount: number;
+  statusReposted: boolean;
+  createdAt: string;
+}
+
+export function fetchAegisOverrides(
+  scope?: number,
+  days?: number,
+): Promise<{ items: AegisOverrideReportRow[]; selfOverrides: number }> {
+  return request(`/api/reports/admin/aegis-overrides${adminQuery(scope, days)}`);
 }
 
 export interface FailedStage {

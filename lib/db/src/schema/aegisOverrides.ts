@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, boolean, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, jsonb, index, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { runsTable, type PersistedAegisFinding } from "./runs";
 
@@ -41,7 +42,7 @@ export const aegisOverridesTable = pgTable(
      */
     secondApproverRequired: boolean("second_approver_required").notNull().default(false),
 
-    /** Mandatory. Trimmed non-empty, enforced in the API and by a CHECK. */
+    /** Mandatory. Trimmed non-empty, enforced in the API and by the CHECK below. */
     reason: text("reason").notNull(),
 
     /** The gate's verbatim reason: coverage (unscanned) vs findings. */
@@ -67,6 +68,12 @@ export const aegisOverridesTable = pgTable(
   (t) => [
     index("aegis_overrides_run_idx").on(t.runId),
     index("aegis_overrides_team_idx").on(t.teamId, t.createdAt),
+    // Mirrors 0034. Declared here too, or `drizzle-kit push` would create this
+    // table without it on any database that doesn't already have it — and a
+    // blank justification makes the whole record worthless. The name matches the
+    // one Postgres assigned 0034's inline CHECK, so push sees no drift against a
+    // database that ran the migration by hand.
+    check("aegis_overrides_reason_check", sql`btrim(${t.reason}) <> ''`),
   ],
 );
 

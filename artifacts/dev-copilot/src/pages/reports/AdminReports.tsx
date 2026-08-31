@@ -7,6 +7,7 @@ import {
   ParkedRunsPanel,
   RepoHealthPanel,
   AegisFailuresPanel,
+  AegisOverridesPanel,
   FailedByStagePanel,
   ConfigAuditPanel,
   AccessChangePanel,
@@ -17,7 +18,8 @@ import {
  * cross-project scope selector, and the time-range pills — plus the shared
  * component kit. PR 2 mounted the four operational panels (Stuck & Parked,
  * Repository Health, Aegis Gate Failures, Failed Runs by Stage). PR 3 adds
- * Configuration Audit + Access & Change Audit below. Each panel reads `scope` +
+ * Configuration Audit + Access & Change Audit below; Security Gate Overrides
+ * (0034) sits with the Aegis panels. Each panel reads `scope` +
  * `days` and fetches independently; parked runs — the one with a real action —
  * leads, above the diagnostics.
  */
@@ -54,6 +56,7 @@ export function AdminReports({ projects }: { projects: Project[] }) {
         <ParkedRunsPanel scope={scope} />
         <RepoHealthPanel scope={scope} />
         <AegisFailuresPanel scope={scope} days={days} />
+        <AegisOverridesPanel scope={scope} days={days} />
         <FailedByStagePanel scope={scope} days={days} />
         <ConfigAuditPanel scope={scope} />
         <AccessChangePanel days={days} />

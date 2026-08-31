@@ -125,7 +125,7 @@ export function Sparkline({ points, width = 72, height = 20, color = "var(--c-bl
 }
 
 /** Stat card: number + label, optional trend arrow + delta, optional sparkline. */
-export function StatCard({ label, value, delta, spark }: { label: string; value: string | number; delta?: number | null; spark?: number[] }) {
+export function StatCard({ label, value, delta, spark, footnote }: { label: string; value: string | number; delta?: number | null; spark?: number[]; footnote?: ReactNode }) {
   const up = delta != null && delta > 0;
   const down = delta != null && delta < 0;
   const deltaColor = up ? "var(--c-green)" : down ? "var(--c-red)" : "var(--c-ink-4)";
@@ -141,6 +141,7 @@ export function StatCard({ label, value, delta, spark }: { label: string; value:
           </span>
         )}
       </div>
+      {footnote && <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>{footnote}</span>}
       {spark && spark.length > 1 && <Sparkline points={spark} />}
     </div>
   );

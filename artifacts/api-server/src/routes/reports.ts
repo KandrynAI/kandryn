@@ -11,6 +11,7 @@ import {
   changePlansTable,
   changePlanFilesTable,
   auditLogTable,
+  aegisOverridesTable,
 } from "@workspace/db";
 import { z } from "zod/v4";
 import { getTeamMembers } from "../services/teamService.js";
@@ -886,6 +887,16 @@ router.get("/reports/planning-cost", async (req, res): Promise<void> => {
  * plus the count of gate-blocked runs, plus a weekly findings trend. A week with
  * no scanned runs is null in the trend (a gap); a scanned week with no findings
  * is 0 (a real clean week).
+ *
+ * `gateBlocked` counts what Aegis DECIDED (`security_scan.gateDecision`), not
+ * what the run's gate currently says. Since 0034 an override sets
+ * `runs.security_gate = 'approved'`, so keying off that column would quietly
+ * shrink this number every time someone overrode a block — the opposite of what
+ * a security report is for. The scan's own decision is the durable record.
+ *
+ * Override rate (0034) is overrides ÷ blocks over the same window, trended
+ * weekly. A week with no blocks has no rate (null), not 0% — nothing was
+ * overridden because nothing was blocked.
  */
 router.get("/reports/security-posture", async (req, res): Promise<void> => {
   const scope = await resolveReportScope(req, res);
@@ -900,15 +911,28 @@ router.get("/reports/security-posture", async (req, res): Promise<void> => {
   ];
   if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
   const runs = await db
-    .select({ securityScan: runsTable.securityScan, securityGate: runsTable.securityGate, createdAt: runsTable.createdAt })
+    .select({ id: runsTable.id, securityScan: runsTable.securityScan, createdAt: runsTable.createdAt })
     .from(runsTable)
     .where(and(...conds));
 
+  // Which of those blocked runs were later overridden. Keyed on the run so the
+  // override always falls in the same week as the block it cleared — an
+  // override recorded days later still belongs to the week that was blocked.
+  const blockedRuns = runs.filter((r) => r.securityScan?.gateDecision === "blocked");
+  const overriddenRunIds = new Set<number>(
+    blockedRuns.length
+      ? (
+          await db
+            .select({ runId: aegisOverridesTable.runId })
+            .from(aegisOverridesTable)
+            .where(inArray(aegisOverridesTable.runId, blockedRuns.map((r) => r.id)))
+        ).map((o) => o.runId)
+      : [],
+  );
+
   const severities = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-  let gateBlocked = 0;
   const findingsAt: { at: number; n: number }[] = [];
   for (const r of runs) {
-    if (r.securityGate === "blocked") gateBlocked++;
     const findings = r.securityScan?.findings ?? [];
     findingsAt.push({ at: r.createdAt.getTime(), n: findings.length });
     for (const f of findings) {
@@ -916,13 +940,35 @@ router.get("/reports/security-posture", async (req, res): Promise<void> => {
     }
   }
   const total = severities.critical + severities.high + severities.medium + severities.low + severities.info;
+  const gateBlocked = blockedRuns.length;
+  const overridden = blockedRuns.filter((r) => overriddenRunIds.has(r.id)).length;
 
-  const trend = weekBuckets(now, scope.days).map((b) => {
+  const buckets = weekBuckets(now, scope.days);
+  const trend = buckets.map((b) => {
     const slice = findingsAt.filter((f) => f.at >= b.lo && f.at < b.hi);
     return { label: b.label, count: slice.length ? slice.reduce((a, f) => a + f.n, 0) : null };
   });
+  const overrideTrend = buckets.map((b) => {
+    const slice = blockedRuns.filter((r) => r.createdAt.getTime() >= b.lo && r.createdAt.getTime() < b.hi);
+    const over = slice.filter((r) => overriddenRunIds.has(r.id)).length;
+    return {
+      label: b.label,
+      blocked: slice.length,
+      overrides: over,
+      rate: slice.length ? Math.round((over / slice.length) * 100) : null,
+    };
+  });
 
-  res.json({ severities, gateBlocked, total, scannedRuns: runs.length, trend });
+  res.json({
+    severities,
+    gateBlocked,
+    total,
+    scannedRuns: runs.length,
+    trend,
+    overrides: overridden,
+    overrideRate: gateBlocked ? Math.round((overridden / gateBlocked) * 100) : null,
+    overrideTrend,
+  });
 });
 
 /**
@@ -952,7 +998,6 @@ router.get("/reports/executive", async (req, res): Promise<void> => {
       projectId: runsTable.projectId,
       status: runsTable.status,
       committedSuggestionId: runsTable.committedSuggestionId,
-      securityGate: runsTable.securityGate,
       securityScan: runsTable.securityScan,
       createdAt: runsTable.createdAt,
     })
@@ -960,6 +1005,18 @@ router.get("/reports/executive", async (req, res): Promise<void> => {
     .where(and(...runConds));
 
   const runIds = runs.map((r) => r.id);
+  // Which blocked runs were later overridden (0034). Keyed on the run, so an
+  // override always counts in the same month as the block it cleared.
+  const overriddenRunIds = new Set<number>(
+    runIds.length
+      ? (
+          await db
+            .select({ runId: aegisOverridesTable.runId })
+            .from(aegisOverridesTable)
+            .where(inArray(aegisOverridesTable.runId, runIds))
+        ).map((o) => o.runId)
+      : [],
+  );
   const plans = runIds.length
     ? await db
         .select({
@@ -993,8 +1050,15 @@ router.get("/reports/executive", async (req, res): Promise<void> => {
     if (!terminal.length) return null;
     return Math.round((terminal.filter((r) => r.committedSuggestionId != null).length / terminal.length) * 100);
   };
-  const findingsBlocked = (rs: R[]): number =>
-    rs.reduce((n, r) => (r.securityGate === "blocked" ? n + (r.securityScan?.criticalCount ?? 0) + (r.securityScan?.highCount ?? 0) : n), 0);
+  // What Aegis DECIDED, not what the gate currently says: since 0034 an override
+  // flips runs.security_gate to 'approved', and keying off that would make a
+  // block vanish from this number the moment someone waved it through.
+  const severeCount = (r: R): number => (r.securityScan?.criticalCount ?? 0) + (r.securityScan?.highCount ?? 0);
+  const wasBlocked = (r: R): boolean => r.securityScan?.gateDecision === "blocked";
+  const findingsBlocked = (rs: R[]): number => rs.reduce((n, r) => (wasBlocked(r) ? n + severeCount(r) : n), 0);
+  /** Strictly a subset of findingsBlocked — the same runs, same counts, filtered. */
+  const findingsOverridden = (rs: R[]): number =>
+    rs.reduce((n, r) => (wasBlocked(r) && overriddenRunIds.has(r.id) ? n + severeCount(r) : n), 0);
   const costPerRun = (rs: R[]): number | null => {
     const costs = rs
       .map((r) => planByRun.get(r.id))
@@ -1031,6 +1095,7 @@ router.get("/reports/executive", async (req, res): Promise<void> => {
   const apCur = activeProjects(cur), apPri = activeProjects(pri);
   const drCur = deliveryRate(cur), drPri = deliveryRate(pri);
   const fbCur = findingsBlocked(cur), fbPri = findingsBlocked(pri);
+  const foCur = findingsOverridden(cur), foPri = findingsOverridden(pri);
   const cprCur = costPerRun(cur), cprPri = costPerRun(pri);
 
   res.json({
@@ -1038,6 +1103,7 @@ router.get("/reports/executive", async (req, res): Promise<void> => {
     runs: { value: cur.length, delta: cur.length - pri.length },
     deliveryRate: { value: drCur, delta: ptsDelta(drCur, drPri) },
     findingsBlocked: { value: fbCur, delta: fbCur - fbPri },
+    findingsOverridden: { value: foCur, delta: foCur - foPri },
     costPerRun: { valueUsd: cprCur, delta: cprCur != null && cprPri != null ? Math.round((cprCur - cprPri) * 10000) / 10000 : null },
     planAcceptanceTrend: {
       current: planAcceptance(cur),
@@ -1247,6 +1313,59 @@ router.get("/reports/admin/aegis-failures", async (req, res): Promise<void> => {
     .filter((it) => scope.projectId == null || it.projectId === scope.projectId);
 
   res.json({ items });
+});
+
+/**
+ * GET /reports/admin/aegis-overrides — every security gate an admin cleared in
+ * the window (0034), newest first.
+ *
+ * Read from `aegis_overrides` rather than the audit log: the audit row is
+ * pruned by the team's retention window, and this is the record an auditor
+ * comes back to. Scoped by run owner, the same member-userIds scope the other
+ * admin panels use, so a personal project belonging to a team member is
+ * included.
+ *
+ * `sameActor` is the row that matters here — the same person triggered the run
+ * and cleared its gate. That is permitted where the project has not turned on
+ * `require_second_approver`, which is exactly why it needs to be visible.
+ */
+router.get("/reports/admin/aegis-overrides", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+  const since = new Date(Date.now() - scope.days * 24 * 60 * 60 * 1000);
+
+  const conds = [inArray(runsTable.userId, scope.userIds), gte(aegisOverridesTable.createdAt, since)];
+  if (scope.projectId != null) conds.push(eq(runsTable.projectId, scope.projectId));
+
+  const rows = await db
+    .select({
+      id: aegisOverridesTable.id,
+      runId: aegisOverridesTable.runId,
+      projectId: runsTable.projectId,
+      projectName: projectsTable.name,
+      overriddenBy: aegisOverridesTable.overriddenBy,
+      triggeredBy: aegisOverridesTable.triggeredBy,
+      sameActor: aegisOverridesTable.sameActor,
+      secondApproverRequired: aegisOverridesTable.secondApproverRequired,
+      reason: aegisOverridesTable.reason,
+      gateReason: aegisOverridesTable.gateReason,
+      criticalCount: aegisOverridesTable.criticalCount,
+      highCount: aegisOverridesTable.highCount,
+      unscannedCount: aegisOverridesTable.unscannedCount,
+      statusReposted: aegisOverridesTable.statusReposted,
+      createdAt: aegisOverridesTable.createdAt,
+    })
+    .from(aegisOverridesTable)
+    .innerJoin(runsTable, eq(aegisOverridesTable.runId, runsTable.id))
+    .leftJoin(projectsTable, eq(runsTable.projectId, projectsTable.id))
+    .where(and(...conds))
+    .orderBy(desc(aegisOverridesTable.createdAt))
+    .limit(200);
+
+  res.json({
+    items: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
+    selfOverrides: rows.filter((r) => r.sameActor).length,
+  });
 });
 
 /**

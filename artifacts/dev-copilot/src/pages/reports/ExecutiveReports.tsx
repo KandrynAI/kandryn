@@ -57,7 +57,23 @@ function ExecutiveBody({ projects }: { projects: Project[] }) {
                 value={data.deliveryRate.value != null ? `${data.deliveryRate.value}%` : "—"}
                 delta={data.deliveryRate.delta}
               />
-              <StatCard label="Findings blocked pre-merge" value={data.findingsBlocked.value} delta={data.findingsBlocked.delta} />
+              {/* The headline counts what Aegis blocked. The footnote says how much
+                  of that was then waved through — a subset of the same number,
+                  so the two never contradict each other. */}
+              <StatCard
+                label="Findings blocked pre-merge"
+                value={data.findingsBlocked.value}
+                delta={data.findingsBlocked.delta}
+                footnote={
+                  data.findingsOverridden.value > 0 ? (
+                    <span style={{ color: "var(--c-red)" }}>
+                      {data.findingsOverridden.value} of these were overridden by an admin
+                    </span>
+                  ) : data.findingsBlocked.value > 0 ? (
+                    "None overridden"
+                  ) : undefined
+                }
+              />
 
               {/* Delivery-rate subtext — no "acceptance"/"merge" wording. */}
               <div style={{ gridColumn: "1 / -1", marginTop: -6, fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>

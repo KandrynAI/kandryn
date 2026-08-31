@@ -359,10 +359,12 @@ export function AgentWinPanel({ days, projectId }: { days: number; projectId?: n
 // ── PR 3 shared: a tiny trend chart with gap-aware bars ─────────────────────
 // null values render as an empty slot (a data gap), never a zero-height bar —
 // so "no data this week" never reads the same as "zero this week".
-function TrendBars({ points, color, format }: { points: { label: string; value: number | null }[]; color: string; format: (v: number) => string }) {
+function TrendBars({ points, color, format, scaleMax }: { points: { label: string; value: number | null }[]; color: string; format: (v: number) => string; scaleMax?: number }) {
   const vals = points.map((p) => p.value).filter((v): v is number => v != null);
   if (vals.length === 0) return null;
-  const max = Math.max(...vals, 0.0001);
+  // `scaleMax` pins the axis — pass it for a percentage, where scaling to the
+  // tallest bar in the window would make a small rate look like a large one.
+  const max = scaleMax ?? Math.max(...vals, 0.0001);
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 44, marginTop: 8 }}>
       {points.map((p, i) => (
@@ -493,6 +495,34 @@ export function SecurityPosturePanel({ days, projectId }: { days: number; projec
               <span style={{ color: "var(--c-ink-4)" }}> · {data.total} findings across {data.scannedRuns} scanned run{data.scannedRuns === 1 ? "" : "s"}</span>
             </div>
             <TrendBars points={data.trend.map((t) => ({ label: t.label, value: t.count }))} color={SEV_COLOR.High} format={(v) => `${v} findings`} />
+
+            {/* Override rate (0034). A block that was waved through is still a
+                block — `gateBlocked` counts what Aegis decided, so overriding
+                one never quietly removes it from the denominator. */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--c-border)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>Override rate</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-lg)", fontWeight: 600, color: data.overrides > 0 ? "var(--c-red)" : "var(--c-ink)" }}>
+                  {data.overrideRate != null ? `${data.overrideRate}%` : "—"}
+                </span>
+              </div>
+              {data.gateBlocked > 0 ? (
+                <>
+                  <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", marginTop: 4 }}>
+                    <b style={{ color: data.overrides > 0 ? "var(--c-red)" : "var(--c-ink)" }}>{data.overrides}</b> of {data.gateBlocked} blocked run
+                    {data.gateBlocked === 1 ? "" : "s"} cleared by an admin override.
+                  </div>
+                  <TrendBars
+                    points={data.overrideTrend.map((t) => ({ label: `${t.label} · ${t.overrides} of ${t.blocked} blocked`, value: t.rate }))}
+                    color="var(--c-red)"
+                    scaleMax={100}
+                    format={(v) => `${v}% overridden`}
+                  />
+                </>
+              ) : (
+                <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", marginTop: 4 }}>No gate blocks in this window, so nothing to override.</div>
+              )}
+            </div>
           </div>
         )}
       </PanelState>

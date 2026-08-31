@@ -1,9 +1,10 @@
 import { useLocation } from "wouter";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ShieldX } from "lucide-react";
 import {
   fetchParkedRuns,
   fetchRepoHealth,
   fetchAegisFailures,
+  fetchAegisOverrides,
   fetchFailedByStage,
   fetchConfigAudit,
   fetchAccessChanges,
@@ -143,6 +144,77 @@ export function AegisFailuresPanel({ scope, days }: { scope: Scope; days: RangeD
                 Open <ArrowUpRight size={12} />
               </button>
             )}
+          </Row>
+        ))}
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── 2.3b Aegis Gate Overrides (0034) ────────────────────────────────────────
+
+/**
+ * Every security gate an admin cleared, with the reason they gave.
+ *
+ * A self-override — the same person triggered the run and cleared its gate — is
+ * flagged rather than hidden. It is legitimate for a sole operator, which is
+ * precisely why an admin needs to be able to see how often it happens and on
+ * what grounds. The panel's header pill counts them.
+ */
+export function AegisOverridesPanel({ scope, days }: { scope: Scope; days: RangeDays }) {
+  const [, navigate] = useLocation();
+  const { data, loading, error, reload } = usePanelData(() => fetchAegisOverrides(scopeArg(scope), days), [scope, days]);
+  const items = data?.items ?? [];
+  const selfOverrides = data?.selfOverrides ?? 0;
+
+  return (
+    <ReportPanel
+      title="Security gate overrides"
+      subtitle={`Blocked gates cleared by an admin in the last ${days} days, and why.`}
+      action={
+        items.length > 0 ? (
+          <StatusPill
+            tone={selfOverrides > 0 ? "red" : "amber"}
+            label={selfOverrides > 0 ? `${items.length} overridden · ${selfOverrides} self` : `${items.length} overridden`}
+          />
+        ) : undefined
+      }
+    >
+      <PanelState loading={loading} error={error} isEmpty={items.length === 0} onRetry={reload} emptyLabel="No gates were overridden in this window.">
+        {items.map((o) => (
+          <Row key={o.id}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                {o.projectName ?? "—"}
+                <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>· run #{o.runId}</span>
+                {o.sameActor && (
+                  <span
+                    title="The same person triggered this run and cleared its security gate."
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "var(--fs-xs)", fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: "var(--c-red-bg)", color: "var(--c-red)" }}
+                  >
+                    <ShieldX size={11} />
+                    Self-override
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 2 }}>
+                <span style={{ fontFamily: "var(--mono)" }}>{o.overriddenBy}</span>
+                {o.criticalCount > 0 && <span style={{ color: "var(--c-red)" }}> · {o.criticalCount} critical</span>}
+                {o.highCount > 0 && <span style={{ color: "var(--c-amber)" }}> · {o.highCount} high</span>}
+                {o.unscannedCount > 0 && <span> · {o.unscannedCount} unscanned</span>}
+                {!o.statusReposted && <span> · check not re-posted</span>}
+                {" · "}{age(o.createdAt)}
+              </div>
+              {/* The reason verbatim — the whole point of the record. */}
+              <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-2)", marginTop: 3, lineHeight: 1.5 }}>“{o.reason}”</div>
+            </div>
+            <button
+              onClick={() => navigate(`/runs/${o.runId}`)}
+              className="bm-ghost"
+              style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
+            >
+              Open <ArrowUpRight size={12} />
+            </button>
           </Row>
         ))}
       </PanelState>
