@@ -45,6 +45,105 @@ export interface OverrideResult {
   sameActor: boolean;
 }
 
+/** Preflight answer for the run-detail UI: may this caller override, and if not, why. */
+export interface OverridePolicy {
+  /** projects.require_second_approver as it stands right now. */
+  requireSecondApprover: boolean;
+  /** Is the caller the person who triggered this run? Null = unknown (legacy run). */
+  sameActor: boolean | null;
+  canOverride: boolean;
+  /** Plain-language reason the caller cannot override. Null when they can. */
+  blockedReason: string | null;
+}
+
+interface OverrideContext {
+  run: typeof runsTable.$inferSelect;
+  teamId: number | null;
+  requireSecondApprover: boolean;
+  triggeredBy: string | null;
+  sameActor: boolean | null;
+}
+
+/**
+ * Load the run and everything the override rules depend on, enforcing the same
+ * owner-or-team-member access rule as `GET /runs/:id`. Being a team admin does
+ * not grant access to another team's run.
+ */
+async function loadContext(runId: number, actor: OverrideActor): Promise<OverrideContext> {
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
+  if (!run) throw new RunError("Run not found", 404);
+
+  const [proj] = run.projectId
+    ? await db
+        .select({
+          teamId: projectsTable.teamId,
+          requireSecondApprover: projectsTable.requireSecondApprover,
+        })
+        .from(projectsTable)
+        .where(eq(projectsTable.id, run.projectId))
+    : [];
+
+  if (run.userId !== actor.userId) {
+    const isTeamProject = actor.teamId != null && proj?.teamId === actor.teamId;
+    if (!isTeamProject) throw new RunError("Access denied.", 403);
+  }
+
+  // runs.run_by_user_id is null on runs predating 0032; fall back to the owner
+  // so a self-override is still detected where it can be.
+  const triggeredBy = run.runByUserId ?? run.userId ?? null;
+  return {
+    run,
+    teamId: proj?.teamId ?? null,
+    requireSecondApprover: proj?.requireSecondApprover ?? false,
+    triggeredBy,
+    sameActor: triggeredBy != null ? triggeredBy === actor.userId : null,
+  };
+}
+
+/**
+ * The one place the override rules live. `overrideSecurityGate` enforces exactly
+ * what this reports, so the button the UI shows and the answer the API gives can
+ * never drift apart — which for a security control matters more than the usual
+ * don't-abstract-early rule.
+ */
+function evaluatePolicy(ctx: OverrideContext, actor: OverrideActor): OverridePolicy {
+  const base = {
+    requireSecondApprover: ctx.requireSecondApprover,
+    sameActor: ctx.sameActor,
+  };
+  const deny = (blockedReason: string): OverridePolicy => ({ ...base, canOverride: false, blockedReason });
+
+  if (actor.teamRole !== "admin") {
+    return deny("Only a team admin can clear a security gate. Ask an admin on your team to review this run.");
+  }
+  if (ctx.run.securityGate !== "blocked") {
+    return deny(
+      ctx.run.securityGate == null
+        ? "This run has no Aegis scan to override. Run the security scan first."
+        : `This run's security gate is '${ctx.run.securityGate}', not blocked. There is nothing to override.`,
+    );
+  }
+  if (ctx.requireSecondApprover) {
+    if (ctx.sameActor === true) {
+      return deny("You triggered this run, so you cannot clear its security gate. This project requires a second approver.");
+    }
+    if (ctx.sameActor === null) {
+      // Unlike approvePlan's allow-with-log, deny: a security override is
+      // higher-stakes, and "we couldn't tell who triggered it" is not a basis
+      // for waiving the rule the project explicitly opted into.
+      return deny(
+        "This run predates trigger attribution, so segregation of duties cannot be verified. It cannot be overridden while this project requires a second approver.",
+      );
+    }
+  }
+  return { ...base, canOverride: true, blockedReason: null };
+}
+
+/** Preflight for the UI. Readable by any team member; only admins get `canOverride`. */
+export async function getOverridePolicy(runId: number, actor: OverrideActor): Promise<OverridePolicy> {
+  return evaluatePolicy(await loadContext(runId, actor), actor);
+}
+
 export async function overrideSecurityGate(
   runId: number,
   reason: string,
@@ -56,53 +155,14 @@ export async function overrideSecurityGate(
   const cleanReason = reason.trim();
   if (!cleanReason) throw new RunError("A reason is required to override a security gate.", 400);
 
-  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
-  if (!run) throw new RunError("Run not found", 404);
+  const ctx = await loadContext(runId, actor);
+  const { run, sameActor, triggeredBy } = ctx;
 
-  // Only a genuinely blocked gate can be overridden. Overriding an approved or
-  // unscanned run would put a meaningless record in the audit trail.
-  if (run.securityGate !== "blocked") {
-    throw new RunError(
-      run.securityGate == null
-        ? "This run has no Aegis scan to override. Run the security scan first."
-        : `This run's security gate is '${run.securityGate}', not blocked. There is nothing to override.`,
-      409,
-    );
-  }
-
-  const [proj] = run.projectId
-    ? await db
-        .select({
-          teamId: projectsTable.teamId,
-          requireSecondApprover: projectsTable.requireSecondApprover,
-        })
-        .from(projectsTable)
-        .where(eq(projectsTable.id, run.projectId))
-    : [];
-  const requireSecond = proj?.requireSecondApprover ?? false;
-
-  // runs.run_by_user_id is null on runs predating 0032; fall back to the owner
-  // so a self-override is still detected where it can be.
-  const triggeredBy = run.runByUserId ?? run.userId ?? null;
-  const sameActor = triggeredBy != null ? triggeredBy === actor.userId : null;
-
-  // The segregation-of-duties rule, gated on the project's own toggle.
-  if (requireSecond) {
-    if (sameActor === true) {
-      throw new RunError(
-        "You triggered this run, so you cannot clear its security gate. This project requires a second approver.",
-        403,
-      );
-    }
-    if (sameActor === null) {
-      // Unlike approvePlan's allow-with-log, deny: a security override is
-      // higher-stakes, and "we couldn't tell who triggered it" is not a basis
-      // for waiving the rule the project explicitly opted into.
-      throw new RunError(
-        "This run predates trigger attribution, so segregation of duties cannot be verified. It cannot be overridden while this project requires a second approver.",
-        403,
-      );
-    }
+  const policy = evaluatePolicy(ctx, actor);
+  if (!policy.canOverride) {
+    // A gate that isn't blocked is a state conflict; everything else is a
+    // permission the caller does not have.
+    throw new RunError(policy.blockedReason!, run.securityGate !== "blocked" ? 409 : 403);
   }
 
   // Freeze the findings now. runs.security_scan is overwritten on re-scan, so a
@@ -119,11 +179,11 @@ export async function overrideSecurityGate(
       runId,
       suggestionId: run.committedSuggestionId ?? null,
       projectId: run.projectId ?? null,
-      teamId: proj?.teamId ?? actor.teamId ?? null,
+      teamId: ctx.teamId ?? actor.teamId ?? null,
       overriddenBy: actor.userId,
       triggeredBy,
       sameActor,
-      secondApproverRequired: requireSecond,
+      secondApproverRequired: ctx.requireSecondApprover,
       reason: cleanReason,
       gateReason: scan?.gateReason ?? null,
       findingsSnapshot: blocking,

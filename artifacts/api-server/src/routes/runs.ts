@@ -17,7 +17,7 @@ import {
 } from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
 import { getProjectRepository, getRunRepository } from "../services/repoResolver.js";
-import { overrideSecurityGate, listOverridesForRun } from "../services/aegisOverrideService.js";
+import { overrideSecurityGate, listOverridesForRun, getOverridePolicy } from "../services/aegisOverrideService.js";
 import { requireAdmin } from "../middlewares/team.js";
 import { suggestionPrimaryFile, loadFilesForSuggestions, loadSuggestionFiles } from "../services/suggestionFiles.js";
 import { syncProject } from "../services/syncService.js";
@@ -1371,14 +1371,32 @@ router.post("/runs/:id/security/override", requireAdmin, async (req, res): Promi
   }
 });
 
-/** Overrides recorded against a run — drives the run-detail banner. */
+/**
+ * Overrides recorded against a run, plus whether this caller may add one.
+ * The policy comes from the same function the write path enforces, so the UI
+ * cannot offer a button the API will refuse. Readable by any team member;
+ * `policy.canOverride` is what gates the action.
+ */
 router.get("/runs/:id/security/overrides", async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid run id" });
     return;
   }
-  res.json(await listOverridesForRun(params.data.id));
+  try {
+    const policy = await getOverridePolicy(params.data.id, {
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      teamRole: req.teamRole ?? null,
+    });
+    res.json({ overrides: await listOverridesForRun(params.data.id), policy });
+  } catch (err) {
+    if (err instanceof RunError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
 });
 
 export default router;

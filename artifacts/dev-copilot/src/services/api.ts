@@ -361,6 +361,8 @@ export interface Run {
   prUrl: string | null;
   commitHash: string | null;
   committedSuggestionId: number | null;
+  /** Who triggered the run (0032). Null on runs predating it. */
+  runByUserId?: string | null;
   /** Who approved a parked plan, and when (governance item 6). */
   approvedByUserId?: string | null;
   approvedAt?: string | null;
@@ -454,6 +456,56 @@ export interface AegisScanResult {
 
 export function runAegisScan(runId: number): Promise<{ scan: AegisScanResult }> {
   return request<{ scan: AegisScanResult }>(`/api/runs/${runId}/security`, { method: 'POST' });
+}
+
+/** A recorded override of a blocked Aegis gate (0034). */
+export interface AegisOverrideRow {
+  id: number;
+  runId: number;
+  projectId: number | null;
+  overriddenBy: string;
+  triggeredBy: string | null;
+  sameActor: boolean | null;
+  secondApproverRequired: boolean;
+  reason: string;
+  gateReason: string | null;
+  criticalCount: number;
+  highCount: number;
+  unscannedCount: number;
+  unscannedFiles: string[];
+  /**
+   * Whether the GitHub check actually flipped to passing. False for a non-GitHub
+   * repo or a missing token — the override is recorded either way, but the merge
+   * is not unblocked and the UI must say so.
+   */
+  statusReposted: boolean;
+  createdAt: string;
+}
+
+/** Server-side preflight: may this user override, and if not, why. */
+export interface OverridePolicy {
+  requireSecondApprover: boolean;
+  /** Is the viewer the person who triggered this run? Null = unknown (legacy run). */
+  sameActor: boolean | null;
+  canOverride: boolean;
+  blockedReason: string | null;
+}
+
+export function fetchSecurityOverrides(
+  runId: number,
+): Promise<{ overrides: AegisOverrideRow[]; policy: OverridePolicy }> {
+  return request(`/api/runs/${runId}/security/overrides`);
+}
+
+export function overrideSecurityGate(
+  runId: number,
+  reason: string,
+): Promise<{ override: AegisOverrideRow; statusReposted: boolean; sameActor: boolean }> {
+  return request(`/api/runs/${runId}/security/override`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export interface ReviewFinding {

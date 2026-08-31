@@ -10,6 +10,7 @@ import { DiffViewer } from "@/components/diff/DiffViewer";
 import { GeneratingProgress } from "@/components/runs/GeneratingProgress";
 import { PlanPanel } from "@/components/plan/PlanPanel";
 import { EditPlanDialog } from "@/components/plan/EditPlanDialog";
+import { SecurityOverrideDialog } from "@/components/runs/SecurityOverrideDialog";
 import { agentDisplay } from "@/lib/agents";
 import { useTeam } from "@/context/TeamContext";
 import { useActiveProjectFromResource } from "@/context/ActiveProjectContext";
@@ -33,6 +34,7 @@ import {
   runAegisScan,
   runNarratia,
   remediateAegisFinding,
+  fetchSecurityOverrides,
   fetchRemediationDraft,
   pushWorkItemToPlm,
   fetchTeamIntegrations,
@@ -44,6 +46,8 @@ import {
   type Run,
   type ReviewFinding,
   type AegisFinding,
+  type AegisOverrideRow,
+  type OverridePolicy,
   type RunbookTarget,
 } from "@/services/api";
 import { RunPanel } from "@/components/runs/RunPanel";
@@ -1058,6 +1062,22 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
   const [remediatingId, setRemediatingId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [findingStates, setFindingStates] = useState<Record<string, FindingLocalState>>({});
+  const [overrides, setOverrides] = useState<AegisOverrideRow[]>([]);
+  const [policy, setPolicy] = useState<OverridePolicy | null>(null);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+
+  // Whether an override exists, and whether this viewer may add one, both come
+  // from the server — the client never re-derives the segregation-of-duties rule.
+  const loadOverrides = useCallback(() => {
+    if (status !== "done") return;
+    fetchSecurityOverrides(runId)
+      .then((r) => {
+        setOverrides(r.overrides);
+        setPolicy(r.policy);
+      })
+      .catch(() => {});
+  }, [runId, status]);
+  useEffect(loadOverrides, [loadOverrides]);
 
   const findings = scan?.findings ?? [];
   const selectableIds = findings
@@ -1205,6 +1225,11 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
               <div style={{ fontFamily: "var(--mono)", fontSize: 11, marginTop: 3 }}>{unscanned.join(", ")}</div>
             </div>
           )}
+          {/* The gate decision stays blocked — that is what Aegis found. An
+              override sits on top of it, visible to everyone who opens the run. */}
+          {overrides.map((o) => (
+            <OverrideRecord key={o.id} o={o} />
+          ))}
         </div>
       ) : (
         <div style={{ background: "var(--c-green-bg)", border: "1px solid var(--c-green)", padding: "10px 14px", borderRadius: 4, marginBottom: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1251,6 +1276,85 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
             />
           ))}
         </>
+      )}
+
+      {/* Deliberately the last thing in the section, below every finding and
+          well away from Commit. Overriding is the option of last resort and it
+          should read as one, not as the button nearest your cursor. */}
+      {blocked && overrides.length === 0 && policy && (
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--c-border)" }}>
+          <div style={{ fontSize: "var(--fs-xs)", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>
+            Last resort
+          </div>
+          <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", lineHeight: 1.55, margin: "6px 0 10px" }}>
+            If this block is a false positive or a risk your team has accepted, an admin can clear the gate. The
+            findings stay on the record, and the override is logged with a reason and visible to your team's admins.
+          </p>
+          {policy.canOverride ? (
+            <button
+              onClick={() => setOverrideOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: "var(--fs-sm)",
+                fontWeight: 600,
+                padding: "5px 12px",
+                borderRadius: 3,
+                background: "transparent",
+                color: "var(--c-red)",
+                border: "1px solid var(--c-red)",
+                cursor: "pointer",
+              }}
+            >
+              <ShieldX size={13} />
+              Override security gate…
+            </button>
+          ) : (
+            <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", lineHeight: 1.5 }}>{policy.blockedReason}</div>
+          )}
+        </div>
+      )}
+
+      {policy && (
+        <SecurityOverrideDialog
+          runId={runId}
+          scan={scan}
+          policy={policy}
+          open={overrideOpen}
+          onOpenChange={setOverrideOpen}
+          onDone={() => {
+            loadOverrides();
+            onChanged();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * An override that already happened. Reads as a record, not an alert: the block
+ * above it is the alert, this says who cleared it and on what grounds.
+ */
+function OverrideRecord({ o }: { o: AegisOverrideRow }) {
+  return (
+    <div style={{ marginTop: 10, borderTop: "1px solid var(--c-red)", paddingTop: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--c-red)" }}>
+        Security gate overridden by <span style={{ fontFamily: "var(--mono)" }}>{o.overriddenBy}</span> on{" "}
+        {new Date(o.createdAt).toLocaleString()}
+      </div>
+      <div style={{ fontSize: 13, color: "var(--c-red)", marginTop: 3, lineHeight: 1.5 }}>“{o.reason}”</div>
+      {o.sameActor && (
+        <div style={{ fontSize: 12, color: "var(--c-red)", marginTop: 5 }}>
+          Self-override — the same person triggered this run and cleared its gate.
+        </div>
+      )}
+      {!o.statusReposted && (
+        <div style={{ fontSize: 12, color: "var(--c-red)", marginTop: 5 }}>
+          The security check on the pull request could not be updated (non-GitHub repository, or no GitHub token), so
+          branch protection may still block the merge.
+        </div>
       )}
     </div>
   );
