@@ -17,6 +17,8 @@ import {
 } from "../services/aegisPlmService.js";
 import { postSecurityStatus } from "../services/gitService.js";
 import { getProjectRepository, getRunRepository } from "../services/repoResolver.js";
+import { overrideSecurityGate, listOverridesForRun } from "../services/aegisOverrideService.js";
+import { requireAdmin } from "../middlewares/team.js";
 import { suggestionPrimaryFile, loadFilesForSuggestions, loadSuggestionFiles } from "../services/suggestionFiles.js";
 import { syncProject } from "../services/syncService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
@@ -1293,6 +1295,90 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
         ? `Ticket ${ticketKey} created. Remediation run ${newRunId ? `#${newRunId} ` : ""}queued — it starts automatically within a few minutes.`
         : `Ticket ${ticketKey} created and synced to board.`,
   });
+});
+
+/**
+ * Override a blocked Aegis security gate (0034). Admin-only, mandatory reason.
+ *
+ * The gate is a GitHub commit status, not a Kandryn-side block — Aegis runs
+ * after the commit — so this endpoint's real effect is re-posting that status
+ * as success. Where it cannot (Azure Repos, no GitHub token) the override is
+ * still recorded and `statusReposted` comes back false; the UI must say so
+ * rather than implying the merge was unblocked.
+ *
+ * Segregation of duties is enforced here only when the project opts in via
+ * require_second_approver. With it off a sole operator may clear their own
+ * run — recorded with sameActor true and flagged in admin reporting.
+ */
+const OverrideBody = z.object({
+  // Trimmed non-empty: whitespace-only is rejected at the API, not just the UI.
+  reason: z.string().trim().min(1, "A reason is required.").max(2000),
+});
+router.post("/runs/:id/security/override", requireAdmin, async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const body = OverrideBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "A reason is required to override a security gate." });
+    return;
+  }
+  try {
+    const result = await overrideSecurityGate(params.data.id, body.data.reason, {
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      teamRole: req.teamRole ?? null,
+    });
+    const o = result.override;
+    // Self-contained on purpose: an auditor must be able to reconstruct what was
+    // waved through without joining back to the run, whose scan can be overwritten.
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "aegis.gate_overridden",
+      entityType: "run",
+      entityId: params.data.id,
+      metadata: {
+        projectId: o.projectId,
+        suggestionId: o.suggestionId,
+        reason: o.reason,
+        gateReason: o.gateReason,
+        criticalCount: o.criticalCount,
+        highCount: o.highCount,
+        unscannedCount: o.unscannedCount,
+        unscannedFiles: o.unscannedFiles,
+        // filePath is optional on legacy single-file scan rows; drop the blanks
+        // rather than recording an empty entry in the audit metadata.
+        findingFiles: [...new Set(o.findingsSnapshot.map((f) => f.filePath).filter(Boolean))],
+        triggeredBy: o.triggeredBy,
+        overriddenBy: o.overriddenBy,
+        sameActor: o.sameActor,
+        secondApproverRequired: o.secondApproverRequired,
+        statusReposted: o.statusReposted,
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    if (err instanceof RunError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+/** Overrides recorded against a run — drives the run-detail banner. */
+router.get("/runs/:id/security/overrides", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  res.json(await listOverridesForRun(params.data.id));
 });
 
 export default router;

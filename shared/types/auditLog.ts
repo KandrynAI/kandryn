@@ -52,6 +52,8 @@ export const AUDIT_ACTIONS = [
   'aegis.scan_run',
   'aegis.finding_pushed',
   'aegis.remediation_started',
+  // A blocked Aegis security gate cleared by an admin with a mandatory reason.
+  'aegis.gate_overridden',
   'narratia.runbook_generated',
   'narratia.runbook_pushed',
 
