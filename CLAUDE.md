@@ -299,6 +299,30 @@ These are the natural next tasks; none are blocking today:
 
 ---
 
+## Commit attribution
+
+Every git commit message ends with these two lines:
+
+```
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013odDkWjBWJLoyQHgmm7Vqp
+```
+
+Every pull request description ends with:
+
+```
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_013odDkWjBWJLoyQHgmm7Vqp
+```
+
+The session URL above is the one that set this convention; replace it if a
+later session supersedes it. Attribution belongs in commit messages and PR
+descriptions only — never in code comments, migrations, or anything else the
+repository ships.
+
+---
+
 ## Developer behaviour guidelines (Karpathy principles)
 
 These rules govern how Claude Code should behave when working on
