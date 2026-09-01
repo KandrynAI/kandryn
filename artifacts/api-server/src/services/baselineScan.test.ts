@@ -156,7 +156,7 @@ test("baseline scans are readable only by the owner or the owning team", async (
   // read file paths, vulnerability classes and exploitation detail from every
   // other tenant's codebase. Same rule as GET /runs/:id — owner, or a member of
   // the team whose project owns the repository.
-  const { canViewBaselineScans } = await import("./baselineScanService.js");
+  const { canViewBaselineScans } = await import("./baselineScanCore.js");
   const target = (repoOwner: string, teamId: number | null) =>
     ({ repo: { userId: repoOwner }, project: teamId == null ? null : { teamId } }) as never;
   const actor = (userId: string, teamId: number | null, teamRole: string | null) => ({ userId, teamId, teamRole });

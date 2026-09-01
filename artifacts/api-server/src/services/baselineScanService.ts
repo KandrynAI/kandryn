@@ -18,11 +18,11 @@ import { RunError } from "./runService.js";
 import * as audit from "./auditService.js";
 import { logger } from "../lib/logger.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
-import { discoverFiles, estimateScan, findingFingerprint, sortFindings, MAX_FILE_CHARS, MAX_FILES, type BaselineEstimate } from "./baselineScanCore.js";
+import { canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, sortFindings, MAX_FILE_CHARS, MAX_FILES, type BaselineEstimate } from "./baselineScanCore.js";
 
 // Re-exported so existing callers keep importing from the service; the pure
 // core lives in its own module only so it can be tested without a database.
-export { discoverFiles, estimateScan, findingFingerprint, sortFindings, MAX_FILES };
+export { canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, sortFindings, MAX_FILES };
 export type { BaselineEstimate };
 
 /**
@@ -119,21 +119,6 @@ export async function canRunBaselineScan(
     return { allowed: false, reason: "This repository needs a valid URL before it can be scanned." };
   }
   return { allowed: true, reason: null };
-}
-
-/**
- * Whether this actor may SEE a repository's scans at all — a separate question
- * from whether they may start one.
- *
- * Same rule as `GET /runs/:id`: the owner, or any member of the team whose
- * project owns the repository. Findings name file paths, vulnerability classes
- * and exploitation detail for a specific codebase, so "authenticated" is
- * nowhere near enough to read them.
- */
-export function canViewBaselineScans(actor: BaselineActor, target: ScanTarget): boolean {
-  if (target.repo.userId === actor.userId) return true;
-  const teamId = target.project?.teamId ?? null;
-  return teamId != null && actor.teamId === teamId;
 }
 
 /** Resolve the target, who may view it, and who may act on it. */

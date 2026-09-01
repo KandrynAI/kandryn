@@ -115,3 +115,28 @@ export function sortFindings<T extends SortableFinding>(findings: T[]): T[] {
   );
 }
 
+/**
+ * Whether this actor may SEE a repository's scans at all — a separate question
+ * from whether they may start one.
+ *
+ * Same rule as `GET /runs/:id`: the owner, or any member of the team whose
+ * project owns the repository. Findings name file paths, vulnerability classes
+ * and exploitation detail for a specific codebase, so "authenticated" is
+ * nowhere near enough to read them.
+ */
+export interface ViewActor {
+  userId: string;
+  teamId: number | null;
+}
+
+/** The only parts of a scan target this decision reads. */
+export interface ViewableTarget {
+  repo: { userId: string };
+  project: { teamId: number | null } | null;
+}
+
+export function canViewBaselineScans(actor: ViewActor, target: ViewableTarget): boolean {
+  if (target.repo.userId === actor.userId) return true;
+  const teamId = target.project?.teamId ?? null;
+  return teamId != null && actor.teamId === teamId;
+}
