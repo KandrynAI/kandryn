@@ -11,6 +11,7 @@ import { RunError } from "./runService.js";
 import { getRunRepository } from "./repoResolver.js";
 import { getConfigs } from "./configService.js";
 import { postSecurityStatus } from "./gitService.js";
+import { canAdminister } from "./resourceAdmin.js";
 import { logger } from "../lib/logger.js";
 
 /**
@@ -113,8 +114,16 @@ function evaluatePolicy(ctx: OverrideContext, actor: OverrideActor): OverridePol
   };
   const deny = (blockedReason: string): OverridePolicy => ({ ...base, canOverride: false, blockedReason });
 
-  if (actor.teamRole !== "admin") {
-    return deny("Only a team admin can clear a security gate. Ask an admin on your team to review this run.");
+  // Admin OF THIS RUN'S TEAM — not merely an admin somewhere. On a personal
+  // project (no team) the owner administers it: there is no second admin to
+  // escalate to, and locking the only responsible party out of their own gate
+  // would leave them no path at all.
+  if (!canAdminister(actor, { ownerUserId: ctx.run.userId, teamId: ctx.teamId })) {
+    return deny(
+      ctx.teamId != null
+        ? "Only an admin of this project's team can clear a security gate. Ask an admin on your team to review this run."
+        : "Only the owner of this project can clear its security gate.",
+    );
   }
   if (ctx.run.securityGate !== "blocked") {
     return deny(

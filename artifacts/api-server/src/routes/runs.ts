@@ -18,7 +18,6 @@ import {
 import { postSecurityStatus } from "../services/gitService.js";
 import { getProjectRepository, getRunRepository } from "../services/repoResolver.js";
 import { overrideSecurityGate, listOverridesForRun, getOverridePolicy } from "../services/aegisOverrideService.js";
-import { requireAdmin } from "../middlewares/team.js";
 import { suggestionPrimaryFile, loadFilesForSuggestions, loadSuggestionFiles } from "../services/suggestionFiles.js";
 import { syncProject } from "../services/syncService.js";
 import type { PlmProvider } from "../services/plmWrite.js";
@@ -1314,7 +1313,13 @@ const OverrideBody = z.object({
   // Trimmed non-empty: whitespace-only is rejected at the API, not just the UI.
   reason: z.string().trim().min(1, "A reason is required.").max(2000),
 });
-router.post("/runs/:id/security/override", requireAdmin, async (req, res): Promise<void> => {
+// No requireAdmin here on purpose. overrideSecurityGate evaluates the SAME
+// policy the GET below publishes, and it is resource-aware in a way a
+// middleware cannot be (admin of THIS run's team, or the owner of a personal
+// project). A middleware on top would make the POST stricter than the policy
+// the client was told to expect — exactly the drift centralising this was meant
+// to prevent.
+router.post("/runs/:id/security/override", async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid run id" });

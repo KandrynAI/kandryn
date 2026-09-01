@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   teamsTable,
@@ -55,11 +55,46 @@ export async function createTeam(userId: string, name: string): Promise<Team> {
   return team;
 }
 
-/** Idempotently ensure the user has a team (used by the bootstrap endpoint). */
+/**
+ * Idempotently ensure the user has a team, and return it.
+ *
+ * Called at the moment a project is created — not on every request, and not
+ * during onboarding, where `GET /teams/me` returning `{team: null}` is what
+ * sends a brand-new user to /setup. The guarantee is narrower and enough: by
+ * the time a project exists, its owner is the admin of a team, so every
+ * resource-level admin check has someone to resolve to.
+ *
+ * Race-safe. The check-then-create was previously two statements, so two
+ * concurrent first-project creates by the same user would both observe "no
+ * team" and create two. The advisory lock serialises them per user, and the
+ * re-check inside the lock is what actually prevents the duplicate — the lock
+ * alone would not. A transaction-scoped lock is released on commit or
+ * rollback, so a failure here cannot strand it.
+ */
 export async function ensureUserHasTeam(userId: string, displayName?: string): Promise<Team> {
   const existing = await getTeamForUser(userId);
   if (existing) return existing.team;
-  return createTeam(userId, displayName ?? `Team ${userId.slice(-6)}`);
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+    const [row] = await tx
+      .select({ team: teamsTable })
+      .from(teamMembersTable)
+      .innerJoin(teamsTable, eq(teamMembersTable.teamId, teamsTable.id))
+      .where(eq(teamMembersTable.userId, userId))
+      .orderBy(asc(teamMembersTable.joinedAt))
+      .limit(1);
+    if (row) return row.team;
+
+    const name = displayName ?? `Team ${userId.slice(-6)}`;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || null;
+    const [team] = await tx
+      .insert(teamsTable)
+      .values({ name, slug, ownerUserId: userId, plan: "free" })
+      .returning();
+    await tx.insert(teamMembersTable).values({ teamId: team.id, userId, role: "admin" });
+    return team;
+  });
 }
 
 export async function createInvite(

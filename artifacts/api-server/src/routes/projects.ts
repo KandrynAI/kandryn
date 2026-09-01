@@ -7,6 +7,8 @@ import { syncProject } from "../services/syncService.js";
 import { getProjectRepository } from "../services/repoResolver.js";
 import { createPlmWorkItem } from "../services/plmWrite.js";
 import * as audit from "../services/auditService.js";
+import { canAdminister } from "../services/resourceAdmin.js";
+import { ensureUserHasTeam } from "../services/teamService.js";
 
 const router: IRouter = Router();
 
@@ -82,6 +84,10 @@ async function backfillUserProjects(userId: string) {
     }
 
     if (!proj) {
+      // Backfill is the second path that creates projects, and it set no team
+      // at all — so a migrated project was team-less even for a user who had a
+      // team. Same guarantee as POST /projects.
+      const team = await ensureUserHasTeam(userId);
       [proj] = await db
         .insert(projectsTable)
         .values({
@@ -90,6 +96,8 @@ async function backfillUserProjects(userId: string) {
           plmProvider,
           plmProjectKey: null,
           plmProjectName: null,
+          teamId: team.id,
+          visibility: "team",
         })
         .returning();
       // Bind via project_id — projects.repository_id is deprecated (0020).
@@ -239,6 +247,13 @@ router.post("/projects", async (req, res): Promise<void> => {
     throw err;
   }
 
+  // Every project has an owning team from the moment it exists. A user who
+  // reached this endpoint without completing /setup (the redirect is
+  // client-side, so a direct call skips it) would otherwise own a team-less
+  // project that no admin — not even themselves — could administer.
+  // Idempotent: a no-op for the overwhelmingly common case of an existing team.
+  const team = await ensureUserHasTeam(req.userId);
+
   try {
     const [proj] = await db
       .insert(projectsTable)
@@ -250,10 +265,10 @@ router.post("/projects", async (req, res): Promise<void> => {
         plmProjectName: plmName ?? null,
         // projects.repository_id is deprecated (0020) — the binding lives on
         // repositories.project_id, set below. Left null on create.
-        // Team context (0017): a new project created by a team member is
-        // team-visible; a user with no team keeps it personal.
-        teamId: req.teamId ?? null,
-        visibility: req.teamId ? "team" : "personal",
+        // Team context (0017). req.teamId is the team attached at the start of
+        // the request and is stale when we just created one, so use `team`.
+        teamId: team.id,
+        visibility: "team",
       })
       .returning();
     // Adopt the repository into this project (repositories.project_id is the
@@ -350,9 +365,13 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
     return;
   }
   // The creator, or a team admin of the project's team, may update it (0017).
-  const isOwner = project.userId === req.userId;
-  const isTeamAdmin = req.teamRole === "admin" && project.teamId != null && project.teamId === req.teamId;
-  if (!isOwner && !isTeamAdmin) {
+  if (
+    project.userId !== req.userId &&
+    !canAdminister(
+      { userId: req.userId, teamId: req.teamId ?? null, teamRole: req.teamRole ?? null },
+      { ownerUserId: project.userId, teamId: project.teamId },
+    )
+  ) {
     res.status(403).json({ error: "Only the project owner or a team admin can update this project." });
     return;
   }
@@ -453,9 +472,13 @@ router.delete("/projects/:id", async (req, res): Promise<void> => {
     return;
   }
   // The creator, or a team admin of the project's team, may delete it (0017).
-  const isOwner = project.userId === req.userId;
-  const isTeamAdmin = req.teamRole === "admin" && project.teamId != null && project.teamId === req.teamId;
-  if (!isOwner && !isTeamAdmin) {
+  if (
+    project.userId !== req.userId &&
+    !canAdminister(
+      { userId: req.userId, teamId: req.teamId ?? null, teamRole: req.teamRole ?? null },
+      { ownerUserId: project.userId, teamId: project.teamId },
+    )
+  ) {
     res.status(403).json({ error: "Only the project owner or a team admin can delete this project." });
     return;
   }
