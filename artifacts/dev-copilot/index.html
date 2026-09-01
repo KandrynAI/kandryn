@@ -4,7 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Kandryn</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- ?v= is a cache buster, and it has to be bumped by hand whenever
+         favicon.svg changes. Vite copies public/ verbatim, so the Kandryn mark
+         replaced the Blue Mantis one at the SAME url — and a browser's favicon
+         cache is keyed on the url, not the bytes, so returning visitors kept
+         the old icon indefinitely. (The marketing site never had this problem:
+         Next fingerprints its icon.svg automatically.) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
