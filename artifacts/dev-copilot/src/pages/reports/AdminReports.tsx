@@ -8,6 +8,7 @@ import {
   RepoHealthPanel,
   AegisFailuresPanel,
   AegisOverridesPanel,
+  BaselineScansPanel,
   FailedByStagePanel,
   ConfigAuditPanel,
   AccessChangePanel,
@@ -57,6 +58,7 @@ export function AdminReports({ projects }: { projects: Project[] }) {
         <RepoHealthPanel scope={scope} />
         <AegisFailuresPanel scope={scope} days={days} />
         <AegisOverridesPanel scope={scope} days={days} />
+        <BaselineScansPanel scope={scope} days={days} />
         <FailedByStagePanel scope={scope} days={days} />
         <ConfigAuditPanel scope={scope} />
         <AccessChangePanel days={days} />

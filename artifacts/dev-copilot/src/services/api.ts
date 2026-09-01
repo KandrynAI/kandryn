@@ -1081,10 +1081,150 @@ export interface SecurityPosture {
   overrideRate: number | null;
   /** Weekly override rate. `rate` is null in a week with no blocks — not 0%. */
   overrideTrend: { label: string; blocked: number; overrides: number; rate: number | null }[];
+  /** Reported beside the gate numbers, never added into them (0035). */
+  baseline: {
+    repositoriesScanned: number;
+    criticalCount: number;
+    highCount: number;
+    open: number;
+    acknowledged: number;
+    pushed: number;
+  };
 }
 
 export function fetchSecurityPosture(days: number, projectId?: number): Promise<SecurityPosture> {
   return request<SecurityPosture>(`/api/reports/security-posture?${reportQuery(days, projectId)}`);
+}
+
+/* ---- Baseline security scan (0035) ---- */
+
+/**
+ * A baseline scan of an existing codebase. There is no gate and no commit here,
+ * so there is no approved/blocked state — `filesScanned` of `filesTotal` is the
+ * coverage figure that replaces it.
+ */
+export interface BaselineScan {
+  id: number;
+  repositoryId: number;
+  projectId: number | null;
+  teamId: number | null;
+  triggeredBy: string;
+  status: 'queued' | 'scanning' | 'succeeded' | 'failed' | 'canceled';
+  filesTotal: number;
+  filesScanned: number;
+  filesSkipped: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  batchId: string | null;
+  estimatedCostUsd: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface BaselineFinding {
+  id: number;
+  scanId: number;
+  severity: SecuritySeverity;
+  owasp: string;
+  filePath: string;
+  title: string;
+  detail: string;
+  lineRef: string | null;
+  remediation: string;
+  fingerprint: string;
+  plmTicketKey: string | null;
+  plmTicketUrl: string | null;
+  status: 'open' | 'acknowledged' | 'pushed';
+  acknowledgedBy: string | null;
+  acknowledgedAt: string | null;
+  acknowledgeReason: string | null;
+  createdAt: string;
+}
+
+/** Shown to the admin before any spend begins. */
+export interface BaselineEstimate {
+  filesTotal: number;
+  estimatedCostUsd: number;
+  estimatedMinutes: number;
+  source: 'graph' | 'tree';
+  overCap: boolean;
+  maxFiles: number;
+}
+
+export function fetchBaselineEstimate(repoId: number): Promise<BaselineEstimate> {
+  return request(`/api/repositories/${repoId}/baseline/estimate`);
+}
+
+export function fetchBaselineScans(
+  repoId: number,
+): Promise<{ scans: BaselineScan[]; canScan: boolean; reason: string | null }> {
+  return request(`/api/repositories/${repoId}/baseline`);
+}
+
+/** `acknowledgedFileCount` is the count the admin approved; the API refuses a stale one. */
+export function startBaselineScan(repoId: number, acknowledgedFileCount: number): Promise<{ scan: BaselineScan }> {
+  return request(`/api/repositories/${repoId}/baseline`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ acknowledgedFileCount }),
+  });
+}
+
+export function fetchBaselineScan(
+  scanId: number,
+): Promise<{ scan: BaselineScan; findings: BaselineFinding[]; canScan: boolean; reason: string | null }> {
+  return request(`/api/baseline-scans/${scanId}`);
+}
+
+export function acknowledgeBaselineFinding(
+  findingId: number,
+  reason: string,
+): Promise<{ finding: BaselineFinding }> {
+  return request(`/api/baseline-findings/${findingId}/acknowledge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+/** Explicit selection only — a scan completing never creates a ticket. */
+export function pushBaselineFindings(
+  scanId: number,
+  findingIds: number[],
+): Promise<{ created: { findingId: number; ticketKey: string; ticketUrl: string }[]; requested: number }> {
+  return request(`/api/baseline-scans/${scanId}/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ findingIds }),
+  });
+}
+
+export interface BaselineScanReportRow {
+  id: number;
+  repositoryId: number;
+  repositoryName: string;
+  projectId: number | null;
+  projectName: string | null;
+  status: BaselineScan['status'];
+  filesTotal: number;
+  filesScanned: number;
+  filesSkipped: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  triggeredBy: string;
+  finishedAt: string | null;
+  createdAt: string;
+  triage: { open: number; acknowledged: number; pushed: number };
+}
+
+export function fetchBaselineScanReport(scope?: number, days?: number): Promise<{ items: BaselineScanReportRow[] }> {
+  return request(`/api/reports/admin/baseline-scans${adminQuery(scope, days)}`);
 }
 
 /* ---- Executive summary (Reporting Phase C, admin only, MTD) ---- */

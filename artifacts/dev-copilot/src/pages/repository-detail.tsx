@@ -20,6 +20,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
+import { BaselineScanPanel } from "@/components/repository/BaselineScanPanel";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -303,6 +304,8 @@ export default function RepositoryDetail() {
       {repo.url && <AegisSetupNotice repoId={id} provider={repo.provider} url={repo.url} />}
 
       <GraphifySection repoId={id} />
+
+      <BaselineScanPanel repoId={id} />
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">

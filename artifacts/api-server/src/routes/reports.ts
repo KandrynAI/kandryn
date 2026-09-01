@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, gte, inArray, isNotNull, like } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, like, sql } from "drizzle-orm";
 import {
   db,
   runsTable,
@@ -12,6 +12,8 @@ import {
   changePlanFilesTable,
   auditLogTable,
   aegisOverridesTable,
+  baselineScansTable,
+  baselineFindingsTable,
 } from "@workspace/db";
 import { z } from "zod/v4";
 import { getTeamMembers } from "../services/teamService.js";
@@ -959,6 +961,38 @@ router.get("/reports/security-posture", async (req, res): Promise<void> => {
     };
   });
 
+  // Baseline findings (0035) are reported alongside, never added in. A baseline
+  // finding is pre-existing code; every number above is about changes that were
+  // stopped on their way to merge. Folding them together would make both
+  // meaningless.
+  const baselineConds = [inArray(repositoriesTable.userId, scope.userIds)];
+  if (scope.projectId != null) baselineConds.push(eq(baselineScansTable.projectId, scope.projectId));
+  const baselineScans = await db
+    .select({
+      id: baselineScansTable.id,
+      repositoryId: baselineScansTable.repositoryId,
+      criticalCount: baselineScansTable.criticalCount,
+      highCount: baselineScansTable.highCount,
+      createdAt: baselineScansTable.createdAt,
+    })
+    .from(baselineScansTable)
+    .innerJoin(repositoriesTable, eq(baselineScansTable.repositoryId, repositoriesTable.id))
+    .where(and(eq(baselineScansTable.status, "succeeded"), ...baselineConds))
+    .orderBy(desc(baselineScansTable.createdAt));
+
+  // Latest scan per repository — older scans describe code that has since
+  // changed, and summing them would double-count the same finding.
+  const latestByRepo = new Map<number, (typeof baselineScans)[number]>();
+  for (const b of baselineScans) if (!latestByRepo.has(b.repositoryId)) latestByRepo.set(b.repositoryId, b);
+  const latest = [...latestByRepo.values()];
+  const openAcked = latest.length
+    ? await db
+        .select({ status: baselineFindingsTable.status, count: sql<number>`count(*)::int` })
+        .from(baselineFindingsTable)
+        .where(inArray(baselineFindingsTable.scanId, latest.map((b) => b.id)))
+        .groupBy(baselineFindingsTable.status)
+    : [];
+
   res.json({
     severities,
     gateBlocked,
@@ -968,6 +1002,14 @@ router.get("/reports/security-posture", async (req, res): Promise<void> => {
     overrides: overridden,
     overrideRate: gateBlocked ? Math.round((overridden / gateBlocked) * 100) : null,
     overrideTrend,
+    baseline: {
+      repositoriesScanned: latest.length,
+      criticalCount: latest.reduce((n, b) => n + b.criticalCount, 0),
+      highCount: latest.reduce((n, b) => n + b.highCount, 0),
+      open: openAcked.find((r) => r.status === "open")?.count ?? 0,
+      acknowledged: openAcked.find((r) => r.status === "acknowledged")?.count ?? 0,
+      pushed: openAcked.find((r) => r.status === "pushed")?.count ?? 0,
+    },
   });
 });
 
@@ -1365,6 +1407,88 @@ router.get("/reports/admin/aegis-overrides", async (req, res): Promise<void> => 
   res.json({
     items: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
     selfOverrides: rows.filter((r) => r.sameActor).length,
+  });
+});
+
+/**
+ * GET /reports/admin/baseline-scans — baseline scans per repository (0035).
+ *
+ * A separate panel, and deliberately separate numbers. A baseline finding is
+ * pre-existing code; a gate-blocked run is a change that was stopped on its way
+ * to merge. Adding these to `gateBlocked` or to "findings blocked pre-merge"
+ * would inflate both with things that blocked nothing, so nothing here touches
+ * those metrics.
+ *
+ * Not time-bounded: the useful question is "what is the current state of each
+ * repository", and the newest scan answers it however long ago it ran.
+ */
+router.get("/reports/admin/baseline-scans", async (req, res): Promise<void> => {
+  const scope = await resolveAdminScope(req, res);
+  if (!scope) return;
+
+  const conds = [inArray(repositoriesTable.userId, scope.userIds)];
+  if (scope.projectId != null) conds.push(eq(baselineScansTable.projectId, scope.projectId));
+
+  const scans = await db
+    .select({
+      id: baselineScansTable.id,
+      repositoryId: baselineScansTable.repositoryId,
+      repositoryName: repositoriesTable.name,
+      projectId: baselineScansTable.projectId,
+      projectName: projectsTable.name,
+      status: baselineScansTable.status,
+      filesTotal: baselineScansTable.filesTotal,
+      filesScanned: baselineScansTable.filesScanned,
+      filesSkipped: baselineScansTable.filesSkipped,
+      criticalCount: baselineScansTable.criticalCount,
+      highCount: baselineScansTable.highCount,
+      mediumCount: baselineScansTable.mediumCount,
+      lowCount: baselineScansTable.lowCount,
+      triggeredBy: baselineScansTable.triggeredBy,
+      finishedAt: baselineScansTable.finishedAt,
+      createdAt: baselineScansTable.createdAt,
+    })
+    .from(baselineScansTable)
+    .innerJoin(repositoriesTable, eq(baselineScansTable.repositoryId, repositoriesTable.id))
+    .leftJoin(projectsTable, eq(baselineScansTable.projectId, projectsTable.id))
+    .where(and(...conds))
+    .orderBy(desc(baselineScansTable.createdAt))
+    .limit(100);
+
+  // One row per repository — the latest scan. Older ones are history, not state.
+  const latest = new Map<number, (typeof scans)[number]>();
+  for (const s of scans) if (!latest.has(s.repositoryId)) latest.set(s.repositoryId, s);
+  const rows = [...latest.values()];
+
+  // Open vs acknowledged, for the latest scan of each repository.
+  const scanIds = rows.map((r) => r.id);
+  const triage = scanIds.length
+    ? await db
+        .select({
+          scanId: baselineFindingsTable.scanId,
+          status: baselineFindingsTable.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(baselineFindingsTable)
+        .where(inArray(baselineFindingsTable.scanId, scanIds))
+        .groupBy(baselineFindingsTable.scanId, baselineFindingsTable.status)
+    : [];
+  const byScan = new Map<number, { open: number; acknowledged: number; pushed: number }>();
+  for (const t of triage) {
+    const e = byScan.get(t.scanId) ?? { open: 0, acknowledged: 0, pushed: 0 };
+    if (t.status === "open") e.open = t.count;
+    if (t.status === "acknowledged") e.acknowledged = t.count;
+    if (t.status === "pushed") e.pushed = t.count;
+    byScan.set(t.scanId, e);
+  }
+
+  res.json({
+    items: rows.map((r) => ({
+      ...r,
+      finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
+      triage: byScan.get(r.id) ?? { open: 0, acknowledged: 0, pushed: 0 },
+    })),
   });
 });
 

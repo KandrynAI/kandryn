@@ -30,6 +30,43 @@ export interface AegisInput {
 // received an independent security scan.
 const PER_FILE_TIMEOUT_MS = 90_000;
 
+/**
+ * How many per-file scans are in flight at once.
+ *
+ * A committed diff is a handful of files, so this never used to matter. It does
+ * now: the same function backs the baseline scan's fallback path, and firing
+ * five hundred requests at once earns a wall of 429s. Because the gate fails
+ * closed, those rate-limited files land in `unscannedFiles` and block — a
+ * self-inflicted block with no security meaning behind it.
+ */
+const SCAN_CONCURRENCY = 8;
+
+/**
+ * Promise.allSettled semantics with a ceiling on concurrency. Results stay in
+ * input order, which the caller relies on to map each result back to its file.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results = new Array<PromiseSettledResult<R>>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      try {
+        results[i] = { status: "fulfilled", value: await fn(items[i]) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 const FindingSchema = z.object({
   id: z.string().optional(),
   severity: z.enum(["critical", "high", "medium", "low", "info"]),
@@ -113,6 +150,26 @@ Rules:
 - Return valid JSON only. No trailing commas.
 `;
 
+/**
+ * The baseline variant of the per-file prompt.
+ *
+ * The runtime prompt frames the file as "ONE committed file" under a named work
+ * item, because that is what it is. A baseline scan has neither: nothing was
+ * committed and there is no work item, so the same wording would ask the model
+ * to reason about a change that does not exist. The security checklist and the
+ * output contract are identical — only the framing differs — so findings from
+ * the two paths remain directly comparable.
+ */
+export function baselineFilePrompt(file: AegisScanFile, stackDesc?: string): string {
+  return PER_FILE_PROMPT({ itemTitle: BASELINE_ITEM_TITLE, stackDesc }, file).replace(
+    "Your role is to scan ONE committed file for security vulnerabilities.",
+    "Your role is to scan ONE file of an existing codebase for security vulnerabilities.",
+  ).replace("Committed code:", "Source:");
+}
+
+/** Stands in for the work-item title the runtime prompt names; there is none here. */
+const BASELINE_ITEM_TITLE = "Baseline security review of an existing codebase";
+
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`scan timed out after ${ms}ms`)), ms);
@@ -163,6 +220,16 @@ async function scanOneFile(
     .join("")
     .trim();
 
+  return parseFileScan(raw, file.filePath);
+}
+
+/**
+ * Turn one model response into a scan of one file. Throws on a parse failure,
+ * which the live path counts as unscanned and the batch path records as a
+ * skipped file. Shared by both so a batched scan and a live scan can never
+ * interpret the same JSON differently.
+ */
+export function parseFileScan(raw: string, filePath: string): PerFileScan {
   const parsed = ScanSchema.parse(extractJson(raw));
 
   // filePath is assigned from the scanned file — never model-tagged — so a
@@ -171,11 +238,11 @@ async function scanOneFile(
   let mismatches = 0;
   const findings = parsed.findings.map((f) => {
     const refPath = lineRefPath(f.lineRef);
-    if (refPath && refPath !== file.filePath && !file.filePath.endsWith(refPath)) mismatches++;
+    if (refPath && refPath !== filePath && !filePath.endsWith(refPath)) mismatches++;
     return {
       severity: f.severity as SecuritySeverity,
       owasp: f.owasp as OwaspCategory,
-      filePath: file.filePath,
+      filePath,
       title: f.title,
       detail: f.detail,
       lineRef: f.lineRef,
@@ -184,9 +251,9 @@ async function scanOneFile(
     };
   });
   if (mismatches > 0) {
-    logger.warn({ filePath: file.filePath, mismatches, total: findings.length }, "Aegis lineRef path disagreed with the scanned file");
+    logger.warn({ filePath, mismatches, total: findings.length }, "Aegis lineRef path disagreed with the scanned file");
   }
-  return { filePath: file.filePath, summary: parsed.summary, findings };
+  return { filePath, summary: parsed.summary, findings };
 }
 
 /**
@@ -219,7 +286,7 @@ export async function runAegisScan(
       ? Promise.reject(new Error(`AEGIS_FORCE_FAIL_PATH matched "${f.filePath}" — forced scan failure (test hook).`))
       : scanFile(f);
 
-  const results = await Promise.allSettled(input.files.map((f) => runScan(f)));
+  const results = await mapWithConcurrency(input.files, SCAN_CONCURRENCY, runScan);
 
   const scannedFiles: string[] = [];
   const unscannedFiles: string[] = [];

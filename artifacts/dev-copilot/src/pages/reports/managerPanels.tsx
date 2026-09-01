@@ -523,6 +523,34 @@ export function SecurityPosturePanel({ days, projectId }: { days: number; projec
                 <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", marginTop: 4 }}>No gate blocks in this window, so nothing to override.</div>
               )}
             </div>
+
+            {/* Baseline findings (0035), reported beside the gate numbers and
+                never added into them. Everything above is about changes stopped
+                on their way to merge; this is code that was already there. */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--c-border)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--c-ink-4)" }}>
+                  Existing code · baseline scans
+                </span>
+                <span style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>not counted above</span>
+              </div>
+              {data.baseline.repositoriesScanned === 0 ? (
+                <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", marginTop: 4 }}>
+                  No codebase has been baseline-scanned yet.
+                </div>
+              ) : (
+                <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", marginTop: 4, lineHeight: 1.6 }}>
+                  <b style={{ color: data.baseline.criticalCount > 0 ? "var(--c-red)" : "var(--c-ink)" }}>{data.baseline.criticalCount}</b> critical
+                  {" · "}
+                  <b style={{ color: data.baseline.highCount > 0 ? "var(--c-amber)" : "var(--c-ink)" }}>{data.baseline.highCount}</b> high
+                  {" across "}
+                  {data.baseline.repositoriesScanned} scanned {data.baseline.repositoriesScanned === 1 ? "repository" : "repositories"}
+                  <div style={{ color: "var(--c-ink-4)" }}>
+                    {data.baseline.open} open · {data.baseline.acknowledged} acknowledged · {data.baseline.pushed} filed to the tracker
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </PanelState>

@@ -39,6 +39,12 @@ export const AUDIT_ACTIONS = [
   'run.plan_approved',
   'run.plan_rejected',
 
+  // Baseline security scan (0035) — an existing codebase, no gate, no commit.
+  'baseline.scan_started',
+  'baseline.scan_completed',
+  'baseline.finding_acknowledged',
+  'baseline.findings_pushed',
+
   // Change plan (Phase 2)
   'plan.generated',
   'plan.edited',

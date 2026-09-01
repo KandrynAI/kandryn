@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { sql, eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
+import { listScansAwaitingCollection, collectBaselineScan } from "../services/baselineScanService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
 import { backfillEncryption } from "../services/configService.js";
 import { logger } from "../lib/logger.js";
@@ -80,7 +81,21 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     await executeRun(id);
   }
 
-  res.json({ swept: sweptCount, dispatched: ids.length });
+  // 3. Collect finished baseline scans (0035). A baseline scan runs as an
+  // Anthropic Message Batch precisely because it cannot fit in a 300s function;
+  // this tick is what notices the batch has ended. Polling is cheap — a
+  // retrieve per in-flight scan — and collectBaselineScan never throws, so a
+  // scan that cannot be collected is marked failed rather than polled forever.
+  let collected = 0;
+  const pending = await listScansAwaitingCollection();
+  for (const scan of pending) {
+    if (await collectBaselineScan(scan)) collected++;
+  }
+  if (pending.length > 0) {
+    logger.info({ pending: pending.length, collected }, "baseline scan collection tick");
+  }
+
+  res.json({ swept: sweptCount, dispatched: ids.length, baselinePending: pending.length, baselineCollected: collected });
 }
 
 // Vercel Cron invokes the path with a GET; POST is accepted too for manual

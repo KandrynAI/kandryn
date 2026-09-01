@@ -5,6 +5,7 @@ import {
   fetchRepoHealth,
   fetchAegisFailures,
   fetchAegisOverrides,
+  fetchBaselineScanReport,
   fetchFailedByStage,
   fetchConfigAudit,
   fetchAccessChanges,
@@ -210,6 +211,66 @@ export function AegisOverridesPanel({ scope, days }: { scope: Scope; days: Range
             </div>
             <button
               onClick={() => navigate(`/runs/${o.runId}`)}
+              className="bm-ghost"
+              style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
+            >
+              Open <ArrowUpRight size={12} />
+            </button>
+          </Row>
+        ))}
+      </PanelState>
+    </ReportPanel>
+  );
+}
+
+// ── 2.3c Baseline scans (0035) ──────────────────────────────────────────────
+
+/**
+ * Baseline scans per repository — the latest scan of each, its coverage, and
+ * how much of what it found has been triaged.
+ *
+ * A separate panel on purpose. A baseline finding is pre-existing code; a
+ * gate-blocked run is a change stopped on its way to merge. They answer
+ * different questions, and merging them would quietly inflate the gate numbers
+ * with things that blocked nothing.
+ */
+export function BaselineScansPanel({ scope, days }: { scope: Scope; days: RangeDays }) {
+  const [, navigate] = useLocation();
+  const { data, loading, error, reload } = usePanelData(() => fetchBaselineScanReport(scopeArg(scope), days), [scope, days]);
+  const items = data?.items ?? [];
+  const openTotal = items.reduce((n, i) => n + i.triage.open, 0);
+
+  return (
+    <ReportPanel
+      title="Baseline scans"
+      subtitle="Existing code scanned at connection time. Separate from the merge-path gate numbers above."
+      action={items.length > 0 ? <StatusPill tone={openTotal > 0 ? "amber" : "green"} label={`${openTotal} untriaged`} /> : undefined}
+    >
+      <PanelState loading={loading} error={error} isEmpty={items.length === 0} onRetry={reload} emptyLabel="No codebase has been baseline-scanned yet.">
+        {items.map((s) => (
+          <Row key={s.id}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink)" }}>
+                {s.repositoryName}
+                {s.projectName && <span style={{ color: "var(--c-ink-4)" }}> · {s.projectName}</span>}
+              </div>
+              <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 2 }}>
+                {s.status === "succeeded" ? (
+                  <>
+                    scanned {s.filesScanned}/{s.filesTotal} files
+                    {s.criticalCount > 0 && <span style={{ color: "var(--c-red)" }}> · {s.criticalCount} critical</span>}
+                    {s.highCount > 0 && <span style={{ color: "var(--c-amber)" }}> · {s.highCount} high</span>}
+                    {" · "}
+                    {s.triage.open} open · {s.triage.acknowledged} acknowledged · {s.triage.pushed} filed
+                  </>
+                ) : (
+                  <span style={{ color: s.status === "failed" ? "var(--c-red)" : "var(--c-ink-4)" }}>{s.status}</span>
+                )}
+                {" · "}{age(s.finishedAt ?? s.createdAt)}
+              </div>
+            </div>
+            <button
+              onClick={() => navigate(`/repositories/${s.repositoryId}`)}
               className="bm-ghost"
               style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
             >
