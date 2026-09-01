@@ -2,6 +2,7 @@ import { GitService, type GitCreds } from "./gitService.js";
 import { getConfigs } from "./configService.js";
 import { logger } from "../lib/logger.js";
 import type { NarratiaResult, RunbookTarget, RunbookSection } from "../../../../shared/types/narratiaResult.js";
+import { PR_TITLE_PREFIX } from "../../../../shared/types/branding.js";
 
 export interface PushResult {
   url: string;
@@ -26,7 +27,7 @@ export async function pushAsMarkdown(params: {
     await git.commitChanges({
       branchName: params.branchName,
       baseSha: headSha,
-      message: `[Blue Mantis] Add runbook (${params.filePath})`,
+      message: `${PR_TITLE_PREFIX} Add runbook (${params.filePath})`,
       files: [{ path: params.filePath, content: params.markdown }],
     });
     return {

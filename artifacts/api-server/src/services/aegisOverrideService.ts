@@ -20,7 +20,7 @@ import { logger } from "../lib/logger.js";
  * Worth being precise about what this does, because the gate is not what it
  * looks like. Aegis runs POST-commit — the commit and PR already exist by the
  * time a gate decision is made. Kandryn itself blocks nothing; the block is the
- * GitHub commit status `blue-mantis/security` set to `failure`, enforced by the
+ * GitHub commit status `kandryn/security` set to `failure`, enforced by the
  * repo's branch protection. So an override only has an external effect if it
  * re-posts that status as success. Where it can't (Azure Repos, no token) the
  * override is still recorded, but `statusReposted` is false and callers must

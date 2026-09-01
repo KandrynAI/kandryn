@@ -68,7 +68,7 @@ export const HOW_SECTIONS = [
     n: 'STAGE 04', title: 'Commit',
     body: 'Committing creates the deterministic branch task/<id>, writes the change, and opens a pull request titled with the work item. The item moves to review and the run records which suggestion won.',
     detailLabel: 'WHAT LANDS',
-    details: ['Branch task/<id>, from the default-branch head', 'One commit containing the chosen suggestion', 'PR titled [Blue Mantis] <work item title>', 'Work item moved to review, run marked succeeded'],
+    details: ['Branch task/<id>, from the default-branch head', 'One commit containing the chosen suggestion', 'PR titled [Kandryn] <work item title>', 'Work item moved to review, run marked succeeded'],
   },
   {
     n: 'STAGE 05', title: 'Schedule and sweep',
@@ -130,7 +130,7 @@ export const CAPABILITY_MATRIX = [
 export const CAPABILITY_FOOTNOTE =
   'Security gate: requires one-time GitHub branch protection rule ' +
   'on main (Settings → Branches → Require status checks → ' +
-  'blue-mantis/security). Runbook push to Confluence and Notion ' +
+  'kandryn/security). Runbook push to Confluence and Notion ' +
   'requires separate credentials in Settings.';
 
 export const RESOURCES = [
@@ -175,7 +175,7 @@ export const SECURITY_PRINCIPLES = [
   { title: 'The tracker stays yours', body: 'Items and test cases are pushed only when you ask. The single automatic write-back is a status change when an item closes.' },
   { title: 'Agents see a case file, not a repository', body: 'Only the files selected as relevant to the work item, plus the detected stack profile, are passed to the agent pipeline — scoped to what the keyword extractor judges relevant.' },
   { title: 'Failures are contained', body: 'A run that fails records the error and stops. Nothing half-written reaches your repository, and stuck runs are swept after twenty minutes. A blocked Aegis gate records every finding and stops without writing anything to main. Nothing with a High or Critical finding can be promoted until it is resolved and the gate clears.' },
-  { title: 'High findings never reach main', body: 'Aegis posts a blue-mantis/security status check to every PR. Configure one branch protection rule on main and GitHub enforces it — no High or Critical security finding can be merged until it is resolved. Kandryn never merges anything itself.' },
+  { title: 'High findings never reach main', body: 'Aegis posts a kandryn/security status check to every PR. Configure one branch protection rule on main and GitHub enforces it — no High or Critical security finding can be merged until it is resolved. Kandryn never merges anything itself.' },
 ];
 
 export const PROCESSORS = [

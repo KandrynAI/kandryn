@@ -21,6 +21,7 @@ import * as z from "zod";
 import { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { BaselineScanPanel } from "@/components/repository/BaselineScanPanel";
+import { SECURITY_CHECK_CONTEXT } from "../../../../shared/types/branding";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -378,8 +379,8 @@ function AegisSetupNotice({ repoId, provider, url }: { repoId: number; provider:
 
   const copyCheckName = async () => {
     try {
-      await navigator.clipboard.writeText("blue-mantis/security");
-      toast({ title: "Copied", description: "blue-mantis/security" });
+      await navigator.clipboard.writeText(SECURITY_CHECK_CONTEXT);
+      toast({ title: "Copied", description: SECURITY_CHECK_CONTEXT });
     } catch {
       toast({ title: "Copy failed", variant: "destructive" });
     }
@@ -395,7 +396,7 @@ function AegisSetupNotice({ repoId, provider, url }: { repoId: number; provider:
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          To enforce the Aegis stop gate, add <code className="font-mono">blue-mantis/security</code> as a required status
+          To enforce the Aegis stop gate, add <code className="font-mono">{SECURITY_CHECK_CONTEXT}</code> as a required status
           check on your main branch in GitHub: Settings → Branches → Branch protection rules → Require status checks.
         </p>
         <div className="mt-3 flex gap-2 flex-wrap">

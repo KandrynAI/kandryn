@@ -1,5 +1,5 @@
 -- ============================================================================
--- Blue Mantis — Projects, PLM hierarchy, and Runs  (migration 0001)
+-- Kandryn — Projects, PLM hierarchy, and Runs  (migration 0001)
 -- ============================================================================
 -- Incremental DDL for an EXISTING database that already has:
 --   repositories, tasks, integration_configs, waitlist

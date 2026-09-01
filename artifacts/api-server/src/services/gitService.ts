@@ -6,6 +6,7 @@ import { detectStack, type StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
 import { queryGraph } from "./graphifyService.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
+import { SECURITY_CHECK_CONTEXT } from "../../../../shared/types/branding.js";
 
 // ---------------------------------------------------------------------------
 // Stack → file extension mapping
@@ -663,7 +664,7 @@ export class GitService {
 
 /**
  * Post a GitHub commit status check for the Aegis security gate
- * (context `blue-mantis/security`). Non-fatal — returns without throwing for a
+ * (context `kandryn/security`). Non-fatal — returns without throwing for a
  * non-GitHub repo, a missing token, or an API/network error, so it never breaks
  * the scan flow. The token is supplied by the caller (fetched per-user via
  * getConfigs) — never logged.
@@ -683,7 +684,7 @@ export async function postSecurityStatus(
   const state = gate === "approved" ? "success" : gate === "blocked" ? "failure" : "pending";
   const body = {
     state,
-    context: "blue-mantis/security",
+    context: SECURITY_CHECK_CONTEXT,
     description: details.slice(0, 140), // GitHub 140-char limit
     target_url: `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/runs/${commitHash}`,
   };

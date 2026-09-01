@@ -247,7 +247,7 @@ authed:   health, repositories, tasks, taskActions, stats, config
 `CodeSuggestion` (`shared/types/codeSuggestion.ts`): `{ agent: 'claude'|'openai'|'copilot'|'antigravity', code, explanation, filePath, language, score?, recommendation? }`.
 
 ### 8.5 Commit & complete pipelines
-- **Commit** (`{ filePath, code, commitMessage }`): verify repo ownership → branch **`task/<id>`** → commit → PR titled **`[Blue Mantis] <title>`** → task `status: review`, store `linkedCommit`. Returns `{ commitHash, prUrl }`.
+- **Commit** (`{ filePath, code, commitMessage }`): verify repo ownership → branch **`task/<id>`** → commit → PR titled **`[Kandryn] <title>`** → task `status: review`, store `linkedCommit`. Returns `{ commitHash, prUrl }`.
 - **Complete** (`{ commitHash }`): close in PLM (Azure DevOps PATCH / Jira transition) if `externalId` present → task `status: done`.
 
 ## 9. Database (`lib/db`, Drizzle + PostgreSQL)

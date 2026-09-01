@@ -249,7 +249,7 @@ export default function RunView({
             Committed to <code style={{ fontFamily: 'var(--font-mono)' }}>task/214</code> — pull request opened
           </div>
           <div style={{ fontSize: 13, marginTop: 6, color: 'var(--color-accent-800)' }}>
-            acme/payments-api #318 · [Blue Mantis] Idempotency keys on the refund endpoint · PAY-214 moved to Review
+            acme/payments-api #318 · [Kandryn] Idempotency keys on the refund endpoint · PAY-214 moved to Review
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
             <button className="btn btn-secondary" style={{ fontSize: 13, padding: '10px 16px' }} onClick={onToggleTests}>

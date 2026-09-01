@@ -2,7 +2,7 @@
 // (no React) so the priority rule is unit-testable and there is exactly ONE
 // derivation used everywhere — never a per-route reimplementation.
 
-export const ACTIVE_PROJECT_KEY = "bluemantis_active_project_id";
+export const ACTIVE_PROJECT_KEY = "kandryn_active_project_id";
 
 /**
  * Resource-shaped app paths that render a project-owned resource but do NOT
