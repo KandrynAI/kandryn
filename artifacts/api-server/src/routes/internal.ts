@@ -16,6 +16,12 @@ const DISPATCH_BATCH = 2;
 // A running row older than this is considered stuck (its serverless invocation
 // died before it could record success/failure) and is swept to failed.
 const STUCK_MINUTES = 20;
+/**
+ * How long a baseline scan may sit in `queued` before it is presumed dead.
+ * Starting one is capped at the function's own 300s ceiling, so ten minutes is
+ * comfortably past any legitimate start.
+ */
+const BASELINE_STUCK_MINUTES = 10;
 
 /**
  * Constant-time-ish bearer check against CRON_SECRET. Vercel Cron sends
@@ -35,11 +41,15 @@ function authorized(header: string | undefined): boolean {
 
 /**
  * Cron-only dispatcher (spec §5.4). Not behind requireAuth — mounted before it
- * and guarded by CRON_SECRET. Two jobs each tick:
+ * and guarded by CRON_SECRET. Four jobs each tick — the last two are the
+ * baseline scan's only execution surface, since a scan cannot fit in one
+ * function invocation:
  *   1. Sweep stuck `running` rows (>20 min) to `failed`.
  *   2. Claim up to DISPATCH_BATCH due `scheduled` rows with FOR UPDATE SKIP
  *      LOCKED so concurrent ticks never grab the same run, flip them to
  *      `queued`, and execute each inline.
+ *   3. Sweep baseline scans stuck in `queued` (start died before submitting).
+ *   4. Collect baseline scans whose Message Batch has ended.
  */
 async function dispatchHandler(req: Request, res: Response): Promise<void> {
   if (!authorized(req.header("authorization"))) {
@@ -81,7 +91,29 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     await executeRun(id);
   }
 
-  // 3. Collect finished baseline scans (0035). A baseline scan runs as an
+  // 3. Sweep baseline scans stuck in `queued`.
+  //
+  // A scan is inserted `queued`, then flipped to `scanning` once its batch is
+  // accepted. If the function is killed in between — the file-fetch loop
+  // against a large repository is the realistic way that happens — the row
+  // stays `queued`: nothing collects it, because collection only looks at
+  // `scanning`, and every retry is refused by the duplicate check, which
+  // treats `queued` as active. The repository becomes permanently
+  // un-scannable. The start path is itself capped at 300s, so anything still
+  // `queued` after this long is dead, not slow.
+  const sweptScans = await db.execute(
+    sql`UPDATE baseline_scans SET status = 'failed', finished_at = now(),
+          error = 'Scan did not finish starting (no batch was submitted within ${sql.raw(String(BASELINE_STUCK_MINUTES))} minutes). Start it again.'
+        WHERE status = 'queued'
+          AND created_at < now() - interval '${sql.raw(String(BASELINE_STUCK_MINUTES))} minutes'
+        RETURNING id`,
+  );
+  const sweptScanCount = sweptScans.rows.length;
+  if (sweptScanCount > 0) {
+    logger.warn({ swept: sweptScanCount }, "baseline scans swept from queued to failed");
+  }
+
+  // 4. Collect finished baseline scans (0035). A baseline scan runs as an
   // Anthropic Message Batch precisely because it cannot fit in a 300s function;
   // this tick is what notices the batch has ended. Polling is cheap — a
   // retrieve per in-flight scan — and collectBaselineScan never throws, so a
@@ -95,7 +127,13 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     logger.info({ pending: pending.length, collected }, "baseline scan collection tick");
   }
 
-  res.json({ swept: sweptCount, dispatched: ids.length, baselinePending: pending.length, baselineCollected: collected });
+  res.json({
+    swept: sweptCount,
+    dispatched: ids.length,
+    baselineSwept: sweptScanCount,
+    baselinePending: pending.length,
+    baselineCollected: collected,
+  });
 }
 
 // Vercel Cron invokes the path with a GET; POST is accepted too for manual

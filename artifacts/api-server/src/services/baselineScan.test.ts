@@ -172,3 +172,32 @@ test("baseline scans are readable only by the owner or the owning team", async (
   // A personal repository is visible to its owner alone.
   assert.equal(canViewBaselineScans(actor("mallory", 8, "admin"), target("alice", null)), false);
 });
+
+// --- Collection must not re-derive the file list ---------------------------
+
+test("collection reads the frozen file list, never re-derives it", async () => {
+  // Regression, and the reason 0036 exists. custom_id is `f<index>` into the
+  // list built at submit; collection happens up to an hour later. Re-deriving
+  // it from the repository at that point silently slides a different file into
+  // each slot after any push — a real vulnerability reported against an
+  // innocent file. Proven on Postgres: with ["src/a","src/b","src/c"] submitted
+  // and "src/NEW" landing first, f2 resolved to src/b instead of src/c.
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { join } = await import("node:path");
+  const src = readFileSync(
+    join(fileURLToPath(new URL(".", import.meta.url)), "baselineScanService.ts"),
+    "utf8",
+  );
+  const collect = src.slice(src.indexOf("export async function collectBaselineScan"));
+  const body = collect.slice(0, collect.indexOf("\nasync function failScan"));
+
+  assert.ok(
+    !/discoverFiles\s*\(/.test(body),
+    "collectBaselineScan re-derives the file list. It must read scan.filePaths, frozen at submit (0036).",
+  );
+  assert.ok(
+    /scan\.filePaths/.test(body),
+    "collectBaselineScan does not read the stored file list.",
+  );
+});

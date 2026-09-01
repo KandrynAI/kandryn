@@ -218,6 +218,10 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
       triggeredBy: actor.userId,
       status: "queued",
       filesTotal: paths.length,
+      // Frozen here, read verbatim at collection. custom_id `f<i>` indexes
+      // into THIS array, so a push to the repository mid-scan can no longer
+      // slide a different file into slot i.
+      filePaths: paths,
       estimatedCostUsd: String(estimate.estimatedCostUsd),
       startedAt: new Date(),
     })
@@ -320,17 +324,21 @@ export async function collectBaselineScan(scan: BaselineScan): Promise<boolean> 
     const batch = await client.messages.batches.retrieve(scan.batchId);
     if (batch.processing_status !== "ended") return false;
 
-    // Re-derive the file list exactly as submission did, so custom_id indices
-    // resolve to the same paths.
-    const { repo } = await loadTarget(scan.repositoryId);
-    const graph = repo.graphStatus === "succeeded" ? (repo.graphJson as GraphifyGraph | null) : null;
-    let treePaths: string[] = [];
-    if (!graph) {
-      const gitCreds = await getConfigs(scan.triggeredBy, ["GITHUB_TOKEN"]);
-      const git = await GitService.forRepo(repo.id, { githubToken: gitCreds.GITHUB_TOKEN });
-      treePaths = await git.fetchFilePaths();
+    // The list the batch was built from, as frozen at submit (0036). Never
+    // re-derived: the repository may have moved on since, and an index that
+    // resolves to a different file attaches a real vulnerability to an innocent
+    // one.
+    const paths = scan.filePaths ?? [];
+    if (paths.length === 0) {
+      // Only reachable for a scan submitted before 0036, where the list was
+      // never stored. Refusing is the only safe option — guessing the list
+      // would produce exactly the misattribution 0036 exists to prevent.
+      await failScan(
+        scan.id,
+        "This scan predates the stored file list and cannot be collected safely. Run a new baseline scan.",
+      );
+      return true;
     }
-    const { paths } = discoverFiles(graph, treePaths);
 
     const rows: (typeof baselineFindingsTable.$inferInsert)[] = [];
     let scanned = 0;

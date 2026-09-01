@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, numeric, index, check } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, numeric, jsonb, index, check } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { repositoriesTable } from "./repositories";
@@ -35,6 +35,14 @@ export const baselineScansTable = pgTable(
     highCount: integer("high_count").notNull().default(0),
     mediumCount: integer("medium_count").notNull().default(0),
     lowCount: integer("low_count").notNull().default(0),
+
+    /**
+     * The ordered file list this scan's batch was built from (0036).
+     * A request's `custom_id` is `f<index>` into THIS array. It is frozen at
+     * submit and never recomputed: re-deriving it at collection time attributed
+     * findings to whatever file had drifted into the slot after a push.
+     */
+    filePaths: jsonb("file_paths").$type<string[]>().notNull().default([]),
 
     /** The Anthropic Message Batch backing this scan; the cron dispatcher polls it. */
     batchId: text("batch_id"),
