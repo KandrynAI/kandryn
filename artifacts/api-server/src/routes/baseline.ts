@@ -163,8 +163,13 @@ router.get("/repositories/:repoId/baseline", async (req, res): Promise<void> => 
     return;
   }
   try {
-    const { gate } = await loadScanTarget(params.data.repoId, actorOf(req));
-    // Readable by anyone who can see the repository; only acting needs the gate.
+    const { canView, gate } = await loadScanTarget(params.data.repoId, actorOf(req));
+    if (!canView) {
+      // 404, not 403: a repository the caller cannot see should not be
+      // confirmed to exist by the shape of the refusal.
+      res.status(404).json({ error: "Repository not found" });
+      return;
+    }
     res.json({ scans: await listScansForRepository(params.data.repoId), canScan: gate.allowed, reason: gate.reason });
   } catch (err) {
     if (!sendRunError(res, err)) throw err;
@@ -183,7 +188,11 @@ router.get("/baseline-scans/:id", async (req, res): Promise<void> => {
       res.status(404).json({ error: "Scan not found" });
       return;
     }
-    const { gate } = await loadScanTarget(found.scan.repositoryId, actorOf(req));
+    const { canView, gate } = await loadScanTarget(found.scan.repositoryId, actorOf(req));
+    if (!canView) {
+      res.status(404).json({ error: "Scan not found" });
+      return;
+    }
     res.json({ ...found, canScan: gate.allowed, reason: gate.reason });
   } catch (err) {
     if (!sendRunError(res, err)) throw err;

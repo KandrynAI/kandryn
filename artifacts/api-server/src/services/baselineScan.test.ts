@@ -147,3 +147,28 @@ test("nothing in the baseline surface reports a gate decision", async () => {
     );
   }
 });
+
+// --- Read authorization ----------------------------------------------------
+
+test("baseline scans are readable only by the owner or the owning team", async () => {
+  // Regression: the read routes originally returned findings to any
+  // authenticated caller, so anyone could walk /api/baseline-scans/1,2,3… and
+  // read file paths, vulnerability classes and exploitation detail from every
+  // other tenant's codebase. Same rule as GET /runs/:id — owner, or a member of
+  // the team whose project owns the repository.
+  const { canViewBaselineScans } = await import("./baselineScanService.js");
+  const target = (repoOwner: string, teamId: number | null) =>
+    ({ repo: { userId: repoOwner }, project: teamId == null ? null : { teamId } }) as never;
+  const actor = (userId: string, teamId: number | null, teamRole: string | null) => ({ userId, teamId, teamRole });
+
+  // The repository's owner, always.
+  assert.equal(canViewBaselineScans(actor("alice", null, null), target("alice", null)), true);
+  // A member — not only an admin — of the owning team.
+  assert.equal(canViewBaselineScans(actor("bob", 7, "member"), target("alice", 7)), true);
+  // An admin of a DIFFERENT team is a stranger here.
+  assert.equal(canViewBaselineScans(actor("mallory", 8, "admin"), target("alice", 7)), false);
+  // Merely authenticated, with no team, is not enough.
+  assert.equal(canViewBaselineScans(actor("mallory", null, null), target("alice", 7)), false);
+  // A personal repository is visible to its owner alone.
+  assert.equal(canViewBaselineScans(actor("mallory", 8, "admin"), target("alice", null)), false);
+});

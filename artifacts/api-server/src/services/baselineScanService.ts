@@ -121,10 +121,25 @@ export async function canRunBaselineScan(
   return { allowed: true, reason: null };
 }
 
-/** Resolve the target and the gate together, for routes that need both. */
+/**
+ * Whether this actor may SEE a repository's scans at all — a separate question
+ * from whether they may start one.
+ *
+ * Same rule as `GET /runs/:id`: the owner, or any member of the team whose
+ * project owns the repository. Findings name file paths, vulnerability classes
+ * and exploitation detail for a specific codebase, so "authenticated" is
+ * nowhere near enough to read them.
+ */
+export function canViewBaselineScans(actor: BaselineActor, target: ScanTarget): boolean {
+  if (target.repo.userId === actor.userId) return true;
+  const teamId = target.project?.teamId ?? null;
+  return teamId != null && actor.teamId === teamId;
+}
+
+/** Resolve the target, who may view it, and who may act on it. */
 export async function loadScanTarget(repositoryId: number, actor: BaselineActor) {
   const target = await loadTarget(repositoryId);
-  return { target, gate: await canRunBaselineScan(actor, target) };
+  return { target, canView: canViewBaselineScans(actor, target), gate: await canRunBaselineScan(actor, target) };
 }
 
 // ---------------------------------------------------------------------------
