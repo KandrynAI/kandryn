@@ -282,11 +282,16 @@ router.post("/projects", async (req, res): Promise<void> => {
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
     audit.log({
       userId: req.userId,
-      teamId: req.teamId ?? null,
+      // `team`, not req.teamId: on a user's FIRST project the team was created
+      // moments ago in this same request, so req.teamId — attached before the
+      // handler ran — is still null. Recording null there would put the wrong
+      // fact in the governance trail for precisely the case this guarantee
+      // exists to cover.
+      teamId: team.id,
       action: "project.created",
       entityType: "project",
       entityId: proj.id,
-      metadata: { name: proj.name, plmProvider: proj.plmProvider },
+      metadata: { name: proj.name, plmProvider: proj.plmProvider, teamCreatedForThisProject: req.teamId == null },
       ipAddress: audit.getIp(req),
       userAgent: req.headers["user-agent"],
     });

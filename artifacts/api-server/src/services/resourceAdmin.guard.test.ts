@@ -52,12 +52,20 @@ test("the source tree is non-empty (the guard is actually reading files)", () =>
 });
 
 test("only resourceAdmin.ts decides who may administer a resource", () => {
-  // An admin-role check AND a resource-team comparison within ~120 chars of each
-  // other: `teamRole === "admin" && … teamId === req.teamId`, in either order.
-  // A collection guard has no resource team id to compare against and so cannot
-  // match this.
+  // An admin-role check AND a team-to-team comparison within ~120 chars of each
+  // other, in either order.
+  //
+  // RESOURCE_TEAM matches ANY `x.teamId === y.teamId`, not just the two operand
+  // names projects.ts happened to use. The first version of this rule pinned the
+  // right-hand side to `req.teamId`/`actor.teamId` and sailed straight past
+  // `actor.teamId === target.project?.teamId` — the same rule, written the other
+  // way round. A guard that only recognises the copy it was written from is not
+  // a guard.
+  //
+  // A collection gate compares a caller's team to a literal or to nothing at
+  // all, so it has no second `.teamId` to match and stays clear of this.
   const ROLE = `teamRole\\s*[!=]==\\s*"admin"`;
-  const RESOURCE_TEAM = `\\.teamId\\s*[!=]==\\s*(req\\.teamId|actor\\.teamId)`;
+  const RESOURCE_TEAM = `\\.teamId\\s*[!=]==\\s*[A-Za-z_$][\\w$.?]*\\.teamId`;
   const INLINE_RULE = new RegExp(`(${ROLE}[\\s\\S]{0,120}${RESOURCE_TEAM})|(${RESOURCE_TEAM}[\\s\\S]{0,120}${ROLE})`);
 
   const offenders = files

@@ -17,6 +17,7 @@ import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
 import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
 import { checkCoherence, buildRepoSymbolIndex, coherenceSupported, sameCoherenceLanguage, type RepoSymbolIndex } from "./coherence/index.js";
 import { isGraphServable, triggerRepoIndex } from "./graphifyService.js";
+import { canAdminister } from "./resourceAdmin.js";
 import {
   runPlanning,
   assemblePlanContext,
@@ -584,9 +585,15 @@ async function reviewContext(run: typeof runsTable.$inferSelect, actor: ReviewAc
     : [];
   const requireSecond = proj?.requireSecondApprover ?? false;
   const isOwner = run.userId === actor.userId;
-  const isTeamAdmin = proj?.teamId != null && actor.teamId === proj.teamId && actor.teamRole === "admin";
+  // The admin half of the rule, via the shared helper. Equivalent to the inline
+  // check it replaces: on a team project canAdminister is "admin of THAT team",
+  // exactly what this asked; on a project with no team it returns isOwner, and
+  // it is only ever OR-ed with isOwner here, so that case is unchanged too.
+  const isTeamAdmin = canAdminister(actor, { ownerUserId: run.userId, teamId: proj?.teamId ?? null });
   // Base behavior (SoD off) is owner-only. With SoD on, a team admin may also
-  // review, so a second person can approve.
+  // review, so a second person can approve. Deliberately NOT canAdminister on
+  // its own: that would let any team admin approve with SoD off, which is a
+  // wider rule than this path has ever had.
   const authorized = requireSecond ? isOwner || isTeamAdmin : isOwner;
   const triggeredBy = run.runByUserId ?? run.userId;
   return { requireSecond, authorized, triggeredBy };
