@@ -278,36 +278,45 @@ These are the natural next tasks; none are blocking today:
 - **Shell consistency** — the sidebar was quieted (Claude-Code style); TabBar and page headers could follow.
 - **Known adapter caveats:** Jira create maps `task → Task` (not `Sub-task`) with a best-effort `parent` link; ADO `commitChanges` uses `changeType:"edit"` (new-file adds may fail on Azure Repos — **GitHub is the primary, auto-synced provider**); test-case push requires a PLM-linked work item.
 
-### Marketing site — carried over from the homepage rebuild
+### Marketing site — claim-verification status
 
-Unlike the list above, the first two of these **are** live-site problems, not
-future nice-to-haves. They are parked, not resolved, and the homepage rebuild
-did not touch them.
+Every user-facing claim in `website/lib/site.ts` and `website/lib/home.ts` was
+checked against the running product during the homepage rebuild and the
+supporting-pages pass. Corrections already applied (do not reintroduce):
 
-- **`website/lib/site.ts` still holds the pre-rebuild homepage arrays** —
-  `HERO_STATS`, `STEPS`, `QUICKSTART`. The homepage no longer imports them, but
-  other pages still render them, so a claim removed from `/` is still published
-  elsewhere. `HERO_STATS` carries *"Aegis scans every committed change for OWASP
-  Top 10 vulnerabilities. High findings block the PR."* — **false on both
-  counts**: the scan is triggered per run, not automatic, and blocking a merge
-  needs a branch rule the customer configures. Same defect as
-  `site.ts:178` ("High findings never reach main") and `site.ts:176`. **First
-  item of the supporting-pages pass**, and the reason that pass is not
-  cosmetic.
-- **`/how-it-works` is load-bearing and unverified.** The rebuilt homepage
-  points at it three times — the nav's `Product` item, the stages link, and the
-  governance callout's neighbour — but that page has never been through the
-  claim-verification pass the homepage and `/trust` have. It must be corrected
-  **before or alongside** extending the homepage pattern to supporting pages;
-  doing it afterwards means the homepage spends credibility on a page that has
-  not earned it yet.
-- **Phase 3 (supporting pages) is gated** on the owner reviewing the homepage
-  preview on a real device. The homepage lives on `claude/repo-setup-6osjsy`
-  (`8c4eac4`) and is deliberately **not** merged to `main`.
+- **A run never reads parent work items.** `dbTaskToDevCopilotTask` does not map
+  `parentId`, and the prompt receives exactly title, description and acceptance
+  criteria. Copy claiming the epic or story above an item is read for intent is
+  false; it was on `/how-it-works` and briefly on the homepage.
+- **Aegis is triggered per run, not automatic**, and its status check blocks a
+  merge only once the customer requires it in a GitHub ruleset/branch
+  protection rule or an Azure DevOps branch policy. Any sentence asserting that
+  every change is scanned, or that High findings cannot reach main, is wrong.
+- **Every agent runs on the customer's own model key.** Anthropic for Raptia,
+  Synthesia, Veria, Aegis and Narratia; OpenAI for Fovea. Copy saying agent
+  infrastructure needs no key from the user is wrong — six of seven paths 424
+  without it.
+- **Synthesia weights** are correctness 30, coherence 15, conventions 15, AC
+  coverage 15, readability 15, minimal diff 10, reported out of 10 — six
+  dimensions, not five, and not a 0–100 score.
+- **Aegis does not cover all ten OWASP categories.** It scans one file at a
+  time with no cross-file or manifest context, so broken access control and
+  vulnerable-components are largely out of reach. The `(2021)` label is correct
+  and must not be bumped to 2025 without changing the prompt in
+  `aegisService.ts` **and** adding a taxonomy-version column — the stored
+  category strings would otherwise mean two different things in one chart.
 
-For what the homepage does and does not claim, and why the governance callout
-is three sentences pointing at `/trust` rather than a section, see the header
-comments in `website/lib/home.ts`.
+`HERO_STATS` and `STEPS` (and `DemoSection`/`StepsSection`/`PlugInSection`) were
+deleted rather than corrected: the homepage rebuild left them with no
+consumers.
+
+Still open:
+
+- **Phase 3 design pass** — extending the homepage's one-idea-per-section
+  pattern to `/how-it-works`, `/integrations`, `/resources` and `/security`.
+  Claims on those pages are now correct; their layout is not yet rebuilt.
+- The homepage and these corrections live on `claude/repo-setup-6osjsy` and are
+  deliberately **not** merged to `main`.
 
 ---
 

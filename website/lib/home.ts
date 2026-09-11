@@ -88,7 +88,7 @@ export const STAGES = [
   {
     n: '01',
     title: 'Select scoped work',
-    body: 'Point Kandryn at one item on your board. It reads the item, its parents and its acceptance criteria before anything is written.',
+    body: 'Point Kandryn at one item on your board. It reads the title, description and acceptance criteria, and pulls in the repository files that relate to them, before anything is written.',
   },
   {
     n: '02',
