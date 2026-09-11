@@ -8,9 +8,9 @@ export const metadata: Metadata = {
 
 const FACTS: [string, string][] = [
   ['Typical reply', 'Within one business day, with a time and a short checklist.'],
-  ["You'll need", 'A tracker project, a repository, and one model key.'],
+  ["You'll need", 'A tracker project, a repository, and your own Anthropic and OpenAI API keys — the agents run on your keys, not ours.'],
   ['Optional for the full pipeline', 'Confluence or Notion credentials, for Narratia runbook push to your docs.'],
-  ['Prefer to talk first?', 'Book a walkthrough and we’ll screen-share the loop on a real ticket.'],
+  ['Prefer to talk first', 'Book a walkthrough and we’ll screen-share the loop on a real ticket.'],
 ];
 
 export default function ContactPage() {

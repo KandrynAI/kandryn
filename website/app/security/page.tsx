@@ -30,14 +30,28 @@ export default function SecurityPage() {
 
       {/* Processors */}
       <section className="pad-x" style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 20 }}>Where your data sits</h2>
-        <div style={{ overflowX: 'auto' }}>
+        <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em' }}>Who receives your data</h2>
+        <p
+          style={{
+            marginTop: 12,
+            marginBottom: 24,
+            maxWidth: 700,
+            fontSize: 16,
+            lineHeight: 1.5,
+            color: 'var(--color-neutral-800)',
+            textWrap: 'pretty',
+          }}
+        >
+          Every third party in the path, including the two that receive your source code. Regions, compliance status
+          and the full sub-processor list are on the Trust page.
+        </p>
+        <div className="scroll-x" style={{ overflowX: 'auto' }}>
           <table className="table">
             <thead>
               <tr>
-                <th>Processor</th>
-                <th>Purpose</th>
-                <th>What it sees</th>
+                <th>Who</th>
+                <th>Why</th>
+                <th>What they receive</th>
               </tr>
             </thead>
             <tbody>

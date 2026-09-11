@@ -102,18 +102,73 @@ export const LIMITS = [
   { title: 'It does not hold a model contract on your behalf', body: 'Every call uses the API keys you saved, so the usage, the terms and the retention settings are all on your own account.' },
 ];
 
-export const INTEGRATIONS = [
-  { name: 'Jira', tag: 'TRACKER', body: 'Syncs the epic→story→task hierarchy into a board, resolves parents in two passes, and writes new items and test cases back when you ask it to.', creds: 'JIRA_DOMAIN · JIRA_EMAIL · JIRA_API_TOKEN', note: 'Uses the enhanced JQL search endpoint; your domain is normalised for you.' },
-  { name: 'Azure DevOps', tag: 'TRACKER', body: 'The same sync against Azure Boards, with Feature mapped onto epic so the hierarchy lines up with Jira projects.', creds: 'AZURE_DEVOPS_ORG · AZURE_DEVOPS_PROJECT · AZURE_DEVOPS_PAT', note: 'Work-item creation and test-case push both supported.' },
-  { name: 'GitHub', tag: 'PRIMARY REPO', body: 'Branch, commit and pull request. Stack detection reads the repository on connect, and the test-script commit stacks onto the existing PR rather than overwriting it.', creds: 'GITHUB_TOKEN (PAT) or the OAuth token from sign-in', note: 'The primary provider, and the one we test first on every release.' },
-  { name: 'Azure Repos', tag: 'REPO', body: 'Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.', creds: 'AZURE_REPOS_ORG · AZURE_REPOS_TOKEN', note: 'Edits to existing files are reliable; brand-new file adds can fail.' },
-  { name: 'Raptia', tag: 'AGENT', body: 'The first of two generation agents that runs on every Kandryn pipeline. Raptia is optimised for precision — it reads the work item, the acceptance criteria, and the repository context, then commits to a single well-reasoned answer. Stack-aware: detects React, Angular, Vue, Node.js, .NET, Java Spring Boot, Python, and Go — and writes idiomatic code for each without being told.', creds: 'Your Anthropic API key, saved in Settings', note: 'Raptia and Fovea always run together in parallel.' },
-  { name: 'Fovea', tag: 'AGENT', body: 'The second generation agent. Fovea takes a wider view of the same context — it considers more of the repository before settling on an approach, which means it often catches what Raptia misses. Also stack-aware — uses the same detected profile to ensure both suggestions follow the same framework conventions.', creds: 'Your OpenAI API key, saved in Settings', note: 'The Synthesia agent scores both and flags the stronger answer.' },
-  { name: 'Synthesia', tag: 'AGENT', body: 'The ranking agent. After Raptia and Fovea complete, Synthesia scores both suggestions on correctness, readability, diff size, convention adherence, and acceptance-criteria coverage — then recommends the better one with a confidence score. Two behaviour signals — ambiguity handling and surgical precision — flag whether an agent silently assumed something or changed more than the work item required.', creds: 'Your Anthropic API key — the same one Raptia uses', note: 'Synthesia runs automatically after every generation. Its verdict is visible on every run, and you can always override it.' },
-  { name: 'Veria', tag: 'AGENT', body: 'The review agent. After you commit a suggestion, Veria reads the committed code against the work item\'s acceptance criteria and produces a structured review: strengths, gaps, risks, and a one-sentence focus note for the human reviewer.', creds: 'User-triggered post-commit — runs on demand, not automatically', note: 'Veria only activates after a suggestion is committed to a branch. Veria explicitly checks for scope creep, silent assumptions, and over-engineering in the committed code.' },
-  { name: 'Aegis', tag: 'AGENT', body: 'The security agent, run on demand once a suggestion is committed. Scans each changed file independently for OWASP Top 10 vulnerabilities, hardcoded secrets, injection flaws, and authentication bypasses. Outputs structured findings with severity, OWASP category, line reference, and remediation steps. High and Critical findings fail the status check it posts to the pull request. Remediate Now creates a tracker ticket, syncs the board, and starts a new run to fix the issue — without leaving Kandryn.', creds: 'Your Anthropic API key, saved in Settings', note: 'Aegis runs on a safeguarded frontier model, and falls back to a second one for organisations on zero data retention. Require the check in a branch rule once to turn the gate into a block.' },
-  { name: 'Narratia', tag: 'AGENT', body: 'The documentation agent. After a run completes, Narratia generates an operational runbook: a summary of what changed, deployment steps specific to this change, rollback procedure, validation commands, test cases from the generated suite, and security findings from Aegis. Pushed to Confluence, Notion, or committed as Markdown to the PR branch.', creds: 'Confluence: CONFLUENCE_DOMAIN · CONFLUENCE_EMAIL · CONFLUENCE_API_TOKEN · CONFLUENCE_SPACE_KEY\nNotion: NOTION_API_TOKEN · NOTION_PARENT_PAGE\nMarkdown: no credentials required', note: 'The Markdown option commits docs/runbooks/ITEM-KEY.md directly to the PR branch — visible in the PR with no extra setup.' },
+/**
+ * What you actually connect.
+ *
+ * This list used to carry the six agents as peer cards beside Jira and GitHub.
+ * An agent is not an integration — it is the product — and mixing them left
+ * the page unable to answer the one question it exists for: what do I have to
+ * plug in? Confluence and Notion were missing entirely despite having their
+ * own credentials. The agents are described on /how-it-works.
+ */
+export const CONNECTORS = [
+  {
+    kind: 'Tracker — pick one',
+    name: 'Jira',
+    body: 'Syncs the epic→story→task hierarchy into a board, resolves parents in two passes, and writes new items and test cases back when you ask it to.',
+    creds: 'JIRA_DOMAIN · JIRA_EMAIL · JIRA_API_TOKEN',
+    note: 'Uses the enhanced JQL search endpoint; your domain is normalised for you.',
+  },
+  {
+    kind: 'Tracker — pick one',
+    name: 'Azure DevOps',
+    body: 'The same sync against Azure Boards, with Feature mapped onto epic so the hierarchy lines up with Jira projects.',
+    creds: 'AZURE_DEVOPS_ORG · AZURE_DEVOPS_PROJECT · AZURE_DEVOPS_PAT',
+    note: 'Work-item creation and test-case push both supported.',
+  },
+  {
+    kind: 'Repository — pick one',
+    name: 'GitHub',
+    body: 'Branch, commit and pull request. Stack detection reads the repository on connect, and the test-script commit stacks onto the existing PR rather than overwriting it.',
+    creds: 'GITHUB_TOKEN (PAT) or the OAuth token from sign-in',
+    note: 'The primary provider, and the one we test first on every release.',
+  },
+  {
+    kind: 'Repository — pick one',
+    name: 'Azure Repos',
+    body: 'Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.',
+    creds: 'AZURE_REPOS_ORG · AZURE_REPOS_TOKEN',
+    note: 'Edits to existing files are reliable; brand-new file adds can fail.',
+  },
+  {
+    kind: 'Documentation — optional',
+    name: 'Confluence',
+    body: 'A destination for generated runbooks. Without it, a runbook is still written and can be committed to the pull request branch as Markdown.',
+    creds: 'CONFLUENCE_DOMAIN · CONFLUENCE_EMAIL · CONFLUENCE_API_TOKEN · CONFLUENCE_SPACE_KEY',
+    note: 'Nothing is published to Confluence unless you choose it as the target.',
+  },
+  {
+    kind: 'Documentation — optional',
+    name: 'Notion',
+    body: 'The same, against a Notion parent page. Also optional, and also never written to unless you pick it.',
+    creds: 'NOTION_API_TOKEN · NOTION_PARENT_PAGE',
+    note: 'Markdown to the pull request branch needs no credentials at all.',
+  },
 ];
+
+/**
+ * The keys the agents run on. Stated once, in one place, because getting this
+ * wrong is the error most likely to waste a prospect's first hour.
+ */
+export const MODEL_KEYS = {
+  heading: 'The agents run on your keys',
+  body:
+    'Kandryn does not resell model capacity. Every call is made with a key you saved, so usage appears on your own account and the provider terms that apply are the ones you already agreed to.',
+  keys: [
+    { name: 'Anthropic', need: 'Required', body: 'Generation, ranking, review, security scanning and runbooks. Without it, six of the seven agent paths refuse to run.' },
+    { name: 'OpenAI', need: 'Required for the second opinion', body: 'The second generation agent. Without it a run still completes, but with one suggestion instead of two competing ones.' },
+  ],
+};
 
 export const CAPABILITY_MATRIX = [
   { cap: 'Read hierarchy', jira: 'Yes', ado: 'Yes', gh: '—', ar: '—' },
@@ -132,8 +187,9 @@ export const CAPABILITY_FOOTNOTE =
   'and it blocks a merge only once you require it — a GitHub ruleset or ' +
   'branch protection rule, or an Azure DevOps branch policy. On Azure Repos ' +
   'the check attaches to the pull request, so a run with no pull request has ' +
-  'nothing to post to. Runbook push to Confluence and Notion requires ' +
-  'separate credentials in Settings.';
+  'nothing to post to. GitHub is the primary, auto-synced provider: on Azure ' +
+  'Repos a commit edits existing files, and adding a brand-new file can fail. ' +
+  'Runbook push to Confluence and Notion requires separate credentials in Settings.';
 
 export const QUICKSTART = [
   { n: '01', title: 'Connect your credentials', body: 'An Anthropic key and an OpenAI key for the agents, plus your tracker and repository credentials — all tested as you save them. Optional: Confluence or Notion credentials for runbook push.', time: '5 min' },
@@ -165,11 +221,22 @@ export const SECURITY_PRINCIPLES = [
   { title: 'The stop gate is yours to enforce', body: 'Run Aegis on a committed run and it posts a kandryn/security status check to the pull request — on GitHub and on Azure Repos. Require that check in a branch rule and the platform blocks the merge until a High or Critical finding is resolved. Until you do, the check reports but does not block. Kandryn never merges anything itself.' },
 ];
 
+/**
+ * Third parties that receive data — not internal groupings.
+ *
+ * This table used to list "Generation pipeline" and "Aegis (security
+ * pipeline)" as though they were processors. They are names for our own
+ * agents; the companies that actually receive your source code are Anthropic
+ * and OpenAI, and neither appeared on this page at all. The full list with
+ * regions and compliance status lives on /trust.
+ */
 export const PROCESSORS = [
-  { name: 'Supabase (Postgres)', purpose: 'Application database', sees: 'Work items, runs, suggestions, your encrypted-at-rest config' },
+  { name: 'Anthropic', purpose: 'Code generation, ranking, review, security scanning, runbooks', sees: 'The case file for a run: work item, acceptance criteria, and the repository files selected as relevant. Called with your own API key.' },
+  { name: 'OpenAI', purpose: 'The second generation agent', sees: 'The same case file as Anthropic, in parallel. Called with your own API key.' },
+  { name: 'Supabase (Postgres)', purpose: 'Application database', sees: 'Work items, runs, suggestions, and your integration credentials. Storage is AES-256 encrypted at rest.' },
   { name: 'Clerk', purpose: 'Authentication', sees: 'Email, session, OAuth identity' },
-  { name: 'Generation pipeline', purpose: 'Code generation, ranking, and review', sees: 'Case file per run: work item, acceptance criteria, selected repository files. Agents: Raptia, Fovea, Synthesia, Veria.' },
-  { name: 'Aegis (security pipeline)', purpose: 'Security vulnerability scanning', sees: 'The committed code change only — same file the developer committed. No other repository files.' },
+  { name: 'Vercel', purpose: 'Application hosting', sees: 'Application traffic. No persistent storage.' },
+  { name: 'Railway', purpose: 'Repository indexing, when enabled', sees: 'A temporary clone of the repository at index time, deleted when indexing finishes' },
   { name: 'Resend', purpose: 'Transactional email', sees: 'Your address and the run outcome' },
 ];
 
