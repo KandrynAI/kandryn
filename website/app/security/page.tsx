@@ -12,11 +12,16 @@ const TARGET = '/trust/#boundaries';
  * the single canonical page, and Security's seven boundary statements moved
  * there as the "Boundaries" section.
  *
- * The route stays rather than being deleted, so nav links, footer links and
- * any inbound link still resolve. A static export cannot issue a 3xx —
- * `redirects()` in next.config is unsupported under `output: 'export'` — so
- * this is a meta refresh plus a canonical tag pointing at the target, with a
- * real link for anyone who lands here with scripting blocked.
+ * The real redirect is a 308 in website/vercel.json, which Vercel applies
+ * before filesystem routing — in production nobody reaches this page. It
+ * lives in vercel.json rather than next.config because `redirects()` is
+ * unsupported under `output: 'export'`.
+ *
+ * This page is the fallback for everywhere that config does not apply: local
+ * preview, `npx serve out`, or any static host that is not Vercel. It carries
+ * a meta refresh, a canonical tag, noindex, and a real link for anyone with
+ * scripting blocked. Deleting it would break those; deleting the vercel.json
+ * rule would fall back to it rather than 404.
  */
 export const metadata: Metadata = {
   title: 'Security',
