@@ -1,45 +1,28 @@
-'use client';
-
-import { useState } from 'react';
 import { FAQS } from '@/lib/site';
 
+/**
+ * FAQ disclosure list.
+ *
+ * This was a client accordion that rendered only the open answer. Three
+ * problems followed from that: find-in-page could not reach a closed answer
+ * on the one page people search rather than read, assistive tech could not
+ * either, and the FAQPage JSON-LD declared every answer while the document
+ * contained one.
+ *
+ * Native <details> fixes all three and needs no JavaScript, so the page ships
+ * as static markup. The shared `name` keeps one open at a time where the
+ * browser supports exclusive disclosure, and degrades to multi-open where it
+ * does not — which is a fine outcome for an FAQ.
+ */
 export default function FaqAccordion() {
-  const [open, setOpen] = useState<number>(0);
-
   return (
     <div className="pad-x" style={{ padding: '0 64px 56px' }}>
-      {FAQS.map((f, i) => {
-        const isOpen = open === i;
-        return (
-          <div key={f.q} style={{ borderBottom: '2px solid var(--color-divider)' }}>
-            <button
-              onClick={() => setOpen(isOpen ? -1 : i)}
-              aria-expanded={isOpen}
-              style={{
-                width: '100%',
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: 24,
-                padding: '22px 0',
-                background: 'none',
-                border: 0,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text)' }}>{f.q}</span>
-              <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-accent-700)', flexShrink: 0 }}>
-                {isOpen ? '–' : '+'}
-              </span>
-            </button>
-            {isOpen && (
-              <p style={{ fontSize: 16, lineHeight: 1.6, color: 'var(--color-neutral-800)', maxWidth: 820, padding: '0 0 24px', textWrap: 'pretty' }}>
-                {f.a}
-              </p>
-            )}
-          </div>
-        );
-      })}
+      {FAQS.map((f) => (
+        <details key={f.q} name="faq" className="faq-item">
+          <summary className="faq-q">{f.q}</summary>
+          <p className="faq-a">{f.a}</p>
+        </details>
+      ))}
     </div>
   );
 }

@@ -24,13 +24,13 @@ export default function ContactPage() {
           <br />
           We&apos;ll wire it up with you.
         </h1>
-        <p style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 22, maxWidth: 560 }}>
+        <p className="lead" style={{ marginTop: 22 }}>
           Onboarding is a shared call: we connect your tracker and repository, run one real work item through the full
           pipeline — code generation, security scan, and runbook — and you keep whatever it produces.
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 36 }}>
+        <div className="rows" style={{ marginTop: 36 }}>
           {FACTS.map(([lead, body]) => (
-            <p key={lead} style={{ fontSize: 15, color: 'var(--color-neutral-800)', borderTop: '1px solid var(--color-neutral-300)', paddingTop: 12 }}>
+            <p key={lead} className="prose">
               <strong style={{ fontWeight: 800, color: 'var(--color-text)' }}>{lead}.</strong> {body}
             </p>
           ))}
