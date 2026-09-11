@@ -10,7 +10,7 @@ import {
 import { RunError } from "./runService.js";
 import { getRunRepository } from "./repoResolver.js";
 import { getConfigs } from "./configService.js";
-import { postSecurityStatus } from "./gitService.js";
+import { postSecurityStatus } from "./securityStatus.js";
 import { canAdminister } from "./resourceAdmin.js";
 import { logger } from "../lib/logger.js";
 
@@ -204,30 +204,33 @@ export async function overrideSecurityGate(
     })
     .returning();
 
-  // Flip the GitHub check. Best-effort by design — postSecurityStatus swallows
-  // non-GitHub repos, missing tokens and API errors — so record what actually
-  // happened rather than assuming success.
+  // Flip the check on the pull request. Best-effort by design, and the outcome
+  // is recorded rather than assumed: postSecurityStatus reports whether the
+  // signal actually moved, so statusReposted reflects the provider's answer
+  // instead of this function guessing from the repository URL.
   let statusReposted = false;
   try {
     const repo = await getRunRepository(run);
     if (repo?.url && run.commitHash) {
-      const creds = await getConfigs(actor.userId, ["GITHUB_TOKEN"]);
-      if (creds.GITHUB_TOKEN && /github\.com/.test(repo.url)) {
-        await postSecurityStatus(
-          repo.url,
-          run.commitHash,
-          run.id,
-          "approved",
-          `Security gate overridden by an admin: ${cleanReason}`.slice(0, 140),
-          creds.GITHUB_TOKEN,
-        );
-        statusReposted = true;
+      const creds = await getConfigs(actor.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+      const posted = await postSecurityStatus({
+        repoUrl: repo.url,
+        commitHash: run.commitHash,
+        prUrl: run.prUrl,
+        runId: run.id,
+        gate: "approved",
+        details: `Security gate overridden by an admin: ${cleanReason}`.slice(0, 140),
+        creds: { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN },
+      });
+      statusReposted = posted.posted;
+      if (!posted.posted) {
+        logger.warn({ runId, reason: posted.reason }, "Aegis override: the status check was not re-posted");
       }
     }
   } catch (err) {
     // Never fail the override on a status-post problem: the governance record
     // is the primary artifact and it is already committed.
-    logger.warn({ runId, err }, "Aegis override: re-posting the GitHub status failed");
+    logger.warn({ runId, err }, "Aegis override: re-posting the status check failed");
   }
 
   if (statusReposted) {

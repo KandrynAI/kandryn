@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PR_TITLE_PREFIX, SECURITY_CHECK_CONTEXT } from "../../../../shared/types/branding.js";
+import {
+  PR_TITLE_PREFIX,
+  SECURITY_CHECK_CONTEXT,
+  securityCheckGenreName,
+} from "../../../../shared/types/branding.js";
 
 /**
  * The prior brand must not come back into anything a customer's repository sees.
@@ -46,4 +50,18 @@ test("the externally visible strings are the ones we intend", () => {
   // change without someone editing this line on purpose.
   assert.equal(PR_TITLE_PREFIX, "[Kandryn]");
   assert.equal(SECURITY_CHECK_CONTEXT, "kandryn/security");
+});
+
+test("the Azure DevOps genre/name pair is derived from the one constant", () => {
+  // ADO renders the pair back as "genre/name" — the string a customer types
+  // into a branch policy. If it stopped matching what GitHub advertises, the
+  // two providers would be telling people to configure different check names.
+  const { genre, name } = securityCheckGenreName();
+  assert.equal(`${genre}/${name}`, SECURITY_CHECK_CONTEXT);
+  assert.ok(genre.length > 0 && name.length > 0, "neither half may be empty");
+  assert.equal(
+    SECURITY_CHECK_CONTEXT.split("/").length,
+    2,
+    "exactly one slash — ADO's pair cannot represent more than genre and name",
+  );
 });

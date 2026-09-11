@@ -368,7 +368,17 @@ function AegisSetupNotice({ repoId, provider, url }: { repoId: number; provider:
     }
   });
 
-  if (provider !== "github" || dismissed) return null;
+  // Both providers can carry the gate; neither enforces it without a rule the
+  // customer configures. Azure Repos used to be excluded here because nothing
+  // posted a status to it — that is no longer true.
+  const isAdo = provider === "azure-repos";
+  if ((provider !== "github" && !isAdo) || dismissed) return null;
+
+  // Branch policies live in project settings, not on the repository page.
+  const adoPolicies = (): string => {
+    const m = url.match(/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\//);
+    return m ? `https://dev.azure.com/${m[1]}/${m[2]}/_settings/repositories?_a=policies` : url;
+  };
 
   const dismiss = () => {
     try {
@@ -396,15 +406,38 @@ function AegisSetupNotice({ repoId, provider, url }: { repoId: number; provider:
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          To enforce the Aegis stop gate, add <code className="font-mono">{SECURITY_CHECK_CONTEXT}</code> as a required status
-          check on your main branch in GitHub: Settings → Branches → Branch protection rules → Require status checks.
+          Aegis posts <code className="font-mono">{SECURITY_CHECK_CONTEXT}</code> to every pull request it scans, but the
+          check only blocks a merge once you require it.{" "}
+          {isAdo ? (
+            <>
+              In Azure DevOps: Project settings → Repositories → this repository → Policies → pick your default branch →
+              Status checks → add <code className="font-mono">{SECURITY_CHECK_CONTEXT}</code> and set it to Required.
+            </>
+          ) : (
+            <>
+              In GitHub: Settings → Rules → Rulesets → New branch ruleset → target your default branch → Require status
+              checks → add <code className="font-mono">{SECURITY_CHECK_CONTEXT}</code>. Classic branch protection works
+              too, but only offers checks reported in the last seven days, so a ruleset is the surer path.
+            </>
+          )}
         </p>
+        {isAdo && (
+          <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
+            Azure DevOps attaches the check to the pull request rather than the commit, so the token in Integrations
+            needs permission to post pull request statuses on this repository.
+          </p>
+        )}
         <div className="mt-3 flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" className="font-mono text-xs" onClick={copyCheckName}>
             <Copy className="mr-2 h-3.5 w-3.5" /> Copy check name
           </Button>
-          <Button variant="outline" size="sm" className="font-mono text-xs" onClick={() => window.open(`${url}/settings/branches`, "_blank")}>
-            <LinkIcon className="mr-2 h-3.5 w-3.5" /> Open GitHub branch settings →
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={() => window.open(isAdo ? adoPolicies() : `${url}/settings/rules`, "_blank")}
+          >
+            <LinkIcon className="mr-2 h-3.5 w-3.5" /> {isAdo ? "Open branch policies →" : "Open branch rules →"}
           </Button>
         </div>
       </CardContent>

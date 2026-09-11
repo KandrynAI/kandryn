@@ -6,7 +6,6 @@ import { detectStack, type StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
 import { queryGraph } from "./graphifyService.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
-import { SECURITY_CHECK_CONTEXT } from "../../../../shared/types/branding.js";
 
 // ---------------------------------------------------------------------------
 // Stack → file extension mapping
@@ -659,53 +658,5 @@ export class GitService {
 
   get defaultBranch(): string {
     return this.repo.defaultBranch;
-  }
-}
-
-/**
- * Post a GitHub commit status check for the Aegis security gate
- * (context `kandryn/security`). Non-fatal — returns without throwing for a
- * non-GitHub repo, a missing token, or an API/network error, so it never breaks
- * the scan flow. The token is supplied by the caller (fetched per-user via
- * getConfigs) — never logged.
- */
-export async function postSecurityStatus(
-  repoUrl: string,
-  commitHash: string,
-  runId: number,
-  gate: "approved" | "blocked" | "pending",
-  details: string,
-  githubToken: string | undefined,
-): Promise<void> {
-  const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/);
-  if (!match) return; // not a GitHub URL — skip silently
-  if (!githubToken) return;
-  const [, owner, repo] = match;
-
-  const state = gate === "approved" ? "success" : gate === "blocked" ? "failure" : "pending";
-  const body = {
-    state,
-    context: SECURITY_CHECK_CONTEXT,
-    description: details.slice(0, 140), // GitHub 140-char limit
-    // The run, not the commit. This slot held commitHash, so every "Details"
-    // link on every check we ever posted resolved to a run id that does not exist.
-    target_url: `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/runs/${runId}`,
-  };
-
-  try {
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/statuses/${commitHash}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${githubToken}`,
-        "Content-Type": "application/json",
-        Accept: "application/vnd.github.v3+json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      logger.warn({ status: res.status, owner, repo }, "Aegis GitHub status check failed");
-    }
-  } catch (err) {
-    logger.warn({ err }, "Aegis GitHub status check errored");
   }
 }

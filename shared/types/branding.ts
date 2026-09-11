@@ -18,3 +18,19 @@ export const PR_TITLE_PREFIX = '[Kandryn]';
 
 /** GitHub commit status context for the Aegis security gate. */
 export const SECURITY_CHECK_CONTEXT = 'kandryn/security';
+
+/**
+ * The same identifier in the shape Azure DevOps wants it.
+ *
+ * ADO models a status identifier as a {genre, name} pair and renders it back to
+ * the user as "genre/name" — the string they type into a branch policy. Derived
+ * from the one constant above rather than written out again, so the two
+ * providers can never end up advertising different check names.
+ */
+export function securityCheckGenreName(): { genre: string; name: string } {
+  const slash = SECURITY_CHECK_CONTEXT.indexOf('/');
+  return {
+    genre: SECURITY_CHECK_CONTEXT.slice(0, slash),
+    name: SECURITY_CHECK_CONTEXT.slice(slash + 1),
+  };
+}

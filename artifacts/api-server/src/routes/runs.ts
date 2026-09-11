@@ -15,7 +15,7 @@ import {
   getAegisIssueTypePref,
   resolveIssueType,
 } from "../services/aegisPlmService.js";
-import { postSecurityStatus } from "../services/gitService.js";
+import { postSecurityStatus } from "../services/securityStatus.js";
 import { getProjectRepository, getRunRepository } from "../services/repoResolver.js";
 import { overrideSecurityGate, listOverridesForRun, getOverridePolicy } from "../services/aegisOverrideService.js";
 import { suggestionPrimaryFile, loadFilesForSuggestions, loadSuggestionFiles } from "../services/suggestionFiles.js";
@@ -818,7 +818,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
   // deprecated projects.repository_id.
   const repo = await getRunRepository(run);
 
-  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]);
+  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
   if (!creds.ANTHROPIC_API_KEY) {
     await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
     res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Aegis." });
@@ -886,7 +886,20 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
             ? `Blocked: could not scan ${scan.unscannedFiles.length}/${scan.filesTotal} file(s): ${unscannedNames}`
             : `Blocked: ${scan.highCount} high, ${scan.criticalCount} critical across ${scan.filesScanned} file(s)`
           : `Approved: ${scan.filesScanned}/${scan.filesTotal} file(s) scanned, ${scan.findings.length} finding(s)`;
-      await postSecurityStatus(repo.url, run.commitHash, run.id, scan.gateDecision, gateDesc, creds.GITHUB_TOKEN);
+      const posted = await postSecurityStatus({
+        repoUrl: repo.url,
+        commitHash: run.commitHash,
+        prUrl: run.prUrl,
+        runId: run.id,
+        gate: scan.gateDecision,
+        details: gateDesc,
+        creds: { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN },
+      });
+      if (!posted.posted) {
+        // The scan itself stands; only the external signal is missing. Logged
+        // rather than surfaced, because the gate decision is already on the run.
+        req.log.warn({ runId, reason: posted.reason }, "Aegis status check not posted");
+      }
     }
 
     req.log.info(
