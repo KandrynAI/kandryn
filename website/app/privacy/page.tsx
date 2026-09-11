@@ -72,7 +72,7 @@ export default function PrivacyPage() {
         <Bullets
           items={[
             'Work items from Jira or Azure DevOps',
-            'Selected source code file sections (3-8 files) read at run time from GitHub or Azure Repos. Sent to AI model providers. NOT stored by Kandryn after the run completes.',
+            'Selected source code file sections — at most eight files, and a few thousand characters in total — read at run time from GitHub or Azure Repos. Sent to AI model providers. NOT stored by Kandryn after the run completes.',
             'Repository metadata: file paths, branch names, commit hashes',
           ]}
         />

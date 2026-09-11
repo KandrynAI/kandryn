@@ -138,7 +138,7 @@ export const CONNECTORS = [
     name: 'Azure Repos',
     body: 'Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.',
     creds: 'AZURE_REPOS_ORG · AZURE_REPOS_TOKEN',
-    note: 'Edits to existing files are reliable; brand-new file adds can fail.',
+    note: 'Edits to existing files are reliable; brand-new file adds can fail. To use the security gate here, the token also needs permission to post pull request statuses — Code alone is not enough.',
   },
   {
     kind: 'Documentation — optional',
@@ -218,7 +218,7 @@ export const SECURITY_PRINCIPLES = [
   { title: 'The tracker stays yours', body: 'Items and test cases are pushed only when you ask. The single automatic write-back is a status change when an item closes.' },
   { title: 'Agents see a case file, not a repository', body: 'Only the files the change planner selects as relevant to the work item, plus the detected stack profile, are passed to the agent pipeline. The planner additionally sees the directory listing — file names only, capped — so it can target paths that exist.' },
   { title: 'Failures are contained', body: 'A run that fails records the error and stops. Nothing half-written reaches your repository, and stuck runs are swept after twenty minutes. A blocked Aegis gate records every finding and stops without writing anything to main.' },
-  { title: 'The stop gate is yours to enforce', body: 'Run Aegis on a committed run and it posts a kandryn/security status check to the pull request — on GitHub and on Azure Repos. Require that check in a branch rule and the platform blocks the merge until a High or Critical finding is resolved. Until you do, the check reports but does not block. Kandryn never merges anything itself.' },
+  { title: 'The stop gate is yours to enforce', body: 'Run Aegis on a committed run and it posts a kandryn/security check — a commit status on GitHub, a pull request status on Azure Repos. Require that check in a branch rule and the platform blocks the merge until a High or Critical finding is resolved. Until you do, the check reports but does not block. Kandryn never merges anything itself.' },
 ];
 
 /**
@@ -246,7 +246,7 @@ export const FAQS = [
   { q: 'How much of my repository do the agents see?', a: 'A handful of files — the ones the change planner selects as relevant to the work item — plus the detected stack profile. The planner is also shown the directory listing, so it can target paths that exist, but that is file names only and is capped. No other file contents leave the repository, and nothing outside the repository you bound to the project is read at all.' },
   { q: 'What happens if a scheduled run fails?', a: 'The run row records the error, the item is left untouched, and the owner gets an email. Runs stuck longer than twenty minutes are swept to failed by the dispatcher.' },
   { q: 'Can it write to my tracker?', a: 'Only where you ask it to: new items and test cases you explicitly push, and a status change when an item closes. Nothing else propagates upstream.' },
-  { q: 'Which providers work best?', a: 'GitHub is the primary, auto-synced provider. Azure Repos works for edits to existing files; adding a brand-new file can fail there.' },
+  { q: 'Which providers work best?', a: 'GitHub is the primary, auto-synced provider. Azure Repos handles branches, commits to existing files, pull requests, stack detection and the security gate; adding a brand-new file can fail there, and the gate needs a pull request to attach to, where GitHub can post against the commit alone.' },
   { q: 'Six agents — why so many?', a: 'Each agent has a distinct role. Raptia and Fovea generate competing suggestions in parallel — they reason differently by design, so when one misreads the ticket, the other usually does not. Synthesia scores both and recommends the stronger answer out of 10. Veria reviews the committed code against the acceptance criteria after commit. Aegis scans for security vulnerabilities and fails its status check on a High finding, which blocks the merge once your branch rules require that check. Narratia writes the operational runbook. Together they cover the full delivery loop from generation to documentation.' },
   { q: 'What does Aegis scan for?', a: 'Aegis checks for OWASP Top 10 (2021) vulnerabilities: injection flaws (SQL, NoSQL, command), broken access control, cryptographic failures, hardcoded secrets, insecure design, authentication bypasses, and SSRF. Each finding has a severity (Critical, High, Medium, Low, Info), an OWASP category, a line reference, and a remediation step. High and Critical findings fail the status check Aegis posts to the pull request — a block once your branch rules require it. Medium and Low findings create tracker tickets.' },
   { q: 'Can Kandryn fix its own security findings?', a: 'Yes — that is what Remediate Now is for. Click it on any Aegis finding and Kandryn creates the tracker ticket, syncs it to the board, and immediately starts a new run with the security finding and its remediation as the brief for Raptia and Fovea. The loop closes in the same session without switching tools.' },
