@@ -396,7 +396,8 @@ export default function TrustPage() {
             By default, no code is committed to your repository without explicit developer action. Kandryn presents
             two competing suggestions and a ranked recommendation; the developer chooses which to commit, then clicks. An
             optional per-run auto-commit setting — off by default — commits the top-ranked suggestion automatically only
-            when you enable it. Kandryn never merges and never force-pushes.
+            when you enable it. Kandryn never merges, and never writes to your default branch. Re-committing a work
+            item does move its own task/&lt;id&gt; branch to the new commit, so treat that branch as Kandryn&rsquo;s.
           </p>
         </div>
       </section>

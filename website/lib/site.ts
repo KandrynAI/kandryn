@@ -39,7 +39,7 @@ export const HOW_SECTIONS = [
   },
   {
     n: '03', phase: 'run', title: 'Synthesia ranks',
-    body: 'Synthesia scores each suggestion on five model-judged dimensions plus a mechanical coherence check, weights them into a single score out of 10, and flags the leader as Recommended with a plain-English explanation of its reasoning. Two additional behaviour signals track ambiguity handling and surgical precision.',
+    body: 'Synthesia scores each suggestion on five model-judged dimensions plus a mechanical coherence check, weights them into a single score out of 10, and flags the leader as Recommended with a plain-English explanation of its reasoning. Two behaviour signals — ambiguity handling and surgical precision — are scored alongside it and shown on the run, but carry no weight in the ranking.',
     detailLabel: 'SCORED ON',
     details: ['Correctness — does it solve the stated problem? (30%)', 'Coherence — a mechanical check against the surrounding code (15%)', 'Convention adherence — does it match existing patterns? (15%)', 'AC coverage — how many criteria does it address? (15%)', 'Readability — is it clear and maintainable? (15%)', 'Minimal diff — does it change only what is needed? (10%)'],
   },
@@ -71,7 +71,7 @@ export const HOW_SECTIONS = [
     n: '08', phase: 'ondemand', title: 'Narratia documents',
     body: 'Narratia generates an operational runbook from the completed run: what changed and why, deployment steps specific to this change, rollback procedure, validation commands, and a summary of Veria and Aegis findings. Pushed to Confluence via REST API, Notion via the Notion API, or committed as docs/runbooks/ITEM-KEY.md to the same PR branch — zero extra credentials for the Markdown option.',
     detailLabel: 'RUNBOOK SECTIONS',
-    details: ['Summary — what changed and why', 'Deployment steps — specific to this change', 'Rollback procedure — referencing the branch and PR', 'Validation — how to verify it is working in production', 'Test cases — from the generated test suite', 'Security notes — Aegis gate status and findings'],
+    details: ['Summary — the change in two or three sentences', 'What changed — the files and the reasoning', 'Deployment steps — specific to this change', 'Rollback procedure — referencing the branch and PR', 'Validation — how to verify it is working in production', 'Test cases — from the generated test suite', 'Security notes — Aegis gate status and findings', 'References — work item key, branch, commit hash, PR link'],
   },
 ];
 
@@ -95,7 +95,7 @@ export const STAGE_PHASES = [
 /** What Kandryn will not do — each one checkable in the product. */
 export const LIMITS = [
   { title: 'It does not merge', body: 'Kandryn opens the pull request and stops. Merging is your review, your rules and your CI.' },
-  { title: 'It does not touch your default branch', body: 'Work lands on task/<id>. No force-push, no commits to main, no rewriting history.' },
+  { title: 'It does not touch your default branch', body: 'Work lands on task/<id>, and nothing else is ever written. Re-committing a work item moves that branch to the new commit, so keep your own work elsewhere.' },
   { title: 'It does not read your whole repository', body: 'A handful of files selected as relevant to the work item. The planner also sees the directory listing — names only, capped.' },
   { title: 'It does not run the post-commit agents by itself', body: 'Review, security and runbook generation are three buttons. A run that nobody follows up on has none of them.' },
   { title: 'It does not write to your tracker uninvited', body: 'New items and test cases go up only when you push them. The single automatic write-back is a status change when an item closes.' },
@@ -158,7 +158,7 @@ export const CHANGELOG = [
 export const SECURITY_PRINCIPLES = [
   { title: 'Credentials are per user', body: 'Every key is stored against your user record in an isolated config table. There is no shared pool, no fallback to an environment variable in production, and no key is ever written to a log line.' },
   { title: 'Every query is scoped', body: 'Projects, work items, runs and suggestions are all filtered by user on every read and write. There is no global collection a bug could expose.' },
-  { title: 'Write access is narrow', body: 'Kandryn creates branches, commits and pull requests. It does not merge, force-push, or touch your default branch.' },
+  { title: 'Write access is narrow', body: 'Kandryn creates branches, commits and pull requests, all on task/<id>. It never merges and never writes to your default branch. The one thing it does overwrite is its own branch: re-committing a work item moves task/<id> to the new commit.' },
   { title: 'The tracker stays yours', body: 'Items and test cases are pushed only when you ask. The single automatic write-back is a status change when an item closes.' },
   { title: 'Agents see a case file, not a repository', body: 'Only the files the change planner selects as relevant to the work item, plus the detected stack profile, are passed to the agent pipeline. The planner additionally sees the directory listing — file names only, capped — so it can target paths that exist.' },
   { title: 'Failures are contained', body: 'A run that fails records the error and stops. Nothing half-written reaches your repository, and stuck runs are swept after twenty minutes. A blocked Aegis gate records every finding and stops without writing anything to main.' },
@@ -183,7 +183,7 @@ export const FAQS = [
   { q: 'Six agents — why so many?', a: 'Each agent has a distinct role. Raptia and Fovea generate competing suggestions in parallel — they reason differently by design, so when one misreads the ticket, the other usually does not. Synthesia scores both and recommends the stronger answer out of 10. Veria reviews the committed code against the acceptance criteria after commit. Aegis scans for security vulnerabilities and fails its status check on a High finding, which blocks the merge once your branch rules require that check. Narratia writes the operational runbook. Together they cover the full delivery loop from generation to documentation.' },
   { q: 'What does Aegis scan for?', a: 'Aegis checks for OWASP Top 10 (2021) vulnerabilities: injection flaws (SQL, NoSQL, command), broken access control, cryptographic failures, hardcoded secrets, insecure design, authentication bypasses, and SSRF. Each finding has a severity (Critical, High, Medium, Low, Info), an OWASP category, a line reference, and a remediation step. High and Critical findings fail the status check Aegis posts to the pull request — a block once your branch rules require it. Medium and Low findings create tracker tickets.' },
   { q: 'Can Kandryn fix its own security findings?', a: 'Yes — that is what Remediate Now is for. Click it on any Aegis finding and Kandryn creates the tracker ticket, syncs it to the board, and immediately starts a new run with the security finding and its remediation as the brief for Raptia and Fovea. The loop closes in the same session without switching tools.' },
-  { q: 'What does Narratia put in the runbook?', a: 'Seven sections: a summary of what changed and why, deployment steps specific to this change, a rollback procedure referencing the branch and PR, validation commands to confirm it is working in production, the generated test cases, security findings from Aegis, and a references section with the work item key, branch, commit hash, and PR link. Pushed to Confluence, Notion, or committed as Markdown to the same PR branch.' },
+  { q: 'What does Narratia put in the runbook?', a: 'Eight sections: a summary, what changed and why, deployment steps specific to this change, a rollback procedure referencing the branch and PR, validation commands to confirm it is working in production, the generated test cases, security findings from Aegis, and a references section with the work item key, branch, commit hash, and PR link. Pushed to Confluence, Notion, or committed as Markdown to the same PR branch.' },
   { q: 'Can I try it on one project?', a: 'That is how every pilot starts: one tracker project, one repository, one real work item run end to end on a shared call.' },
 ];
 
