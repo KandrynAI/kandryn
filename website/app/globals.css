@@ -418,3 +418,75 @@ code, pre {
 @media (max-width: 520px) {
   .h1-home { font-size: 32px !important; }
 }
+
+/* ---- How it works: stage rows ------------------------------------------
+   Three columns while there is room — the stage name, what happens, and the
+   specifics — collapsing to one below the tablet break. The old fixed 220px
+   first column squeezed the title into three words per line long before the
+   layout actually needed to stack. */
+.stage-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 0.8fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  border-bottom: 1px solid var(--color-neutral-300);
+}
+.stage-row:last-child {
+  border-bottom: none;
+}
+.stage-head {
+  padding: 36px 24px 36px 64px;
+  border-right: 1px solid var(--color-neutral-300);
+}
+.stage-body {
+  padding: 36px 32px;
+  border-right: 1px solid var(--color-neutral-300);
+}
+.stage-detail {
+  padding: 36px 64px 36px 32px;
+}
+
+@media (max-width: 1100px) {
+  .stage-row {
+    grid-template-columns: minmax(170px, 0.7fr) minmax(0, 1fr);
+  }
+  /* The detail list drops under the prose rather than squeezing a third
+     column that no longer has room for a readable line length. */
+  .stage-detail {
+    grid-column: 2;
+    padding: 0 64px 36px 32px;
+  }
+  .stage-body {
+    padding-bottom: 20px;
+  }
+}
+
+@media (max-width: 820px) {
+  .stage-row {
+    grid-template-columns: 1fr;
+  }
+  .stage-head {
+    padding: 28px 24px 0;
+    border-right: none;
+  }
+  .stage-body {
+    grid-column: 1;
+    padding: 14px 24px 0;
+    border-right: none;
+  }
+  .stage-detail {
+    grid-column: 1;
+    padding: 18px 24px 28px;
+  }
+  /* Quickstart and changelog rows lose their fixed first column too. */
+  .quickstep,
+  .changerow {
+    grid-template-columns: 1fr !important;
+    gap: 4px !important;
+  }
+}
+
+/* Post-commit stages carry a standing marker: the phase banner explaining
+   that nothing here runs on its own scrolls away, and the distinction has to
+   survive that. */
+.stage-ondemand {
+  border-left: 3px solid var(--color-accent);
+}

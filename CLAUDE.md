@@ -310,11 +310,23 @@ supporting-pages pass. Corrections already applied (do not reintroduce):
 deleted rather than corrected: the homepage rebuild left them with no
 consumers.
 
+`/resources` lost a featured guide, twelve resource cards and a monthly
+newsletter for the same reason: none of the thirteen pieces of writing
+existed. The cards rendered "Read →" as plain text with no link behind them,
+each with a specific reading time, and the newsletter promised a monthly email
+nobody sends. The page is now the quickstart and the changelog, both real.
+
 Still open:
 
+- **Write two or three real guides, then bring the cards back.** The obvious
+  candidates are the ones a pilot actually needs: writing acceptance criteria
+  an agent can implement, scoping a first work item, and configuring the
+  security gate as a required check. Cards first and writing later is exactly
+  how the fabricated version happened — write the guide, then add the card.
 - **Phase 3 design pass** — extending the homepage's one-idea-per-section
-  pattern to `/how-it-works`, `/integrations`, `/resources` and `/security`.
-  Claims on those pages are now correct; their layout is not yet rebuilt.
+  pattern to `/how-it-works`, `/integrations` and `/security`. Claims on those
+  pages are now correct; their layout is not yet rebuilt. `/resources` was
+  rebuilt alongside its content cut.
 - The homepage and these corrections live on `claude/repo-setup-6osjsy` and are
   deliberately **not** merged to `main`.
 

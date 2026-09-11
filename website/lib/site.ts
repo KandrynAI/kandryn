@@ -26,59 +26,80 @@ export const NAV_ITEMS = [
 
 export const HOW_SECTIONS = [
   {
-    n: 'STAGE 01', title: 'Context',
+    n: '01', phase: 'run', title: 'Context',
     body: 'Before an agent sees anything, the run assembles the case file: the work item, its acceptance criteria, and the files in the bound repository that the change planner selects as relevant. The detected stack profile rides along, so the agents write Express and Drizzle rather than generic pseudocode.',
     detailLabel: 'WHAT GOES IN',
     details: ['Work item title, description and acceptance criteria', 'Relevant repository files, chosen by the change planner', 'The directory tree, so the plan targets paths that exist', 'The detected stack profile', 'Your refinement prompt, if you wrote one'],
   },
   {
-    n: 'STAGE 02', title: 'Two answers',
+    n: '02', phase: 'run', title: 'Two answers',
     body: 'Raptia and Fovea run in parallel against the same case file. They reason differently by design — when one misreads the acceptance criteria, the other usually does not.',
     detailLabel: 'WHY PARALLEL',
     details: ['One shared context, two independent reasoning paths', 'No sequential prompting, so no shared blind spot', 'Either answer is committable — Synthesia tells you which, and scores it out of 10', 'Both are kept on the run for later comparison'],
   },
   {
-    n: 'STAGE 03', title: 'Synthesia ranks',
+    n: '03', phase: 'run', title: 'Synthesia ranks',
     body: 'Synthesia scores each suggestion on five model-judged dimensions plus a mechanical coherence check, weights them into a single score out of 10, and flags the leader as Recommended with a plain-English explanation of its reasoning. Two additional behaviour signals track ambiguity handling and surgical precision.',
     detailLabel: 'SCORED ON',
     details: ['Correctness — does it solve the stated problem? (30%)', 'Coherence — a mechanical check against the surrounding code (15%)', 'Convention adherence — does it match existing patterns? (15%)', 'AC coverage — how many criteria does it address? (15%)', 'Readability — is it clear and maintainable? (15%)', 'Minimal diff — does it change only what is needed? (10%)'],
   },
   {
-    n: 'STAGE 04', title: 'Commit',
+    n: '04', phase: 'run', title: 'Commit',
     body: 'Committing creates the deterministic branch task/<id>, writes the change, and opens a pull request titled with the work item. The item moves to review and the run records which suggestion won.',
     detailLabel: 'WHAT LANDS',
     details: ['Branch task/<id>, from the default-branch head', 'One commit containing the chosen suggestion', 'PR titled [Kandryn] <work item title>', 'Work item moved to review, run marked succeeded'],
   },
   {
-    n: 'STAGE 05', title: 'Schedule and sweep',
+    n: '05', phase: 'scheduled', title: 'Schedule and sweep',
     body: 'A run can be queued up to thirty days out. Every five minutes the dispatcher claims what is due, runs it, and emails you the outcome — including the failures, with the reason attached.',
     detailLabel: 'THE LOOP',
     details: ['Up to twenty pending runs per user', 'Claimed two at a time, no double-dispatch', 'Runs stuck over twenty minutes are failed', 'Completion and failure both send email'],
   },
   {
-    n: 'STAGE 06', title: 'Veria reviews',
+    n: '06', phase: 'ondemand', title: 'Veria reviews',
     body: 'After you commit a suggestion, Veria reads the committed code against the acceptance criteria and writes a structured review: what was addressed, what was missed, and what the human reviewer should focus on.',
     detailLabel: 'WHAT VERIA CHECKS',
     details: ['Which acceptance criteria are fully covered', 'Which are partially addressed or missing', 'Specific strengths in the committed code', 'Risks or gaps to watch in code review'],
   },
   {
-    n: 'STAGE 07', title: 'Aegis secures',
+    n: '07', phase: 'ondemand', title: 'Aegis secures',
     body: 'Run Aegis on a committed run and it scans each changed file on its own for injection flaws, hardcoded secrets, authentication bypasses and other OWASP Top 10 categories. High and Critical findings fail the status check it posts to the pull request; that check blocks a merge once your branch rules require it. Medium and Low findings create sub-tasks in your tracker. Remediate Now creates the ticket, syncs it to the board, and starts a new run with the remediation brief pre-filled — closing the security loop without leaving Kandryn.',
     detailLabel: 'WHAT AEGIS CHECKS',
     details: ['Injection: SQL, NoSQL, command, LDAP, XPath', 'Hardcoded secrets, API keys, and credentials', 'Authentication and authorisation flaws', 'Cryptographic weaknesses and insecure data exposure', 'SSRF, XXE and deserialization issues', 'Missing input validation and rate limiting', 'Categorised against OWASP Top 10 (2021)', 'Each changed file is scanned independently; a file that cannot be scanned fails the gate rather than passing it'],
   },
   {
-    n: 'STAGE 08', title: 'Narratia documents',
+    n: '08', phase: 'ondemand', title: 'Narratia documents',
     body: 'Narratia generates an operational runbook from the completed run: what changed and why, deployment steps specific to this change, rollback procedure, validation commands, and a summary of Veria and Aegis findings. Pushed to Confluence via REST API, Notion via the Notion API, or committed as docs/runbooks/ITEM-KEY.md to the same PR branch — zero extra credentials for the Markdown option.',
     detailLabel: 'RUNBOOK SECTIONS',
     details: ['Summary — what changed and why', 'Deployment steps — specific to this change', 'Rollback procedure — referencing the branch and PR', 'Validation — how to verify it is working in production', 'Test cases — from the generated test suite', 'Security notes — Aegis gate status and findings'],
   },
 ];
 
-export const ATTENTION = [
-  { value: '30 sec', body: 'Opening the panel, writing a refinement line, pressing Run.' },
-  { value: '2 answers', body: 'What comes back to review — not a transcript, not a chat log.' },
-  { value: '1 review', body: 'The pull request, in the tool you already review pull requests in.' },
+/**
+ * The phases a reader has to be able to tell apart.
+ *
+ * Stages 01-04 run every time. 06-08 only run when someone presses the button
+ * on a committed run. Presenting all eight as one undifferentiated list is how
+ * "Aegis scans every committed change" became plausible enough to publish.
+ */
+export const STAGE_PHASES = [
+  { key: 'run', label: 'Every run', note: 'Happens each time you press Run, in this order.' },
+  { key: 'scheduled', label: 'If you schedule it', note: 'The same pipeline, claimed by the dispatcher instead of by you.' },
+  {
+    key: 'ondemand',
+    label: 'After the commit, when you ask',
+    note: 'None of these start on their own. Each is a button on the run, and each needs your Anthropic key.',
+  },
+];
+
+/** What Kandryn will not do — each one checkable in the product. */
+export const LIMITS = [
+  { title: 'It does not merge', body: 'Kandryn opens the pull request and stops. Merging is your review, your rules and your CI.' },
+  { title: 'It does not touch your default branch', body: 'Work lands on task/<id>. No force-push, no commits to main, no rewriting history.' },
+  { title: 'It does not read your whole repository', body: 'A handful of files selected as relevant to the work item. The planner also sees the directory listing — names only, capped.' },
+  { title: 'It does not run the post-commit agents by itself', body: 'Review, security and runbook generation are three buttons. A run that nobody follows up on has none of them.' },
+  { title: 'It does not write to your tracker uninvited', body: 'New items and test cases go up only when you push them. The single automatic write-back is a status change when an item closes.' },
+  { title: 'It does not hold a model contract on your behalf', body: 'Every call uses the API keys you saved, so the usage, the terms and the retention settings are all on your own account.' },
 ];
 
 export const INTEGRATIONS = [
@@ -113,21 +134,6 @@ export const CAPABILITY_FOOTNOTE =
   'the check attaches to the pull request, so a run with no pull request has ' +
   'nothing to post to. Runbook push to Confluence and Notion requires ' +
   'separate credentials in Settings.';
-
-export const RESOURCES = [
-  { kind: 'GUIDE', cat: 'Guides', meta: '9 min', title: 'Connecting Jira without over-scoping the token', body: 'The three Jira permissions Kandryn needs, and the four it will never ask for.', cta: 'Read' },
-  { kind: 'GUIDE', cat: 'Guides', meta: '12 min', title: 'From epic to eight children in one breakdown', body: 'How to review an AI breakdown quickly: what to accept, what to rewrite, what to delete outright.', cta: 'Read' },
-  { kind: 'PATTERN', cat: 'Patterns', meta: '6 min', title: 'Refinement prompts that survive code review', body: 'Short, repository-specific instructions beat long style essays. Nine examples with their diffs.', cta: 'Read' },
-  { kind: 'PATTERN', cat: 'Patterns', meta: '7 min', title: 'When to switch auto-commit on', body: 'A rule of thumb: auto-commit for mechanical work, review-first for anything touching money or auth.', cta: 'Read' },
-  { kind: 'ENGINEERING', cat: 'Engineering', meta: '11 min', title: 'How Synthesia ranks two answers', body: 'How Synthesia scores Raptia and Fovea on stack fit, blast radius, and AC coverage — and why the second answer sometimes wins.', cta: 'Read' },
-  { kind: 'ENGINEERING', cat: 'Engineering', meta: '8 min', title: 'Scheduling, dispatch and the five-minute sweep', body: 'What happens between pressing Schedule and finding a pull request the next morning.', cta: 'Read' },
-  { kind: 'TEMPLATE', cat: 'Templates', meta: 'Download', title: 'Acceptance-criteria template for agent runs', body: 'A Given/When/Then skeleton that maps cleanly onto generated tests.', cta: 'Get it' },
-  { kind: 'TEMPLATE', cat: 'Templates', meta: 'Download', title: 'Pilot checklist for the first two weeks', body: 'What to instrument, which items to point it at, and how to tell whether it is working.', cta: 'Get it' },
-  { kind: 'POSTMORTEM', cat: 'Engineering', meta: '10 min', title: 'Runs that failed, and why', body: 'Expired tokens, ambiguous tickets, a rebase that ate a commit. What we changed after each.', cta: 'Read' },
-  { kind: 'GUIDE', cat: 'Guides', meta: '8 min', title: 'Setting up Aegis stop gates on GitHub', body: 'One branch protection rule on main. How to configure it, what Aegis posts, and what happens when a High finding lands.', cta: 'Read' },
-  { kind: 'PATTERN', cat: 'Patterns', meta: '6 min', title: 'Remediate Now: closing the security loop', body: 'From Aegis finding to remediation run in one click. When to use it, when to push to the tracker instead, and how the refinement prompt is pre-filled.', cta: 'Read' },
-  { kind: 'GUIDE', cat: 'Guides', meta: '7 min', title: 'Generating runbooks with Narratia', body: 'What goes into a Narratia runbook, how to configure the Confluence and Notion push, and why Markdown to the PR branch is the best starting point.', cta: 'Read' },
-];
 
 export const QUICKSTART = [
   { n: '01', title: 'Connect your credentials', body: 'An Anthropic key and an OpenAI key for the agents, plus your tracker and repository credentials — all tested as you save them. Optional: Confluence or Notion credentials for runbook push.', time: '5 min' },
