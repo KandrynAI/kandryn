@@ -79,19 +79,19 @@ const cellBox: React.CSSProperties = {
 // ── Section 1 data ───────────────────────────────────────────────────────────
 type TrustRow = { tone: 'green' | 'amber' | 'grey'; control: string; status: string; anchor: string; link: string };
 const TRUST_ROWS: TrustRow[] = [
-  { tone: 'green', control: 'Data isolation', status: 'All queries scoped per-user. No cross-tenant reads possible.', anchor: '#access-control', link: 'Access control' },
+  { tone: 'green', control: 'Data isolation', status: 'Every query is filtered by user; team-scoped resources additionally check team membership before returning anything.', anchor: '#access-control', link: 'Access control' },
   { tone: 'green', control: 'Encryption in transit', status: 'TLS 1.2+ enforced on all API and database connections.', anchor: '#infrastructure', link: 'Infrastructure' },
   { tone: 'green', control: 'Encryption at rest', status: 'AES-256 via AWS RDS (Supabase). All database storage encrypted.', anchor: '#infrastructure', link: 'Infrastructure' },
   { tone: 'green', control: 'Audit log', status: 'Full action log. Admin-only. 30–365 days by plan. CSV export.', anchor: '#audit-log', link: 'Audit log' },
   { tone: 'green', control: 'AI model transparency', status: 'Named models disclosed. Customer API keys. No training on your data.', anchor: '#ai-and-models', link: 'AI and models' },
   { tone: 'green', control: 'Human-approved commits', status: 'No commit without an explicit click. Optional auto-commit is off by default; Kandryn never merges.', anchor: '#ai-and-models', link: 'AI and models' },
-  { tone: 'green', control: 'Security scanning', status: 'Aegis scans committed code for OWASP Top 10 on request (fail-closed); blocks merge when set as a required branch-protection check.', anchor: '#ai-and-models', link: 'AI and models' },
+  { tone: 'green', control: 'Security scanning', status: 'Aegis scans committed code for OWASP Top 10 on request (fail-closed) and posts a status check to the pull request on GitHub and Azure Repos. It blocks a merge once you require that check in a branch rule or policy.', anchor: '#ai-and-models', link: 'AI and models' },
   { tone: 'green', control: 'Sub-processor list', status: 'All processors named with data category and region.', anchor: '#sub-processors', link: 'Sub-processors' },
   { tone: 'green', control: 'US data residency', status: 'All storage and processing in US East (AWS us-east-1).', anchor: '#infrastructure', link: 'Infrastructure' },
   { tone: 'amber', control: 'SSO / SAML', status: 'In progress. Target: Q4 2026. Okta and Azure AD.', anchor: '#access-control', link: 'Access control' },
   { tone: 'amber', control: 'MFA enforcement', status: 'Available via Clerk. Enforcement for Enterprise: Q4 2026.', anchor: '#access-control', link: 'Access control' },
   { tone: 'amber', control: 'Penetration test', status: 'Scheduled. Target completion: Q4 2026.', anchor: '#compliance', link: 'Compliance' },
-  { tone: 'amber', control: 'Data retention policy', status: 'Documented. Automated purge: in progress.', anchor: '#data-handling', link: 'Data handling' },
+  { tone: 'green', control: 'Data retention policy', status: 'Automated. Nightly purge against each team\u2019s plan window (30\u2013365 days), with a per-team override.', anchor: '#data-handling', link: 'Data handling' },
   { tone: 'grey', control: 'SOC 2 Type II', status: 'In progress. Observation period begins Q4 2026.', anchor: '#compliance', link: 'Compliance' },
   { tone: 'grey', control: 'ISO 27001', status: 'Planned. EU expansion phase.', anchor: '#compliance', link: 'Compliance' },
 ];
@@ -105,7 +105,7 @@ const DATA_CARDS: DataCard[] = [
     rows: [
       ['What', 'Work item titles, descriptions, acceptance criteria'],
       ['Source', 'Jira / Azure DevOps'],
-      ['Stored by BM', 'Metadata only (title, status, AC count)'],
+      ['Stored by Kandryn', 'Metadata only (title, status, AC count)'],
       ['Sent to AI', 'Yes — included in the case file per run'],
     ],
   },
@@ -113,9 +113,9 @@ const DATA_CARDS: DataCard[] = [
     title: 'Source code (selected files)',
     sens: 'HIGH',
     rows: [
-      ['What', 'Up to 8 source-code file sections per run — 5 via keyword extraction, 8 via the Graphify knowledge graph — selected by relevance to the work item'],
+      ['What', 'The files the change planner selects as relevant to the work item, capped at ten per run. Without a plan, retrieval falls back to five files by keyword, or eight via the Graphify knowledge graph. The planner is also shown the directory listing — file names only, capped at 600.'],
       ['Source', 'GitHub / Azure Repos'],
-      ['Stored by BM', <><strong>Not stored.</strong> Read at run time, sent to agents, discarded.</>],
+      ['Stored by Kandryn', <><strong>Not stored.</strong> Read at run time, sent to agents, discarded.</>],
       ['Sent to AI', 'Yes — the file sections selected for the run'],
     ],
   },
@@ -125,7 +125,7 @@ const DATA_CARDS: DataCard[] = [
     rows: [
       ['What', 'Run status, timestamps, agent scores, PR URLs, commit hashes, Synthesia scores, Aegis findings (structured, not raw code)'],
       ['Source', 'Generated by Kandryn'],
-      ['Stored by BM', 'Yes — in Supabase PostgreSQL'],
+      ['Stored by Kandryn', 'Yes — in Supabase PostgreSQL'],
       ['Sent to AI', 'No'],
     ],
   },
@@ -135,7 +135,7 @@ const DATA_CARDS: DataCard[] = [
     rows: [
       ['What', 'API tokens for Jira, GitHub, Azure DevOps, Confluence, Notion'],
       ['Source', 'User-provided'],
-      ['Stored by BM', 'Yes — per-user, in Supabase. TLS in transit.'],
+      ['Stored by Kandryn', 'Yes — per-user, in Supabase. TLS in transit.'],
       ['Sent to AI', <><strong>Never.</strong> Credentials are never included in any AI prompt.</>],
       ['Logged', <><strong>Never.</strong> Credential values are never written to any log.</>],
     ],
@@ -146,7 +146,7 @@ const DATA_CARDS: DataCard[] = [
     rows: [
       ['What', 'Email address, name, OAuth identity'],
       ['Source', 'Sign-up'],
-      ['Stored by BM', 'Via Clerk (authentication provider)'],
+      ['Stored by Kandryn', 'Via Clerk (authentication provider)'],
       ['Sent to AI', 'No'],
     ],
   },
@@ -156,7 +156,7 @@ const DATA_CARDS: DataCard[] = [
     rows: [
       ['What', 'Action names, timestamps, IP addresses, entity IDs'],
       ['Source', 'Generated by Kandryn'],
-      ['Stored by BM', 'Yes — 30–365 days depending on plan'],
+      ['Stored by Kandryn', 'Yes — 30–365 days depending on plan'],
       ['Sent to AI', 'No'],
     ],
   },
@@ -168,7 +168,7 @@ const MODEL_ROWS = [
   ['Fovea', 'gpt-4o', 'OpenAI', 'Code generation', 'Same case file as Raptia — run in parallel'],
   ['Synthesia', 'claude-sonnet-4-5', 'Anthropic', 'Ranking', 'Both suggestions + AC + stack profile'],
   ['Veria', 'claude-sonnet-4-5', 'Anthropic', 'Code review', 'Committed code + acceptance criteria'],
-  ['Aegis', 'claude-fable-5', 'Anthropic', 'Security scanning', 'Committed file only — no other repo context'],
+  ['Aegis', 'claude-fable-5 · claude-opus-5 under zero data retention', 'Anthropic', 'Security scanning', 'One changed file per request — no other repo context'],
 ];
 
 // ── Section 5 data ───────────────────────────────────────────────────────────
@@ -183,30 +183,40 @@ const INFRA_ROWS = [
 ];
 
 // ── Section 6 data ───────────────────────────────────────────────────────────
+/**
+ * Mirrors AUDIT_ACTIONS in shared/types/auditLog.ts.
+ *
+ * The previous list predated the override, confidence-gate and baseline-scan
+ * work, so it was missing every event a compliance reviewer would look for
+ * first — including a security gate being overridden by an admin.
+ */
 const AUDIT_EVENTS = [
   'User sign-in and sign-out',
-  'Credential saved or deleted (key name only, never value)',
+  'Credential saved or deleted — key name only, never the value',
   'Team credential saved or deleted',
-  'Project created or deleted',
+  'Project created, updated, deleted or synced',
   'Repository connected or removed',
-  'Board sync triggered',
-  'Run triggered or scheduled',
-  'Suggestion committed (agent name + score recorded)',
-  'Run canceled or failed',
-  'Aegis security scan completed (gate decision + finding counts)',
-  'Security finding pushed to tracker',
-  'Remediation run started',
-  'Narratia runbook generated and pushed',
+  'Run triggered, scheduled, canceled or failed',
+  'Suggestion committed — agent name and score recorded',
+  'Change plan generated, edited, regenerated or failed',
+  'Plan file added or removed by a reviewer',
+  'Parked plan approved or rejected at the confidence gate',
+  'Suggestion committed past a failed coherence gate — recorded as an override',
+  'Aegis security scan completed — gate decision and finding counts',
+  'Aegis security gate overridden by an admin — with the reason they gave',
+  'Security finding pushed to tracker, and remediation runs started',
+  'Baseline scan started, completed, acknowledged or pushed',
+  'Veria review run · Narratia runbook generated and pushed',
   'Team member invited, joined, removed, or role changed',
-  'Tests committed or pushed to PLM',
+  'Tests generated, committed or pushed to the tracker',
 ];
 
 // ── Section 7 data ───────────────────────────────────────────────────────────
 const SUBPROC_ROWS = [
   ['Supabase (PostgreSQL)', 'Database', 'Work items, runs, scores, credentials (encrypted at rest)', 'US East', 'SOC 2 Type II'],
   ['Clerk', 'Authentication', 'Email, name, OAuth identity, session tokens', 'US', 'SOC 2 Type II'],
-  ['Anthropic', 'AI inference', 'Work item content + selected code file sections', 'US', 'Enterprise DPA available'],
-  ['OpenAI', 'AI inference', 'Work item content + selected code file sections', 'US', 'SOC 2 Type II · Enterprise DPA'],
+  ['Anthropic', 'AI inference', 'Work item content + selected code file sections', 'US', 'Your own account terms — Kandryn calls with your key'],
+  ['OpenAI', 'AI inference', 'Work item content + selected code file sections', 'US', 'SOC 2 Type II · your own account terms'],
   ['Vercel', 'Application hosting', 'All application traffic (no persistent storage)', 'US', 'SOC 2 Type II'],
   ['Resend', 'Email', 'Email address + run outcome summary', 'US', 'SOC 2 Type II'],
   ['Railway', 'Graphify service', 'Repository clone at index time (no persistent storage)', 'US', '—'],
@@ -230,12 +240,12 @@ export default function TrustPage() {
           with honest status on what is live, what is in progress, and what is not yet built.
         </p>
         <p style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, color: 'var(--color-neutral-600)', marginTop: 18 }}>
-          Last reviewed: August 2026
+          Last reviewed: September 2026
         </p>
       </header>
 
       <section style={{ ...sectionStyle }} className="pad-x">
-        <div style={{ overflowX: 'auto' }}>
+        <div className="scroll-x" style={{ overflowX: 'auto' }}>
           <div style={{ minWidth: 680 }}>
             {TRUST_ROWS.map((r) => (
               <div
@@ -302,8 +312,10 @@ export default function TrustPage() {
           </div>
           <p style={{ fontSize: 15, lineHeight: 1.55, color: 'var(--color-text)', margin: 0, maxWidth: 820 }}>
             Kandryn does not process end-user PII, financial records, healthcare data, production database contents,
-            or any data outside the software development workflow. It never reads repository secrets, environment
-            variables, or GitHub Actions secrets.
+            or any data outside the software development workflow. It has no access to your environment variables or
+            your GitHub Actions secrets — those are not repository contents and no token Kandryn holds can read them.
+            A secret committed into the repository itself is a file like any other, and could be selected as context
+            like any other; Aegis flags hardcoded credentials when it scans a change.
           </p>
         </div>
         <div style={{ marginTop: 20, borderLeft: '2px solid var(--color-divider)', padding: '16px 20px' }}>
@@ -332,7 +344,7 @@ export default function TrustPage() {
           enterprise APIs. Here is exactly what runs and why.
         </Sub>
 
-        <div style={{ overflowX: 'auto', marginTop: 28 }}>
+        <div className="scroll-x" style={{ overflowX: 'auto', marginTop: 28 }}>
           <table className="table">
             <thead>
               <tr>
@@ -361,7 +373,7 @@ export default function TrustPage() {
           {[
             {
               t: 'No training on your data',
-              b: "Kandryn does not train any AI model. All inference calls are made via the Anthropic and OpenAI enterprise APIs. Under enterprise API terms, customer data is not used for model training — Anthropic's API offers zero-data-retention terms for enterprise customers.",
+              b: 'Kandryn does not train any AI model, and holds no model-provider contract on your behalf — every call uses the keys you saved, so the terms, the retention settings and the usage all sit on your own Anthropic and OpenAI accounts. One consequence is worth stating plainly: the default security model requires 30-day retention and is unavailable to organisations configured for zero data retention, so Aegis falls back to a model that is not retention-gated.',
             },
             {
               t: 'Your keys, your quota',
@@ -369,7 +381,7 @@ export default function TrustPage() {
             },
             {
               t: 'Model change notice',
-              b: 'If Kandryn changes the model used for any agent that affects code-generation output, customers receive 30 days’ written notice before the change takes effect. The model version used is recorded on every run record.',
+              b: 'If Kandryn changes the model used for any agent that affects code-generation output, customers receive 30 days’ written notice before the change takes effect. The model that produced a result is recorded on every suggestion and on every security scan.',
             },
           ].map((blk) => (
             <div key={blk.t}>
@@ -419,6 +431,7 @@ export default function TrustPage() {
               request body — it is always derived server-side from the authenticated session.
             </p>
             <pre
+              className="scroll-x"
               style={{
                 marginTop: 12,
                 background: 'var(--color-text)',
@@ -454,7 +467,7 @@ where: and(
         <Sub>
           All primary storage and processing is in the United States. No data is transferred to or stored in EU regions.
         </Sub>
-        <div style={{ overflowX: 'auto', marginTop: 28 }}>
+        <div className="scroll-x" style={{ overflowX: 'auto', marginTop: 28 }}>
           <table className="table">
             <thead>
               <tr>
@@ -557,7 +570,7 @@ where: and(
           that touches your data.
         </H2>
         <Sub>Kandryn does not sell data to any third party. Sub-processors are used only to deliver the product.</Sub>
-        <div style={{ overflowX: 'auto', marginTop: 28 }}>
+        <div className="scroll-x" style={{ overflowX: 'auto', marginTop: 28 }}>
           <table className="table">
             <thead>
               <tr>
