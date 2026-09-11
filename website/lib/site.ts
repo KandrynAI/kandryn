@@ -212,7 +212,7 @@ export const CHANGELOG = [
 ];
 
 export const SECURITY_PRINCIPLES = [
-  { title: 'Credentials are per user', body: 'Every key is stored against your user record in an isolated config table. There is no shared pool, no fallback to an environment variable in production, and no key is ever written to a log line.' },
+  { title: 'Credentials are per user, and encrypted before storage', body: 'Every key is stored against your user record in an isolated config table. There is no shared pool, no fallback to an environment variable in production, and no key is ever written to a log line. Each value is encrypted with AES-256-GCM — a fresh random IV and an authentication tag per value — before it is written, under a key held as an environment variable rather than in the database. Reading them back requires the application and its key, not access to the table.' },
   { title: 'Every query is scoped', body: 'Projects, work items, runs and suggestions are all filtered by user on every read and write. There is no global collection a bug could expose.' },
   { title: 'Write access is narrow', body: 'Kandryn creates branches, commits and pull requests, all on task/<id>. It never merges and never writes to your default branch. The one thing it does overwrite is its own branch: re-committing a work item moves task/<id> to the new commit.' },
   { title: 'The tracker stays yours', body: 'Items and test cases are pushed only when you ask. The single automatic write-back is a status change when an item closes.' },

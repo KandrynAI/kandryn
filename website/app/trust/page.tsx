@@ -13,8 +13,8 @@ export const metadata: Metadata = {
    A single semantic red is used only for HIGH data-sensitivity badges. */
 const STATUS: Record<'green' | 'amber' | 'grey', string> = {
   green: '#1a7f4b',
-  amber: '#d4821a',
-  grey: '#8a9ab0',
+  amber: '#9e6110',
+  grey: '#647087',
 };
 
 function Dot({ tone }: { tone: 'green' | 'amber' | 'grey' }) {
@@ -37,12 +37,12 @@ function StatusBadge({ label, tone }: { label: string; tone: 'green' | 'amber' |
 function SensBadge({ level }: { level: string }) {
   const map: Record<string, string> = {
     HIGH: '#b23a2f',
-    MEDIUM: '#d4821a',
-    LOW: '#8a9ab0',
-    'LOW–MEDIUM': '#d4821a',
+    MEDIUM: '#9e6110',
+    LOW: '#647087',
+    'LOW–MEDIUM': '#9e6110',
   };
   return (
-    <span className="tag" style={{ background: map[level] ?? '#8a9ab0', color: '#ffffff', whiteSpace: 'nowrap' }}>
+    <span className="tag" style={{ background: map[level] ?? '#647087', color: '#ffffff', whiteSpace: 'nowrap' }}>
       {level}
     </span>
   );
@@ -72,7 +72,7 @@ type TrustRow = { tone: 'green' | 'amber' | 'grey'; control: string; status: str
 const TRUST_ROWS: TrustRow[] = [
   { tone: 'green', control: 'Data isolation', status: 'Every query is filtered by user; team-scoped resources additionally check team membership before returning anything.', anchor: '#access-control', link: 'Access control' },
   { tone: 'green', control: 'Encryption in transit', status: 'TLS 1.2+ enforced on all API and database connections.', anchor: '#infrastructure', link: 'Infrastructure' },
-  { tone: 'green', control: 'Encryption at rest', status: 'AES-256 via AWS RDS (Supabase). All database storage encrypted.', anchor: '#infrastructure', link: 'Infrastructure' },
+  { tone: 'green', control: 'Encryption at rest', status: 'AES-256 disk encryption on all database storage (AWS RDS via Supabase). Integration credentials are additionally encrypted at the application layer with AES-256-GCM before they are written.', anchor: '#infrastructure', link: 'Infrastructure' },
   { tone: 'green', control: 'Audit log', status: 'Full action log. Admin-only. 30–365 days by plan. CSV export.', anchor: '#audit-log', link: 'Audit log' },
   { tone: 'green', control: 'AI model transparency', status: 'Named models disclosed. Customer API keys. No training on your data.', anchor: '#ai-and-models', link: 'AI and models' },
   { tone: 'green', control: 'Human-approved commits', status: 'No commit without an explicit click. Optional auto-commit is off by default; Kandryn never merges.', anchor: '#ai-and-models', link: 'AI and models' },
@@ -204,7 +204,7 @@ const AUDIT_EVENTS = [
 
 // ── Section 7 data ───────────────────────────────────────────────────────────
 const SUBPROC_ROWS = [
-  ['Supabase (PostgreSQL)', 'Database', 'Work items, runs, scores, credentials (encrypted at rest)', 'US East', 'SOC 2 Type II'],
+  ['Supabase (PostgreSQL)', 'Database', 'Work items, runs, scores, and integration credentials — the credentials as AES-256-GCM ciphertext, not readable values', 'US East', 'SOC 2 Type II'],
   ['Clerk', 'Authentication', 'Email, name, OAuth identity, session tokens', 'US', 'SOC 2 Type II'],
   ['Anthropic', 'AI inference', 'Work item content + selected code file sections', 'US', 'Your own account terms — Kandryn calls with your key'],
   ['OpenAI', 'AI inference', 'Work item content + selected code file sections', 'US', 'SOC 2 Type II · your own account terms'],

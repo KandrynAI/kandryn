@@ -7,15 +7,20 @@ export const dynamic = 'force-static'
 const SITE_URL = 'https://kandryn.com'
 
 export default function sitemap(): MetadataRoute.Sitemap {
+  // Trailing slashes, because next.config sets trailingSlash: true — these must
+  // match the canonical each page declares or the two disagree about the URL.
+  // /security is deliberately absent: it 308s to /trust/#boundaries, and a
+  // sitemap should list destinations, not redirects. /trust was missing
+  // entirely despite being the page this site points security reviewers at.
   return [
     { url: `${SITE_URL}/`, lastModified: new Date(), changeFrequency: 'weekly', priority: 1.0 },
-    { url: `${SITE_URL}/how-it-works`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${SITE_URL}/integrations`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${SITE_URL}/resources`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.8 },
-    { url: `${SITE_URL}/security`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
-    { url: `${SITE_URL}/faq`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
-    { url: `${SITE_URL}/contact`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.6 },
-    { url: `${SITE_URL}/privacy`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.5 },
-    { url: `${SITE_URL}/terms`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.5 },
+    { url: `${SITE_URL}/how-it-works/`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
+    { url: `${SITE_URL}/integrations/`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${SITE_URL}/trust/`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${SITE_URL}/resources/`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.8 },
+    { url: `${SITE_URL}/faq/`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${SITE_URL}/contact/`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.6 },
+    { url: `${SITE_URL}/privacy/`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.5 },
+    { url: `${SITE_URL}/terms/`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.5 },
   ]
 }

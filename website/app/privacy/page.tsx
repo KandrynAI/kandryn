@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { LegalPage, LegalHeader, Toc, Section, H3, P, Bullets, ContactBlock, Mail } from '@/components/legal/legal-ui';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | Kandryn',
+  title: 'Privacy Policy',
   description: 'How Kandryn collects, uses, and protects your information.',
   alternates: { canonical: '/privacy/' },
 };
@@ -196,7 +196,7 @@ export default function PrivacyPage() {
         <Bullets
           items={[
             'All data in transit: TLS 1.2 or higher',
-            'All data at rest: AES-256 encryption (AWS RDS)',
+            'All data at rest: AES-256 disk encryption (AWS RDS). Integration credentials are additionally encrypted with AES-256-GCM at the application layer before storage, under a key held outside the database.',
             'API credentials stored per-user, never written to logs',
             'Production access restricted to named individuals with MFA',
             'Audit log records all significant platform actions',

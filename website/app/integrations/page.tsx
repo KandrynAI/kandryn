@@ -5,6 +5,7 @@ import { Section, Band, SectionHead, CellGrid, Cell } from '@/components/ui/Sect
 import { CONNECTORS, MODEL_KEYS, CAPABILITY_MATRIX, CAPABILITY_FOOTNOTE } from '@/lib/site';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/integrations/' },
   title: 'Integrations',
   description:
     'What you connect, what each credential can reach, and which capabilities each provider supports.',

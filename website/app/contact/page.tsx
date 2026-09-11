@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import ContactView from '@/components/ContactView';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/contact/' },
   title: 'Contact',
   description: "Bring one project. We'll wire it up with you — one real work item, run end to end, on a shared call.",
 };

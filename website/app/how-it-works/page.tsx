@@ -5,6 +5,7 @@ import Btn from '@/components/ui/Btn';
 import { HOW_SECTIONS, STAGE_PHASES, LIMITS } from '@/lib/site';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/how-it-works/' },
   title: 'How it works',
   description:
     'The eight stages of a run, grouped by what happens automatically and what waits for you to ask.',
