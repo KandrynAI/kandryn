@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { SECURITY_PRINCIPLES } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'Trust & Security',
@@ -55,26 +56,16 @@ function Kicker({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* This page carried its own type scale — weight 900 against the site's 800,
+   a 760px measure against 660 — which is why it read as a different site.
+   Both now delegate to the shared classes. */
 function H2({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{children}</h2>
-  );
+  return <h2 className="h-2">{children}</h2>;
 }
 
 function Sub({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--color-neutral-800)', maxWidth: 760, marginTop: 16, textWrap: 'pretty' }}>
-      {children}
-    </p>
-  );
+  return <p className="lead">{children}</p>;
 }
-
-const sectionStyle: React.CSSProperties = { padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' };
-const cellBox: React.CSSProperties = {
-  borderRight: '2px solid var(--color-divider)',
-  borderBottom: '2px solid var(--color-divider)',
-  padding: '28px 32px',
-};
 
 // ── Section 1 data ───────────────────────────────────────────────────────────
 type TrustRow = { tone: 'green' | 'amber' | 'grey'; control: string; status: string; anchor: string; link: string };
@@ -244,7 +235,7 @@ export default function TrustPage() {
         </p>
       </header>
 
-      <section style={{ ...sectionStyle }} className="pad-x">
+      <section className="sec pad-x">
         <div className="scroll-x" style={{ overflowX: 'auto' }}>
           <div style={{ minWidth: 680 }}>
             {TRUST_ROWS.map((r) => (
@@ -275,8 +266,35 @@ export default function TrustPage() {
         </p>
       </section>
 
+      {/* ═══ SECTION 1b — BOUNDARIES ════════════════════════════════════════
+          Folded in from /security, which had become a thinner second
+          governance page: its processor table was a strict subset of the
+          sub-processor table below, but these seven boundary statements were
+          the one thing it said that this page did not. /security now redirects
+          here. */}
+      <section id="boundaries" className="sec pad-x">
+        <Kicker>Boundaries</Kicker>
+        <H2>
+          What it will not do,
+          <br />
+          and why you can check.
+        </H2>
+        <Sub>
+          The controls above say what is in place. These say what Kandryn is architecturally unable to do — each one
+          observable from your own repository and tracker rather than taken on trust.
+        </Sub>
+        <div className="cellgrid grid-2 stack-1" style={{ marginTop: 28 }}>
+          {SECURITY_PRINCIPLES.map((p, i) => (
+            <div key={p.title} className={i === SECURITY_PRINCIPLES.length - 1 ? 'cell-wide' : undefined}>
+              <div className="h-4">{p.title}</div>
+              <p className="prose" style={{ marginTop: 8 }}>{p.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* ═══ SECTION 2 — DATA HANDLING ══════════════════════════════════════ */}
-      <section id="data-handling" style={sectionStyle} className="pad-x">
+      <section id="data-handling" className="sec pad-x">
         <Kicker>Data handling</Kicker>
         <H2>
           What Kandryn
@@ -284,11 +302,11 @@ export default function TrustPage() {
           processes on your behalf.
         </H2>
         <div
-          className="grid-3 stack-1"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderLeft: '2px solid var(--color-divider)', borderTop: '2px solid var(--color-divider)', marginTop: 28 }}
+          className="cellgrid grid-3 stack-1"
+          style={{ marginTop: 28 }}
         >
           {DATA_CARDS.map((card) => (
-            <div key={card.title} style={cellBox}>
+            <div key={card.title}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em' }}>{card.title}</div>
                 <SensBadge level={card.sens} />
@@ -332,7 +350,7 @@ export default function TrustPage() {
       </section>
 
       {/* ═══ SECTION 3 — AI AND MODELS ══════════════════════════════════════ */}
-      <section id="ai-and-models" style={sectionStyle} className="pad-x">
+      <section id="ai-and-models" className="sec pad-x">
         <Kicker>AI and models</Kicker>
         <H2>
           Which models run.
@@ -403,7 +421,7 @@ export default function TrustPage() {
       </section>
 
       {/* ═══ SECTION 4 — ACCESS CONTROL ═════════════════════════════════════ */}
-      <section id="access-control" style={sectionStyle} className="pad-x">
+      <section id="access-control" className="sec pad-x">
         <Kicker>Access control</Kicker>
         <H2>
           Who can reach what,
@@ -462,7 +480,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 5 — INFRASTRUCTURE ═════════════════════════════════════ */}
-      <section id="infrastructure" style={sectionStyle} className="pad-x">
+      <section id="infrastructure" className="sec pad-x">
         <Kicker>Infrastructure</Kicker>
         <H2>Where every byte lives.</H2>
         <Sub>
@@ -504,7 +522,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 6 — AUDIT LOG ══════════════════════════════════════════ */}
-      <section id="audit-log" style={sectionStyle} className="pad-x">
+      <section id="audit-log" className="sec pad-x">
         <Kicker>Audit log</Kicker>
         <H2>
           Every significant action,
@@ -563,7 +581,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 7 — SUB-PROCESSORS ═════════════════════════════════════ */}
-      <section id="sub-processors" style={sectionStyle} className="pad-x">
+      <section id="sub-processors" className="sec pad-x">
         <Kicker>Sub-processors</Kicker>
         <H2>
           Every third party
@@ -611,7 +629,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 8 — COMPLIANCE STATUS ══════════════════════════════════ */}
-      <section id="compliance" style={sectionStyle} className="pad-x">
+      <section id="compliance" className="sec pad-x">
         <Kicker>Compliance status</Kicker>
         <H2>
           Where we are.
@@ -621,17 +639,14 @@ where: and(
         <Sub>
           We do not claim certifications we do not have. Here is the honest status of each compliance programme.
         </Sub>
-        <div
-          className="grid-2 stack-1"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', borderLeft: '2px solid var(--color-divider)', borderTop: '2px solid var(--color-divider)', marginTop: 28 }}
-        >
+        <div className="cellgrid grid-2 stack-1" style={{ marginTop: 28 }}>
           {[
             { t: 'SOC 2 Type II', badge: ['IN PROGRESS', 'amber'] as const, b: 'We have engaged a compliance automation platform and begun the readiness assessment. The observation period for Type II certification begins Q4 2026. Expected completion: mid-2027. Enterprise customers can request our current security controls documentation as a bridge.' },
             { t: 'Penetration Test', badge: ['SCHEDULED', 'amber'] as const, b: 'An external penetration test of the Kandryn web application and API is scheduled for Q4 2026. We will publish the test scope, date, and findings summary upon completion.' },
             { t: 'CCPA (California)', badge: ['COMPLIANT', 'green'] as const, b: 'Kandryn does not process California consumer personal data (end-user PII). Developer accounts are covered under our privacy policy. Kandryn operates as a service provider under CCPA — data is processed on your behalf, not for our own commercial purposes.' },
             { t: 'ISO 27001', badge: ['PLANNED', 'grey'] as const, b: 'ISO 27001 certification is planned as part of our EU expansion programme. We will begin this process after SOC 2 Type II is complete.' },
           ].map((blk) => (
-            <div key={blk.t} style={cellBox}>
+            <div key={blk.t}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.01em' }}>{blk.t}</div>
                 <StatusBadge label={blk.badge[0]} tone={blk.badge[1]} />

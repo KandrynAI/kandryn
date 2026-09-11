@@ -72,9 +72,7 @@ export default function SiteFooter() {
           <span style={{ opacity: 0.5 }}> · </span>
           <a href="/terms/" className="legal-footer-link">Terms</a>
           <span style={{ opacity: 0.5 }}> · </span>
-          <a href="/security/" className="legal-footer-link">Security</a>
-          <span style={{ opacity: 0.5 }}> · </span>
-          <a href="/trust/" className="legal-footer-link">Trust</a>
+          <a href="/trust/" className="legal-footer-link">Trust &amp; Security</a>
           <span style={{ opacity: 0.5 }}> · </span>
           <a href="/contact/" className="legal-footer-link">Contact</a>
         </nav>

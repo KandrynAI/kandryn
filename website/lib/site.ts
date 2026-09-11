@@ -21,7 +21,7 @@ export const NAV_ITEMS = [
   { label: 'Product', href: '/how-it-works' },
   { label: 'Integrations', href: '/integrations' },
   { label: 'Resources', href: '/resources' },
-  { label: 'Security', href: '/security' },
+  { label: 'Security', href: '/trust/' },
 ];
 
 export const HOW_SECTIONS = [
@@ -221,25 +221,6 @@ export const SECURITY_PRINCIPLES = [
   { title: 'The stop gate is yours to enforce', body: 'Run Aegis on a committed run and it posts a kandryn/security check — a commit status on GitHub, a pull request status on Azure Repos. Require that check in a branch rule and the platform blocks the merge until a High or Critical finding is resolved. Until you do, the check reports but does not block. Kandryn never merges anything itself.' },
 ];
 
-/**
- * Third parties that receive data — not internal groupings.
- *
- * This table used to list "Generation pipeline" and "Aegis (security
- * pipeline)" as though they were processors. They are names for our own
- * agents; the companies that actually receive your source code are Anthropic
- * and OpenAI, and neither appeared on this page at all. The full list with
- * regions and compliance status lives on /trust.
- */
-export const PROCESSORS = [
-  { name: 'Anthropic', purpose: 'Code generation, ranking, review, security scanning, runbooks', sees: 'The case file for a run: work item, acceptance criteria, and the repository files selected as relevant. Called with your own API key.' },
-  { name: 'OpenAI', purpose: 'The second generation agent', sees: 'The same case file as Anthropic, in parallel. Called with your own API key.' },
-  { name: 'Supabase (Postgres)', purpose: 'Application database', sees: 'Work items, runs, suggestions, and your integration credentials. Storage is AES-256 encrypted at rest.' },
-  { name: 'Clerk', purpose: 'Authentication', sees: 'Email, session, OAuth identity' },
-  { name: 'Vercel', purpose: 'Application hosting', sees: 'Application traffic. No persistent storage.' },
-  { name: 'Railway', purpose: 'Repository indexing, when enabled', sees: 'A temporary clone of the repository at index time, deleted when indexing finishes' },
-  { name: 'Resend', purpose: 'Transactional email', sees: 'Your address and the run outcome' },
-];
-
 export const FAQS = [
   { q: 'Does Kandryn merge code?', a: 'No. It creates a branch named task/<id>, commits the suggestion you chose, and opens a pull request. Merging stays with your review rules and your CI.' },
   { q: 'How are credentials handled?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored against your user, tested when you save them, and never written to a log line. Model credentials are yours too: Kandryn calls Anthropic and OpenAI with the keys you save, so the usage appears on your own account and no key is shared between users.' },
@@ -255,8 +236,8 @@ export const FAQS = [
 ];
 
 export const FOOTER_COLS = [
-  { title: 'PRODUCT', links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Integrations', href: '/integrations' }, { label: 'Security', href: '/security' }, { label: 'Trust', href: '/trust/' }, { label: 'FAQ', href: '/faq' }] },
-  { title: 'RESOURCES', links: [{ label: 'Guides', href: '/resources' }, { label: 'Patterns', href: '/resources' }, { label: 'Changelog', href: '/resources' }, { label: 'Templates', href: '/resources' }] },
+  { title: 'PRODUCT', links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Integrations', href: '/integrations' }, { label: 'Trust & Security', href: '/trust/' }, { label: 'FAQ', href: '/faq' }] },
+  { title: 'RESOURCES', links: [{ label: 'Quickstart', href: '/resources' }, { label: 'Changelog', href: '/resources' }] },
   { title: 'COMPANY', links: [{ label: 'Request access', href: '/contact' }, { label: 'Book a walkthrough', href: '/contact' }, { label: 'Trust & Security', href: '/trust/' }, { label: 'Contact', href: '/contact' }, { label: 'Home', href: '/' }] },
 ];
 
