@@ -12,6 +12,7 @@ export default function SiteHeader() {
 
   return (
     <header
+      className="site-header"
       style={{
         position: 'sticky',
         top: 0,
@@ -35,7 +36,7 @@ export default function SiteHeader() {
       </Link>
 
       {/* CENTRE — nav */}
-      <nav style={{ display: 'flex', gap: 2, flexShrink: 0, marginLeft: 8 }}>
+      <nav className="site-nav" style={{ display: 'flex', gap: 2, flexShrink: 0, marginLeft: 8 }}>
         {NAV_ITEMS.map((item) => {
           const active = isActive(item.href);
           return (
@@ -58,9 +59,9 @@ export default function SiteHeader() {
       </nav>
 
       {/* RIGHT */}
-      <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', flexShrink: 0 }}>
+      <div className="site-actions" style={{ display: 'flex', gap: 10, marginLeft: 'auto', flexShrink: 0 }}>
         <Btn variant="ghost" href={`${SITE.appUrl}/sign-in`}>Sign in</Btn>
-        <Btn variant="primary" href="/contact">Request access</Btn>
+        <Btn variant="primary" href="/contact">Book a walkthrough</Btn>
       </div>
     </header>
   );

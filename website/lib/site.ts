@@ -14,14 +14,14 @@ export const SITE = {
   appUrl: 'https://app.kandryn.com',
 };
 
+// Four items. The logo is the route home, and FAQ, Contact, Trust, Privacy
+// and Terms live in the footer — keeping them in the top nav gave five
+// supporting pages the same visual weight as the product itself.
 export const NAV_ITEMS = [
-  { label: 'Home', href: '/' },
-  { label: 'How it works', href: '/how-it-works' },
+  { label: 'Product', href: '/how-it-works' },
   { label: 'Integrations', href: '/integrations' },
   { label: 'Resources', href: '/resources' },
   { label: 'Security', href: '/security' },
-  { label: 'FAQ', href: '/faq' },
-  { label: 'Contact', href: '/contact' },
 ];
 
 export const HERO_STATS = [
