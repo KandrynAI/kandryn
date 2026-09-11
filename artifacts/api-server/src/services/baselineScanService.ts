@@ -12,7 +12,7 @@ import {
 } from "@workspace/db";
 import { GitService } from "./gitService.js";
 import { getConfigs } from "./configService.js";
-import { baselineFilePrompt, parseFileScan } from "./aegisService.js";
+import { AEGIS_MODEL, AEGIS_ZDR_MODEL, baselineFilePrompt, isRetentionError, parseFileScan } from "./aegisService.js";
 import { canAdminister } from "./resourceAdmin.js";
 import { RunError } from "./runService.js";
 import * as audit from "./auditService.js";
@@ -44,7 +44,6 @@ export type { BaselineEstimate };
  *     fingerprint that survives unrelated edits to their file.
  */
 
-const MODEL = "claude-fable-5";
 /**
  * Above this, reading file-by-file is the wrong shape: it eats the hourly
  * GitHub budget that runs and syncs share, and the fetch loop starts pressing
@@ -258,7 +257,9 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
         // restricted charset that real paths break. It maps back via `paths`.
         custom_id: `f${i}`,
         params: {
-          model: MODEL,
+          // Overridden per attempt by `submit` below — the retention fallback
+          // resubmits the identical request set on a different model.
+          model: AEGIS_MODEL,
           max_tokens: 2000,
           messages: [
             {
@@ -273,15 +274,36 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
     if (requests.length === 0) throw new RunError("None of this repository's files could be read.", 422);
 
     const client = new Anthropic({ apiKey: creds.ANTHROPIC_API_KEY });
-    const batch = await client.messages.batches.create({ requests });
+    const submit = (m: string) =>
+      client.messages.batches.create({
+        requests: requests.map((r) => ({ ...r, params: { ...r.params, model: m } })),
+      });
+
+    // Same retention fallback as the runtime scan: AEGIS_MODEL is a Covered
+    // Model, so an organisation on zero data retention is refused at submit.
+    // Falling back keeps baseline scanning available to exactly the regulated
+    // customers most likely to have that configuration.
+    let model = AEGIS_MODEL;
+    let batch;
+    try {
+      batch = await submit(model);
+    } catch (err) {
+      if (!isRetentionError(err)) throw err;
+      logger.warn(
+        { scanId: scan.id, from: AEGIS_MODEL, to: AEGIS_ZDR_MODEL },
+        "Baseline scan: default model is retention-gated for this organisation — falling back",
+      );
+      model = AEGIS_ZDR_MODEL;
+      batch = await submit(model);
+    }
 
     const [updated] = await db
       .update(baselineScansTable)
-      .set({ status: "scanning", batchId: batch.id, filesSkipped: skipped })
+      .set({ status: "scanning", batchId: batch.id, filesSkipped: skipped, model })
       .where(eq(baselineScansTable.id, scan.id))
       .returning();
     logger.info(
-      { scanId: scan.id, batchId: batch.id, files: requests.length, skipped },
+      { scanId: scan.id, batchId: batch.id, model, files: requests.length, skipped },
       "Baseline scan batch submitted",
     );
     return updated;

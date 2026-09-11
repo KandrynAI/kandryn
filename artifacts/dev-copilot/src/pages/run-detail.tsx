@@ -1239,6 +1239,18 @@ function AegisSection({ run, runId, onScan, scanning, navigate, onChanged }: {
         </div>
       )}
 
+      {/* Which model produced this decision. Shown on every scan, not just the
+          fallback: a gate that blocks a merge is evidence, and evidence needs a
+          provenance line. The fallback carries its reason so it is never silent. */}
+      {scan.model && (
+        <div style={{ fontSize: 12, color: "var(--c-ink-4)", marginTop: -6, marginBottom: 14 }}>
+          Scanned with <span style={{ fontFamily: "var(--mono)" }}>{scan.model}</span>
+          {scan.modelFallbackReason && (
+            <span style={{ color: "var(--c-amber)" }}> — {scan.modelFallbackReason}</span>
+          )}
+        </div>
+      )}
+
       {findings.length > 0 && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingBottom: 10, borderBottom: "1px solid var(--c-border)", marginBottom: 8 }}>

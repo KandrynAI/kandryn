@@ -185,6 +185,16 @@ function EstimateDialog({
               The scan runs in the background — you do not need to keep this page open.
             </p>
             <p className="text-sm font-medium">The estimate is a ceiling, not a quote. You are billed for what the scan actually reads.</p>
+            {/* The estimate is priced on the default model. An organisation on
+                zero data retention cannot reach it and the scan falls back to a
+                model that costs half as much — so the figure approved here can
+                only ever be too high, never too low. Said plainly, because this
+                number is a spend approval and an inaccurate one should at least
+                be inaccurate in the customer's favour. */}
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Priced on the default security model. If your Anthropic organisation uses zero data retention, the scan
+              falls back to a model costing half as much and the real charge will be below this figure.
+            </p>
           </>
         )}
 
@@ -288,6 +298,7 @@ function ScanSummary({ scanId, repoId }: { scanId: number; repoId: number }) {
           Scanned <strong>{scan.filesScanned.toLocaleString()}</strong> of {scan.filesTotal.toLocaleString()} files
           {scan.filesSkipped > 0 ? ` · ${scan.filesSkipped.toLocaleString()} skipped` : ""}
         </span>
+        {scan.model && <span className="text-muted-foreground font-mono text-xs">{scan.model}</span>}
         <span className="text-muted-foreground text-xs">
           {scan.finishedAt ? formatDistanceToNow(new Date(scan.finishedAt), { addSuffix: true }) : ""}
         </span>

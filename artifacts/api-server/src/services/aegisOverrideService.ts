@@ -216,6 +216,7 @@ export async function overrideSecurityGate(
         await postSecurityStatus(
           repo.url,
           run.commitHash,
+          run.id,
           "approved",
           `Security gate overridden by an admin: ${cleanReason}`.slice(0, 140),
           creds.GITHUB_TOKEN,

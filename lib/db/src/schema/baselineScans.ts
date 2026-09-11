@@ -46,6 +46,13 @@ export const baselineScansTable = pgTable(
 
     /** The Anthropic Message Batch backing this scan; the cron dispatcher polls it. */
     batchId: text("batch_id"),
+    /**
+     * The model this scan's batch was submitted on (0037). Null for scans that
+     * predate the column. Recorded because it is not always the default: an
+     * organisation on zero data retention cannot reach the Covered Model and
+     * falls back, and an auditor reading a finding needs to know what produced it.
+     */
+    model: text("model"),
     /** What the admin was shown and approved before any spend began. */
     estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 4 }),
 

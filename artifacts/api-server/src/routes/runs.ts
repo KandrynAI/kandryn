@@ -7,7 +7,7 @@ import { loadRunPlanDTO } from "../services/planningService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
 import { runVeriaReview, buildVeriaRemediationDraft, VeriaError } from "../services/veriaService.js";
-import { runAegisScan } from "../services/aegisService.js";
+import { AegisModelUnavailableError, runAegisScan } from "../services/aegisService.js";
 import {
   createAegisPlmTicket,
   ensureFindingTask,
@@ -886,7 +886,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
             ? `Blocked: could not scan ${scan.unscannedFiles.length}/${scan.filesTotal} file(s): ${unscannedNames}`
             : `Blocked: ${scan.highCount} high, ${scan.criticalCount} critical across ${scan.filesScanned} file(s)`
           : `Approved: ${scan.filesScanned}/${scan.filesTotal} file(s) scanned, ${scan.findings.length} finding(s)`;
-      await postSecurityStatus(repo.url, run.commitHash, scan.gateDecision, gateDesc, creds.GITHUB_TOKEN);
+      await postSecurityStatus(repo.url, run.commitHash, run.id, scan.gateDecision, gateDesc, creds.GITHUB_TOKEN);
     }
 
     req.log.info(
@@ -908,12 +908,30 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
         filesScanned: scan.filesScanned,
         filesTotal: scan.filesTotal,
         unscannedFiles: scan.unscannedFiles,
+        model: scan.model,
+        modelFallbackReason: scan.modelFallbackReason,
       },
       ipAddress: audit.getIp(req),
       userAgent: req.headers["user-agent"],
     });
     res.status(200).json({ scan });
   } catch (err) {
+    // A model the organisation cannot reach is a configuration problem, not a
+    // security judgement. Writing a blocked gate here would post a red check to
+    // the pull request and tell the customer their code could not be scanned,
+    // when the truth is the scan never started. Same shape as the missing-key
+    // 424 above, and deliberately no gate state and no status check.
+    if (err instanceof AegisModelUnavailableError) {
+      req.log.warn({ runId }, "Aegis unavailable: models are retention-gated for this organisation");
+      await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+      res.status(424).json({
+        error:
+          "Aegis could not run: your Anthropic organisation's data-retention setting puts both the default and " +
+          "fallback security models out of reach. Enable 30-day retention on a workspace, or ask your Anthropic " +
+          "account team to authorise the model for your zero-data-retention organisation.",
+      });
+      return;
+    }
     req.log.error({ err }, "Aegis scan failed");
     await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
     res.status(502).json({ error: "Aegis could not complete the scan. Try again." });

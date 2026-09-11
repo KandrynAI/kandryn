@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { BadRequestError } from "@anthropic-ai/sdk";
 import { z } from "zod/v4";
 import { logger } from "../lib/logger.js";
 import type {
@@ -40,6 +40,62 @@ const PER_FILE_TIMEOUT_MS = 90_000;
  * self-inflicted block with no security meaning behind it.
  */
 const SCAN_CONCURRENCY = 8;
+
+/** The model Aegis scans with by default. */
+export const AEGIS_MODEL = "claude-fable-5";
+
+/**
+ * The model Aegis falls back to for an organisation on zero data retention.
+ *
+ * claude-fable-5 is a Covered Model: it requires 30-day data retention, and an
+ * Anthropic organisation configured for zero data retention gets a 400 on every
+ * request to it. That is precisely the configuration a regulated customer is
+ * most likely to have, so without a fallback the security scan is unavailable
+ * to exactly the buyers who need it most. claude-opus-5 carries elevated
+ * cybersecurity safeguards, is not retention-gated, and costs half as much.
+ */
+export const AEGIS_ZDR_MODEL = "claude-opus-5";
+
+/**
+ * True for the 400 Anthropic returns when the organisation's data-retention
+ * configuration puts a Covered Model out of reach.
+ *
+ * This is a configuration problem, not a scan failure, and the two must not be
+ * confused: a scan failure blocks the gate (correctly, fail-closed), while this
+ * means no scan ever ran.
+ */
+export function isRetentionError(err: unknown): boolean {
+  return err instanceof BadRequestError && /data retention/i.test(err.message);
+}
+
+/**
+ * A safety classifier declined to analyse one file (HTTP 200,
+ * `stop_reason: "refusal"`). Still fails the gate closed — an unexamined file
+ * is not a clean file — but it is distinguishable from a timeout or a parse
+ * failure so the gate can say which happened.
+ */
+export class AegisRefusalError extends Error {
+  constructor(
+    readonly filePath: string,
+    readonly category: string | null,
+  ) {
+    super(`The model declined to analyse ${filePath}${category ? ` (${category})` : ""}.`);
+    this.name = "AegisRefusalError";
+  }
+}
+
+/**
+ * Neither the default model nor the zero-data-retention fallback could be
+ * reached. Thrown rather than returned: a blocked gate must mean a security
+ * judgement was made, never that the scanner could not start. The route turns
+ * this into a 424 and writes no gate state.
+ */
+export class AegisModelUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AegisModelUnavailableError";
+  }
+}
 
 /**
  * Promise.allSettled semantics with a ceiling on concurrency. Results stay in
@@ -204,15 +260,26 @@ async function scanOneFile(
   client: Anthropic,
   item: { itemTitle: string; stackDesc?: string },
   file: AegisScanFile,
+  model: string,
 ): Promise<PerFileScan> {
   const response = await withTimeout(
     client.messages.create({
-      model: "claude-fable-5",
+      model,
       max_tokens: 2000,
       messages: [{ role: "user", content: PER_FILE_PROMPT(item, file) }],
     }),
     PER_FILE_TIMEOUT_MS,
   );
+
+  // A safety classifier can decline the request outright — HTTP 200, no
+  // content. Asking a model to enumerate exploitable vulnerabilities in real
+  // source is a plausible trigger. Reading `content` first would yield an empty
+  // string and surface as a JSON parse failure, so the gate would report "could
+  // not scan this file" when the truth is "the model would not". Both block;
+  // only one is honest about why.
+  if (response.stop_reason === "refusal") {
+    throw new AegisRefusalError(file.filePath, response.stop_details?.category ?? null);
+  }
 
   const raw = response.content
     .filter((b) => b.type === "text")
@@ -260,19 +327,25 @@ export function parseFileScan(raw: string, filePath: string): PerFileScan {
  * Run Aegis over a committed change set. Each changed file is scanned in its own
  * request, in parallel. The gate FAILS CLOSED: any file that errors, times out,
  * or is otherwise not scanned forces a BLOCK — an unscanned file is not a clean
- * file. Never throws; a total failure returns a blocked result with every file
- * listed as unscanned.
+ * file. A total failure returns a blocked result with every file listed as
+ * unscanned.
+ *
+ * The one thing it throws for is AegisModelUnavailableError: when neither model
+ * can be reached because of the organisation's data-retention configuration,
+ * nothing was examined, so there is no security judgement to record and a
+ * blocked gate would be a lie.
  */
 export async function runAegisScan(
   input: AegisInput,
   creds: { anthropicApiKey?: string },
   // The per-file scanner is injectable so the fail-closed gate can be unit-tested
-  // without the model. Defaults to the real claude-fable-5 scan.
-  deps?: { scanFile?: (file: AegisScanFile) => Promise<PerFileScan> },
+  // without the model. Defaults to a real scan on the resolved model.
+  deps?: { scanFile?: (file: AegisScanFile, model: string) => Promise<PerFileScan> },
 ): Promise<AegisScanResult> {
   const client = new Anthropic({ apiKey: creds.anthropicApiKey });
   const item = { itemTitle: input.itemTitle, stackDesc: input.stackDesc };
-  const scanFile = deps?.scanFile ?? ((f: AegisScanFile) => scanOneFile(client, item, f));
+  const scanFile =
+    deps?.scanFile ?? ((f: AegisScanFile, model: string) => scanOneFile(client, item, f, model));
   const filesTotal = input.files.length;
 
   // Deterministic fault injection for exercising the fail-closed gate on a real
@@ -281,15 +354,49 @@ export async function runAegisScan(
   // it lands in unscannedFiles and blocks the gate exactly as a genuine
   // error/timeout/parse failure would.
   const forceFailPath = process.env.AEGIS_FORCE_FAIL_PATH?.trim();
-  const runScan = (f: AegisScanFile): Promise<PerFileScan> =>
-    forceFailPath && f.filePath.includes(forceFailPath)
-      ? Promise.reject(new Error(`AEGIS_FORCE_FAIL_PATH matched "${f.filePath}" — forced scan failure (test hook).`))
-      : scanFile(f);
+  const runScan =
+    (model: string) =>
+    (f: AegisScanFile): Promise<PerFileScan> =>
+      forceFailPath && f.filePath.includes(forceFailPath)
+        ? Promise.reject(new Error(`AEGIS_FORCE_FAIL_PATH matched "${f.filePath}" — forced scan failure (test hook).`))
+        : scanFile(f, model);
 
-  const results = await mapWithConcurrency(input.files, SCAN_CONCURRENCY, runScan);
+  const retentionBlocked = (rs: PromiseSettledResult<PerFileScan>[]): boolean =>
+    rs.length > 0 && rs.every((r) => r.status === "rejected" && isRetentionError(r.reason));
+
+  let model = AEGIS_MODEL;
+  let modelFallbackReason: string | null = null;
+  let results = await mapWithConcurrency(input.files, SCAN_CONCURRENCY, runScan(model));
+
+  // Retention is an organisation-wide setting, so a Covered Model is out of
+  // reach for every file or for none. Falling back only on a clean sweep keeps
+  // a partial failure failing closed, where it belongs. Retrying the whole set
+  // rather than probing one file first costs nothing on the happy path, and a
+  // 400 bills no tokens.
+  if (retentionBlocked(results)) {
+    logger.warn(
+      { from: AEGIS_MODEL, to: AEGIS_ZDR_MODEL, files: filesTotal },
+      "Aegis: default model is retention-gated for this organisation — falling back",
+    );
+    model = AEGIS_ZDR_MODEL;
+    modelFallbackReason =
+      `${AEGIS_MODEL} requires 30-day data retention, which this Anthropic organisation does not have. ` +
+      `Scanned with ${AEGIS_ZDR_MODEL} instead.`;
+    results = await mapWithConcurrency(input.files, SCAN_CONCURRENCY, runScan(model));
+
+    if (retentionBlocked(results)) {
+      throw new AegisModelUnavailableError(
+        `Neither ${AEGIS_MODEL} nor ${AEGIS_ZDR_MODEL} is reachable with this Anthropic API key: the organisation's ` +
+          `data-retention configuration puts them out of reach. No files were scanned.`,
+      );
+    }
+  }
 
   const scannedFiles: string[] = [];
   const unscannedFiles: string[] = [];
+  // Subset of unscannedFiles the model declined to analyse, kept apart only so
+  // the gate reason can say so. They block exactly like any other unscanned file.
+  const refusedFiles: string[] = [];
   const summaries: string[] = [];
   const rawFindings: Array<Omit<AegisFinding, "id">> = [];
   results.forEach((r, i) => {
@@ -300,6 +407,7 @@ export async function runAegisScan(
       rawFindings.push(...r.value.findings);
     } else {
       unscannedFiles.push(path);
+      if (r.reason instanceof AegisRefusalError) refusedFiles.push(path);
       logger.warn({ filePath: path, err: r.reason }, "Aegis per-file scan failed — file left unscanned (gate will block)");
     }
   });
@@ -317,8 +425,12 @@ export async function runAegisScan(
   const blockedByFindings = criticalCount > 0 || highCount > 0;
   const gateDecision: "approved" | "blocked" = blockedByCoverage || blockedByFindings ? "blocked" : "approved";
 
+  const refusedNote =
+    refusedFiles.length > 0
+      ? ` The model declined to analyse ${refusedFiles.length} of them: ${refusedFiles.join(", ")}.`
+      : "";
   const gateReason = blockedByCoverage
-    ? `Could not scan ${unscannedFiles.length} of ${filesTotal} file(s): ${unscannedFiles.join(", ")}. Gate blocked (fail-closed).`
+    ? `Could not scan ${unscannedFiles.length} of ${filesTotal} file(s): ${unscannedFiles.join(", ")}.${refusedNote} Gate blocked (fail-closed).`
     : blockedByFindings
       ? `${criticalCount} critical, ${highCount} high finding(s) across ${scannedFiles.length} file(s).`
       : `${findings.length} finding(s) across ${scannedFiles.length} file(s), none critical/high.`;
@@ -336,6 +448,8 @@ export async function runAegisScan(
     unscannedFiles,
     filesTotal,
     filesScanned: scannedFiles.length,
+    model,
+    modelFallbackReason,
     generatedAt: new Date().toISOString(),
   };
 }

@@ -451,6 +451,10 @@ export interface AegisScanResult {
   unscannedFiles?: string[];
   filesTotal?: number;
   filesScanned?: number;
+  /** Model that produced this gate decision. Absent on scans predating the field. */
+  model?: string;
+  /** Why the default model was not used. Null/absent on the normal path. */
+  modelFallbackReason?: string | null;
   generatedAt: string;
 }
 
@@ -1118,6 +1122,8 @@ export interface BaselineScan {
   mediumCount: number;
   lowCount: number;
   batchId: string | null;
+  /** Model the batch ran on. Null for scans predating the column. */
+  model?: string | null;
   estimatedCostUsd: string | null;
   startedAt: string | null;
   finishedAt: string | null;

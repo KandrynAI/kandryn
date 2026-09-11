@@ -53,5 +53,12 @@ export interface AegisScanResult {
   unscannedFiles: string[]; // files whose scan errored/timed out — force a block
   filesTotal: number; // changed files that should have been scanned
   filesScanned: number; // == scannedFiles.length
+  // Which model actually produced this gate decision. Recorded because the
+  // model can differ from the default (see modelFallbackReason) and "what
+  // gated this merge" is audit evidence, not a detail.
+  model?: string;
+  // Set only when the default model was unreachable and Aegis fell back.
+  // Null on the normal path. Surfaced in the UI — the fallback is never silent.
+  modelFallbackReason?: string | null;
   generatedAt: string; // ISO timestamp
 }

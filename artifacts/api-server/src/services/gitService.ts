@@ -672,6 +672,7 @@ export class GitService {
 export async function postSecurityStatus(
   repoUrl: string,
   commitHash: string,
+  runId: number,
   gate: "approved" | "blocked" | "pending",
   details: string,
   githubToken: string | undefined,
@@ -686,7 +687,9 @@ export async function postSecurityStatus(
     state,
     context: SECURITY_CHECK_CONTEXT,
     description: details.slice(0, 140), // GitHub 140-char limit
-    target_url: `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/runs/${commitHash}`,
+    // The run, not the commit. This slot held commitHash, so every "Details"
+    // link on every check we ever posted resolved to a run id that does not exist.
+    target_url: `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/runs/${runId}`,
   };
 
   try {
