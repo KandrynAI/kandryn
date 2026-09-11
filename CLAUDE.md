@@ -278,6 +278,37 @@ These are the natural next tasks; none are blocking today:
 - **Shell consistency** — the sidebar was quieted (Claude-Code style); TabBar and page headers could follow.
 - **Known adapter caveats:** Jira create maps `task → Task` (not `Sub-task`) with a best-effort `parent` link; ADO `commitChanges` uses `changeType:"edit"` (new-file adds may fail on Azure Repos — **GitHub is the primary, auto-synced provider**); test-case push requires a PLM-linked work item.
 
+### Marketing site — carried over from the homepage rebuild
+
+Unlike the list above, the first two of these **are** live-site problems, not
+future nice-to-haves. They are parked, not resolved, and the homepage rebuild
+did not touch them.
+
+- **`website/lib/site.ts` still holds the pre-rebuild homepage arrays** —
+  `HERO_STATS`, `STEPS`, `QUICKSTART`. The homepage no longer imports them, but
+  other pages still render them, so a claim removed from `/` is still published
+  elsewhere. `HERO_STATS` carries *"Aegis scans every committed change for OWASP
+  Top 10 vulnerabilities. High findings block the PR."* — **false on both
+  counts**: the scan is triggered per run, not automatic, and blocking a merge
+  needs a branch rule the customer configures. Same defect as
+  `site.ts:178` ("High findings never reach main") and `site.ts:176`. **First
+  item of the supporting-pages pass**, and the reason that pass is not
+  cosmetic.
+- **`/how-it-works` is load-bearing and unverified.** The rebuilt homepage
+  points at it three times — the nav's `Product` item, the stages link, and the
+  governance callout's neighbour — but that page has never been through the
+  claim-verification pass the homepage and `/trust` have. It must be corrected
+  **before or alongside** extending the homepage pattern to supporting pages;
+  doing it afterwards means the homepage spends credibility on a page that has
+  not earned it yet.
+- **Phase 3 (supporting pages) is gated** on the owner reviewing the homepage
+  preview on a real device. The homepage lives on `claude/repo-setup-6osjsy`
+  (`8c4eac4`) and is deliberately **not** merged to `main`.
+
+For what the homepage does and does not claim, and why the governance callout
+is three sentences pointing at `/trust` rather than a section, see the header
+comments in `website/lib/home.ts`.
+
 ---
 
 ## 15. Common pitfalls
