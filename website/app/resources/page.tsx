@@ -3,6 +3,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import ResourcesView from '@/components/ResourcesView';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/resources/' },
   title: 'Getting started',
   description: 'The setup sequence, step by step, and a dated record of what has shipped.',
 };

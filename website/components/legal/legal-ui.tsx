@@ -5,7 +5,9 @@ const INK = '#0b1422';
 const BODY = '#2c3e50';
 const BORDER = '#e2e5e9';
 const ACCENT = '#1a4fd6';
-const MUTED = '#74808f';
+// Was a hardcoded copy of --color-neutral-600's old value, which failed AA on
+// white at 4.01:1. Tracks the token now so it cannot drift again.
+const MUTED = 'var(--color-neutral-600)';
 
 /** 720px centred reading column. Responsive padding via .legal-page in globals.css. */
 export function LegalPage({ children }: { children: ReactNode }) {

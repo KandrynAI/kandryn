@@ -9,12 +9,22 @@ export default function ContactView() {
   const [stack, setStack] = useState('');
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * This used to set `sent` in a `finally`, so a network error or a 500 both
+   * showed "Request received" and the request was silently dropped. On the page
+   * whose entire job is capturing them, that is the worst possible failure
+   * mode: the prospect believes they have been in touch and nobody has heard
+   * from them. Success is now conditional on the response, and a failure says
+   * so and offers a route that does not depend on the API being up.
+   */
   const submit = async (type: 'request-access' | 'walkthrough') => {
     setBusy(true);
+    setFailed(false);
     try {
-      await fetch(`${SITE.apiBaseUrl}/api/contact`, {
+      const res = await fetch(`${SITE.apiBaseUrl}/api/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -25,11 +35,12 @@ export default function ContactView() {
           message: message.trim() || undefined,
         }),
       });
+      if (!res.ok) throw new Error(String(res.status));
+      setSent(true);
     } catch {
-      /* best-effort on the static site */
+      setFailed(true);
     } finally {
       setBusy(false);
-      setSent(true);
     }
   };
 
@@ -39,6 +50,7 @@ export default function ContactView() {
     setStack('');
     setMessage('');
     setSent(false);
+    setFailed(false);
   };
 
   if (sent) {
@@ -63,6 +75,18 @@ export default function ContactView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 520 }}>
+      {failed && (
+        <div role="alert" style={{ border: '2px solid #b23a2f', background: '#fdf2f1', padding: '16px 18px' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#b23a2f' }}>That did not send.</div>
+          <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 8 }}>
+            Your details are still in the form, so try again in a moment. If it keeps failing, email{' '}
+            <a href={`mailto:${SITE.email}`} style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+              {SITE.email}
+            </a>{' '}
+            and we will pick it up from there.
+          </p>
+        </div>
+      )}
       <div className="field">
         <label htmlFor="c-name">Name</label>
         <input id="c-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Okafor" />

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { LegalPage, LegalHeader, Toc, Section, P, Bullets, DisclaimerBox, ContactBlock, Mail } from '@/components/legal/legal-ui';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service | Kandryn',
+  title: 'Terms of Service',
   description: 'Terms governing your use of the Kandryn platform.',
   alternates: { canonical: '/terms/' },
 };

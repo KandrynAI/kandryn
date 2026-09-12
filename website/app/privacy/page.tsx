@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { LegalPage, LegalHeader, Toc, Section, H3, P, Bullets, ContactBlock, Mail } from '@/components/legal/legal-ui';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | Kandryn',
+  title: 'Privacy Policy',
   description: 'How Kandryn collects, uses, and protects your information.',
   alternates: { canonical: '/privacy/' },
 };
@@ -72,7 +72,7 @@ export default function PrivacyPage() {
         <Bullets
           items={[
             'Work items from Jira or Azure DevOps',
-            'Selected source code file sections (3-8 files) read at run time from GitHub or Azure Repos. Sent to AI model providers. NOT stored by Kandryn after the run completes.',
+            'Selected source code file sections — at most eight files, and a few thousand characters in total — read at run time from GitHub or Azure Repos. Sent to AI model providers. NOT stored by Kandryn after the run completes.',
             'Repository metadata: file paths, branch names, commit hashes',
           ]}
         />
@@ -196,7 +196,7 @@ export default function PrivacyPage() {
         <Bullets
           items={[
             'All data in transit: TLS 1.2 or higher',
-            'All data at rest: AES-256 encryption (AWS RDS)',
+            'All data at rest: AES-256 disk encryption (AWS RDS). Integration credentials are additionally encrypted with AES-256-GCM at the application layer before storage, under a key held outside the database.',
             'API credentials stored per-user, never written to logs',
             'Production access restricted to named individuals with MFA',
             'Audit log records all significant platform actions',

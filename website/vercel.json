@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "next build"
+  "buildCommand": "next build",
+  "redirects": [
+    { "source": "/security", "destination": "/trust/#boundaries", "permanent": true },
+    { "source": "/security/", "destination": "/trust/#boundaries", "permanent": true }
+  ]
 }

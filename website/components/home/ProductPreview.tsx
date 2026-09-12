@@ -307,7 +307,9 @@ function MobilePreview({
       </div>
 
       {/* 3 — the pull request */}
-      <div style={{ ...cardStyle, opacity: committed ? 1 : 0.55 }}>
+      {/* 0.55 read as "pending" but dropped this card's text to 2.37:1. 0.9 keeps
+          the state legible as dimmed while clearing AA. */}
+      <div style={{ ...cardStyle, opacity: committed ? 1 : 0.9 }}>
         <Step n="03" label="The pull request" />
         <div style={{ padding: '14px 16px' }}>
           <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.35 }}>
