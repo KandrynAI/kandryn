@@ -1,6 +1,19 @@
-import Link from 'next/link';
+'use client';
 
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+/**
+ * Shared closing call to action, appended to every page by the layout.
+ *
+ * The homepage is the exception: it ends with its own ClosingCta, and stacking
+ * two competing offers gives a visitor at the bottom of the page a way to
+ * defer the decision rather than make it.
+ */
 export default function CtaBanner() {
+  const pathname = usePathname() || '/';
+  if (pathname === '/') return null;
+
   return (
     <section
       className="pad-x"

@@ -278,6 +278,58 @@ These are the natural next tasks; none are blocking today:
 - **Shell consistency** — the sidebar was quieted (Claude-Code style); TabBar and page headers could follow.
 - **Known adapter caveats:** Jira create maps `task → Task` (not `Sub-task`) with a best-effort `parent` link; ADO `commitChanges` uses `changeType:"edit"` (new-file adds may fail on Azure Repos — **GitHub is the primary, auto-synced provider**); test-case push requires a PLM-linked work item.
 
+### Marketing site — claim-verification status
+
+Every user-facing claim in `website/lib/site.ts` and `website/lib/home.ts` was
+checked against the running product during the homepage rebuild and the
+supporting-pages pass. Corrections already applied (do not reintroduce):
+
+- **A run never reads parent work items.** `dbTaskToDevCopilotTask` does not map
+  `parentId`, and the prompt receives exactly title, description and acceptance
+  criteria. Copy claiming the epic or story above an item is read for intent is
+  false; it was on `/how-it-works` and briefly on the homepage.
+- **Aegis is triggered per run, not automatic**, and its status check blocks a
+  merge only once the customer requires it in a GitHub ruleset/branch
+  protection rule or an Azure DevOps branch policy. Any sentence asserting that
+  every change is scanned, or that High findings cannot reach main, is wrong.
+- **Every agent runs on the customer's own model key.** Anthropic for Raptia,
+  Synthesia, Veria, Aegis and Narratia; OpenAI for Fovea. Copy saying agent
+  infrastructure needs no key from the user is wrong — six of seven paths 424
+  without it.
+- **Synthesia weights** are correctness 30, coherence 15, conventions 15, AC
+  coverage 15, readability 15, minimal diff 10, reported out of 10 — six
+  dimensions, not five, and not a 0–100 score.
+- **Aegis does not cover all ten OWASP categories.** It scans one file at a
+  time with no cross-file or manifest context, so broken access control and
+  vulnerable-components are largely out of reach. The `(2021)` label is correct
+  and must not be bumped to 2025 without changing the prompt in
+  `aegisService.ts` **and** adding a taxonomy-version column — the stored
+  category strings would otherwise mean two different things in one chart.
+
+`HERO_STATS` and `STEPS` (and `DemoSection`/`StepsSection`/`PlugInSection`) were
+deleted rather than corrected: the homepage rebuild left them with no
+consumers.
+
+`/resources` lost a featured guide, twelve resource cards and a monthly
+newsletter for the same reason: none of the thirteen pieces of writing
+existed. The cards rendered "Read →" as plain text with no link behind them,
+each with a specific reading time, and the newsletter promised a monthly email
+nobody sends. The page is now the quickstart and the changelog, both real.
+
+Still open:
+
+- **Write two or three real guides, then bring the cards back.** The obvious
+  candidates are the ones a pilot actually needs: writing acceptance criteria
+  an agent can implement, scoping a first work item, and configuring the
+  security gate as a required check. Cards first and writing later is exactly
+  how the fabricated version happened — write the guide, then add the card.
+- **Phase 3 design pass** — extending the homepage's one-idea-per-section
+  pattern to `/how-it-works`, `/integrations` and `/security`. Claims on those
+  pages are now correct; their layout is not yet rebuilt. `/resources` was
+  rebuilt alongside its content cut.
+- The homepage and these corrections live on `claude/repo-setup-6osjsy` and are
+  deliberately **not** merged to `main`.
+
 ---
 
 ## 15. Common pitfalls
