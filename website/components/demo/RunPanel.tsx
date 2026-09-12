@@ -39,7 +39,7 @@ export default function RunPanel({
       >
         {/* Header */}
         <div style={{ padding: '18px 20px', borderBottom: '2px solid var(--color-divider)' }}>
-          <div style={{ fontSize: 17, fontWeight: 800 }}>Run agents on PAY-214</div>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>Run agents on PAY-214</div>
           <div style={{ fontSize: 12, color: 'var(--color-neutral-700)', marginTop: 4 }}>
             Idempotency keys on the refund endpoint
           </div>

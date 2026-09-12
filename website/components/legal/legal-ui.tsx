@@ -23,7 +23,7 @@ export function LegalHeader({ title, sub, meta }: { title: string; sub: string; 
       <h1
         style={{
           fontFamily: 'var(--font-archivo), Archivo, system-ui, sans-serif',
-          fontWeight: 900,
+          fontWeight: 700,
           fontSize: 48,
           letterSpacing: '-0.02em',
           lineHeight: 1.04,
@@ -33,7 +33,7 @@ export function LegalHeader({ title, sub, meta }: { title: string; sub: string; 
       >
         {title}
       </h1>
-      <p style={{ fontSize: 18, lineHeight: 1.5, color: BODY, marginTop: 18, textWrap: 'pretty' }}>{sub}</p>
+      <p style={{ fontSize: 18, lineHeight: 1.6, color: BODY, marginTop: 18, textWrap: 'pretty' }}>{sub}</p>
       <p style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, lineHeight: 1.7, color: MUTED, marginTop: 18 }}>
         {meta}
       </p>

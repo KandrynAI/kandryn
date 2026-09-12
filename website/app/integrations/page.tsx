@@ -29,7 +29,7 @@ export default function IntegrationsPage() {
   return (
     <>
       <PageHeader
-        title={<>Your tracker.<br />Your repository. Your keys.</>}
+        title="Your tracker. Your repository. Your keys."
         lead="Kandryn stores every credential against your user record, tests it before it is saved, and tells you plainly what each one can reach."
       />
 

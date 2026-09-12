@@ -17,8 +17,8 @@ export default function ClosingCta() {
       <h2
         style={{
           fontSize: 46,
-          fontWeight: 900,
-          letterSpacing: '-0.03em',
+          fontWeight: 700,
+          letterSpacing: '-0.02em',
           lineHeight: 1.05,
           maxWidth: 640,
           textWrap: 'balance',
@@ -26,7 +26,7 @@ export default function ClosingCta() {
       >
         {CLOSING.headline}
       </h2>
-      <p style={{ marginTop: 16, maxWidth: 520, fontSize: 17, lineHeight: 1.5, opacity: 0.92 }}>
+      <p style={{ marginTop: 16, maxWidth: 520, fontSize: 17, lineHeight: 1.6, opacity: 0.92 }}>
         {CLOSING.body}
       </p>
       <div style={{ marginTop: 32 }}>

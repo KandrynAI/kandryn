@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function FaqPage() {
   return (
     <>
-      <PageHeader title={<>The questions<br />engineers ask first.</>} />
+      <PageHeader title="The questions engineers ask first." />
       <FaqAccordion />
       <JsonLd data={faqPageLd} />
     </>

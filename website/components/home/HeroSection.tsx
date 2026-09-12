@@ -33,8 +33,8 @@ export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'hea
             aria-label={HERO.headline}
             style={{
               fontSize: typingHeadline ? 64 : 56,
-              fontWeight: 900,
-              letterSpacing: '-0.035em',
+              fontWeight: 700,
+              letterSpacing: '-0.022em',
               lineHeight: 1.04,
               maxWidth: typingHeadline ? '15ch' : '13ch',
             }}
@@ -47,7 +47,7 @@ export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'hea
               marginTop: 22,
               maxWidth: 470,
               fontSize: 17,
-              lineHeight: 1.5,
+              lineHeight: 1.6,
               color: 'var(--color-neutral-800)',
               textWrap: 'pretty',
             }}

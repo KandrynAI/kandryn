@@ -36,14 +36,14 @@ export default function GovernanceCallout() {
         }}
       >
         <div style={{ maxWidth: 720 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em' }}>
+          <h2 style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>
             {GOVERNANCE.heading}
           </h2>
           <p
             style={{
               marginTop: 8,
               fontSize: 16,
-              lineHeight: 1.55,
+              lineHeight: 1.6,
               color: 'var(--color-neutral-800)',
               textWrap: 'pretty',
             }}

@@ -22,13 +22,13 @@ export default function ResourcesView() {
         className="pad-x"
         style={{ padding: '56px 64px', borderTop: '2px solid var(--color-divider)', borderBottom: '2px solid var(--color-divider)' }}
       >
-        <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.025em' }}>From nothing to a pull request</h2>
+        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>From nothing to a pull request</h2>
         <p
           style={{
             marginTop: 12,
             maxWidth: 620,
             fontSize: 17,
-            lineHeight: 1.5,
+            lineHeight: 1.6,
             color: 'var(--color-neutral-800)',
             textWrap: 'pretty',
           }}
@@ -63,11 +63,11 @@ export default function ResourcesView() {
                 {q.n}
               </span>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.01em' }}>{q.title}</div>
+                <div style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>{q.title}</div>
                 <div
                   style={{
                     fontSize: 15,
-                    lineHeight: 1.5,
+                    lineHeight: 1.6,
                     color: 'var(--color-neutral-800)',
                     marginTop: 4,
                     textWrap: 'pretty',
@@ -84,7 +84,7 @@ export default function ResourcesView() {
 
       {/* Changelog — what actually shipped, dated */}
       <section className="pad-x" style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.025em' }}>What shipped</h2>
+        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>What shipped</h2>
         <div style={{ marginTop: 28, borderTop: '2px solid var(--color-divider)' }}>
           {CHANGELOG.map((c) => (
             <div
@@ -106,7 +106,7 @@ export default function ResourcesView() {
                 <div
                   style={{
                     fontSize: 15,
-                    lineHeight: 1.5,
+                    lineHeight: 1.6,
                     color: 'var(--color-neutral-800)',
                     marginTop: 4,
                     textWrap: 'pretty',

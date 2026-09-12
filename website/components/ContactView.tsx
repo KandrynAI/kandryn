@@ -64,8 +64,8 @@ export default function ContactView() {
           animation: 'bmrise 0.35s ease-out both',
         }}
       >
-        <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: '-0.02em' }}>Request received.</div>
-        <p style={{ fontSize: 15, lineHeight: 1.55, color: 'var(--color-accent-800)', marginTop: 12 }}>
+        <div style={{ fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>Request received.</div>
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--color-accent-800)', marginTop: 12 }}>
           We&apos;ll write back within a business day with a time and a short checklist of what to have ready.
         </p>
         <button className="btn btn-secondary" style={{ marginTop: 20 }} onClick={reset}>Send another</button>
@@ -77,8 +77,8 @@ export default function ContactView() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 520 }}>
       {failed && (
         <div role="alert" style={{ border: '2px solid #b23a2f', background: '#fdf2f1', padding: '16px 18px' }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#b23a2f' }}>That did not send.</div>
-          <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 8 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#b23a2f' }}>That did not send.</div>
+          <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 8 }}>
             Your details are still in the form, so try again in a moment. If it keeps failing, email{' '}
             <a href={`mailto:${SITE.email}`} style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
               {SITE.email}

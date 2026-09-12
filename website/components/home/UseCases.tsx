@@ -14,13 +14,13 @@ export default function UseCases() {
       className="pad-x"
       style={{ padding: '76px 64px', borderBottom: '2px solid var(--color-divider)' }}
     >
-      <h2 style={{ fontSize: 38, fontWeight: 800, letterSpacing: '-0.025em' }}>{USE_CASES_HEADING}</h2>
+      <h2 style={{ fontSize: 38, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>{USE_CASES_HEADING}</h2>
       <p
         style={{
           marginTop: 12,
           maxWidth: 640,
           fontSize: 17,
-          lineHeight: 1.5,
+          lineHeight: 1.6,
           color: 'var(--color-neutral-800)',
           textWrap: 'pretty',
         }}
