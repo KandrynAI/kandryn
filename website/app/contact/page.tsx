@@ -21,9 +21,7 @@ export default function ContactPage() {
       <div className="pad-x" style={{ padding: 64, borderRight: '2px solid var(--color-divider)' }}>
         <div className="kicker" style={{ marginBottom: 20 }}>Request access</div>
         <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 0.98 }}>
-          Bring one project.
-          <br />
-          We&apos;ll wire it up with you.
+          Bring one project. We&apos;ll wire it up with you.
         </h1>
         <p className="lead" style={{ marginTop: 22 }}>
           Onboarding is a shared call: we connect your tracker and repository, run one real work item through the full

@@ -26,7 +26,7 @@ export default function HowItWorksPage() {
   return (
     <>
       <PageHeader
-        title={<>A run is not a chat.<br />It&apos;s a pipeline.</>}
+        title="A run is not a chat. It’s a pipeline."
         lead="Eight discrete stages. Four of them run every time; three of them wait until you ask. If one fails, the run row says which, and nothing half-finished lands in your repository."
       />
 

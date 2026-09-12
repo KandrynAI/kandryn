@@ -222,9 +222,7 @@ export default function TrustPage() {
       {/* ═══ SECTION 1 — TRUST STATUS ═══════════════════════════════════════ */}
       <header className="pad-x" style={{ padding: '64px 64px 40px', borderBottom: '2px solid var(--color-divider)' }}>
         <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 0.98 }}>
-          Security controls,
-          <br />
-          stated plainly.
+          Security controls, stated plainly.
         </h1>
         <p style={{ fontSize: 18, lineHeight: 1.5, color: 'var(--color-neutral-800)', marginTop: 22, maxWidth: 760, textWrap: 'pretty' }}>
           For security teams conducting vendor assessments. Everything Kandryn holds, touches, and refuses to do —
@@ -275,9 +273,7 @@ export default function TrustPage() {
       <section id="boundaries" className="sec pad-x">
         <Kicker>Boundaries</Kicker>
         <H2>
-          What it will not do,
-          <br />
-          and why you can check.
+          What it will not do, and why you can check.
         </H2>
         <Sub>
           The controls above say what is in place. These say what Kandryn is architecturally unable to do — each one
@@ -297,9 +293,7 @@ export default function TrustPage() {
       <section id="data-handling" className="sec pad-x">
         <Kicker>Data handling</Kicker>
         <H2>
-          What Kandryn
-          <br />
-          processes on your behalf.
+          What Kandryn processes on your behalf.
         </H2>
         <div
           className="cellgrid grid-3 stack-1"
@@ -353,9 +347,7 @@ export default function TrustPage() {
       <section id="ai-and-models" className="sec pad-x">
         <Kicker>AI and models</Kicker>
         <H2>
-          Which models run.
-          <br />
-          What they see. What they never touch.
+          Which models run. What they see. What they never touch.
         </H2>
         <Sub>
           Kandryn is an AI orchestration layer, not an AI model. We use established model providers via their
@@ -424,9 +416,7 @@ export default function TrustPage() {
       <section id="access-control" className="sec pad-x">
         <Kicker>Access control</Kicker>
         <H2>
-          Who can reach what,
-          <br />
-          and how it is enforced.
+          Who can reach what, and how it is enforced.
         </H2>
         <div className="grid-3 stack-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 32, marginTop: 28 }}>
           <div>
@@ -525,9 +515,7 @@ where: and(
       <section id="audit-log" className="sec pad-x">
         <Kicker>Audit log</Kicker>
         <H2>
-          Every significant action,
-          <br />
-          recorded. Admin-only.
+          Every significant action, recorded. Admin-only.
         </H2>
         <div className="grid-2 stack-1" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 40, marginTop: 28 }}>
           <div>
@@ -584,9 +572,7 @@ where: and(
       <section id="sub-processors" className="sec pad-x">
         <Kicker>Sub-processors</Kicker>
         <H2>
-          Every third party
-          <br />
-          that touches your data.
+          Every third party that touches your data.
         </H2>
         <Sub>Kandryn does not sell data to any third party. Sub-processors are used only to deliver the product.</Sub>
         <div className="scroll-x" style={{ overflowX: 'auto', marginTop: 28 }}>
@@ -632,9 +618,7 @@ where: and(
       <section id="compliance" className="sec pad-x">
         <Kicker>Compliance status</Kicker>
         <H2>
-          Where we are.
-          <br />
-          Where we are going.
+          Where we are. Where we are going.
         </H2>
         <Sub>
           We do not claim certifications we do not have. Here is the honest status of each compliance programme.

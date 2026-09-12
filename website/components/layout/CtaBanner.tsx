@@ -27,6 +27,7 @@ export default function CtaBanner() {
         Request access
       </div>
       <h2
+        className="cta-h2"
         style={{
           marginTop: 20,
           fontSize: 62,
@@ -36,11 +37,7 @@ export default function CtaBanner() {
           maxWidth: 1000,
         }}
       >
-        Queue the work tonight.
-        <br />
-        Read the pull requests
-        <br />
-        in the morning.
+        Queue the work tonight. Read the pull requests in the morning.
       </h2>
       <div style={{ display: 'flex', gap: 14, marginTop: 40, flexWrap: 'wrap' }}>
         <Link
