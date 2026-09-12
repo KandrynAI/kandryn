@@ -26,7 +26,7 @@ export default function SiteFooter() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Logo context="footer-dark" height={24} />
           </div>
-          <p style={{ fontSize: 13, lineHeight: 1.55, marginTop: 14, maxWidth: 320, color: 'var(--color-neutral-400)' }}>
+          <p style={{ fontSize: 13, lineHeight: 1.6, marginTop: 14, maxWidth: 320, color: 'var(--color-neutral-400)' }}>
             {SITE.tagline}
           </p>
         </div>
@@ -34,7 +34,7 @@ export default function SiteFooter() {
         {/* Link columns */}
         {FOOTER_COLS.map((col) => (
           <div key={col.title}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--color-neutral-500)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--color-neutral-500)' }}>
               {col.title}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>

@@ -9,7 +9,7 @@ export default function DashView({
 }) {
   return (
     <div style={{ padding: '22px 24px 28px' }}>
-      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', paddingBottom: 16, borderBottom: '2px solid var(--color-divider)' }}>
+      <div style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em', paddingBottom: 16, borderBottom: '2px solid var(--color-divider)' }}>
         This week
       </div>
 
@@ -19,7 +19,7 @@ export default function DashView({
           const value = s.label === 'SUGGESTIONS COMMITTED' ? String(committedCount) : s.value;
           return (
             <div key={s.label} style={{ padding: '26px 24px 26px 0' }}>
-              <div style={{ fontSize: 46, fontWeight: 900, letterSpacing: '-0.03em' }}>{value}</div>
+              <div style={{ fontSize: 46, fontWeight: 700, letterSpacing: '-0.02em' }}>{value}</div>
               <div style={{ fontSize: 12, letterSpacing: '0.08em', color: 'var(--color-neutral-700)', marginTop: 6 }}>{s.label}</div>
             </div>
           );

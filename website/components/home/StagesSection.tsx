@@ -24,7 +24,7 @@ export default function StagesSection() {
           flexWrap: 'wrap',
         }}
       >
-        <h2 style={{ fontSize: 38, fontWeight: 800, letterSpacing: '-0.025em' }}>{STAGES_HEADING}</h2>
+        <h2 style={{ fontSize: 38, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>{STAGES_HEADING}</h2>
         <Link
           href={STAGES_LINK.href}
           style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-accent)' }}
@@ -63,14 +63,14 @@ export default function StagesSection() {
             >
               {s.n}
             </div>
-            <h3 style={{ marginTop: 12, fontSize: 21, fontWeight: 700, letterSpacing: '-0.01em' }}>
+            <h3 style={{ marginTop: 12, fontSize: 21, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>
               {s.title}
             </h3>
             <p
               style={{
                 marginTop: 8,
                 fontSize: 15,
-                lineHeight: 1.55,
+                lineHeight: 1.6,
                 color: 'var(--color-neutral-800)',
                 textWrap: 'pretty',
               }}

@@ -20,7 +20,7 @@ export default function ContactPage() {
       {/* LEFT */}
       <div className="pad-x" style={{ padding: 64, borderRight: '2px solid var(--color-divider)' }}>
         <div className="kicker" style={{ marginBottom: 20 }}>Request access</div>
-        <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 0.98 }}>
+        <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 700, letterSpacing: '-0.022em', lineHeight: 1.02 }}>
           Bring one project. We&apos;ll wire it up with you.
         </h1>
         <p className="lead" style={{ marginTop: 22 }}>
@@ -30,7 +30,7 @@ export default function ContactPage() {
         <div className="rows" style={{ marginTop: 36 }}>
           {FACTS.map(([lead, body]) => (
             <p key={lead} className="prose">
-              <strong style={{ fontWeight: 800, color: 'var(--color-text)' }}>{lead}.</strong> {body}
+              <strong style={{ fontWeight: 700, color: 'var(--color-text)' }}>{lead}.</strong> {body}
             </p>
           ))}
         </div>

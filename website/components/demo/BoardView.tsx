@@ -39,7 +39,7 @@ export default function BoardView({
         }}
       >
         <div>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>Payments Platform</div>
+          <div style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>Payments Platform</div>
           <div style={{ fontSize: 12, color: 'var(--color-neutral-700)', marginTop: 4 }}>
             jira · PAY · 9 items · synced 4 minutes ago
           </div>
@@ -82,7 +82,7 @@ export default function BoardView({
                   marginBottom: 12,
                 }}
               >
-                <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', color: 'var(--color-neutral-800)' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-neutral-800)' }}>
                   {col.label}
                 </span>
                 <span style={{ fontSize: 12, color: 'var(--color-neutral-600)' }}>{colItems.length}</span>
@@ -106,7 +106,7 @@ export default function BoardView({
                         <span
                           style={{
                             fontSize: 10,
-                            fontWeight: 800,
+                            fontWeight: 700,
                             letterSpacing: '0.1em',
                             padding: '2px 6px',
                             background: 'var(--color-neutral-300)',

@@ -84,7 +84,7 @@ export default function ProductPreview() {
           flexWrap: 'wrap',
         }}
       >
-        <h2 style={{ fontSize: 38, fontWeight: 800, letterSpacing: '-0.025em' }}>{PREVIEW.title}</h2>
+        <h2 style={{ fontSize: 38, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>{PREVIEW.title}</h2>
         <span style={{ fontSize: 13, color: 'var(--color-neutral-700)' }}>
           Interactive — sample project
         </span>
@@ -94,7 +94,7 @@ export default function ProductPreview() {
           marginTop: 12,
           maxWidth: 640,
           fontSize: 17,
-          lineHeight: 1.5,
+          lineHeight: 1.6,
           color: 'var(--color-neutral-800)',
           textWrap: 'pretty',
         }}

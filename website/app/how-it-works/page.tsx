@@ -44,13 +44,13 @@ export default function HowItWorksPage() {
                 borderBottom: '2px solid var(--color-divider)',
               }}
             >
-              <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.025em' }}>{phase.label}</h2>
+              <h2 style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>{phase.label}</h2>
               <p
                 style={{
                   marginTop: 8,
                   maxWidth: 680,
                   fontSize: 16,
-                  lineHeight: 1.5,
+                  lineHeight: 1.6,
                   color: 'var(--color-neutral-800)',
                   textWrap: 'pretty',
                 }}
@@ -73,7 +73,7 @@ export default function HowItWorksPage() {
                   >
                     {s.n}
                   </div>
-                  <h3 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 8, textWrap: 'balance' }}>
+                  <h3 style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em', marginTop: 8, textWrap: 'balance' }}>
                     {s.title}
                   </h3>
                   {/* The banner above scrolls away; this does not. Without it a
@@ -96,7 +96,7 @@ export default function HowItWorksPage() {
                   <div
                     style={{
                       fontSize: 11,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       letterSpacing: '0.12em',
                       color: 'var(--color-neutral-600)',
                       marginBottom: 10,
@@ -110,7 +110,7 @@ export default function HowItWorksPage() {
                         key={d}
                         style={{
                           fontSize: 13.5,
-                          lineHeight: 1.5,
+                          lineHeight: 1.6,
                           color: 'var(--color-neutral-800)',
                           borderTop: '1px solid var(--color-neutral-300)',
                           paddingTop: 7,
@@ -131,13 +131,13 @@ export default function HowItWorksPage() {
       {/* Limits. A governance buyer reads this before anything else on the
           page, and every line is checkable in the product. */}
       <section className="pad-x" style={{ padding: '64px 64px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.025em' }}>What it will not do</h2>
+        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>What it will not do</h2>
         <p
           style={{
             marginTop: 12,
             maxWidth: 640,
             fontSize: 17,
-            lineHeight: 1.5,
+            lineHeight: 1.6,
             color: 'var(--color-neutral-800)',
             textWrap: 'pretty',
           }}
@@ -164,12 +164,12 @@ export default function HowItWorksPage() {
                 padding: '24px 26px',
               }}
             >
-              <h3 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.01em' }}>{l.title}</h3>
+              <h3 style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>{l.title}</h3>
               <p
                 style={{
                   marginTop: 7,
                   fontSize: 14.5,
-                  lineHeight: 1.5,
+                  lineHeight: 1.6,
                   color: 'var(--color-neutral-800)',
                   textWrap: 'pretty',
                 }}
@@ -188,7 +188,7 @@ export default function HowItWorksPage() {
 
       {/* One action, matching the homepage. */}
       <section className="pad-x" style={{ padding: '64px 64px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.025em', maxWidth: 620, textWrap: 'balance' }}>
+        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em', maxWidth: 620, textWrap: 'balance' }}>
           Easier to watch than to read about.
         </h2>
         <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap' }}>

@@ -60,7 +60,7 @@ function Badge({ phase }: { phase: Phase }) {
     <span
       style={{
         fontSize: 10,
-        fontWeight: 800,
+        fontWeight: 700,
         lineHeight: 1,
         letterSpacing: '0.1em',
         padding: '5px 9px',
@@ -106,7 +106,7 @@ export default function RunView({
       >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 22, fontWeight: 800 }}>Run #1042</span>
+            <span style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.25 }}>Run #1042</span>
             <Badge phase={phase} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--color-neutral-700)', marginTop: 4 }}>
@@ -122,7 +122,7 @@ export default function RunView({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderBottom: '2px solid var(--color-divider)' }}>
         {INFO.map(([label, value]) => (
           <div key={label} style={{ padding: '16px 0 16px' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', color: 'var(--color-neutral-600)' }}>{label}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-neutral-600)' }}>{label}</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>{value}</div>
           </div>
         ))}
@@ -163,7 +163,7 @@ export default function RunView({
 
           {/* post-commit teaser — Veria/Aegis/Narratia run after you commit */}
           <div style={{ borderTop: '1px solid var(--color-neutral-300)', paddingTop: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', color: 'var(--color-neutral-600)', marginBottom: 10 }}>POST-COMMIT</div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-neutral-600)', marginBottom: 10 }}>POST-COMMIT</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--color-neutral-600)' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-neutral-400)', display: 'block' }} />
@@ -211,7 +211,7 @@ export default function RunView({
                   Commit
                 </button>
               </div>
-              <div style={{ padding: '12px 16px', fontSize: 13, lineHeight: 1.5, color: 'var(--color-neutral-800)', borderBottom: '1px solid var(--color-neutral-300)' }}>
+              <div style={{ padding: '12px 16px', fontSize: 13, lineHeight: 1.6, color: 'var(--color-neutral-800)', borderBottom: '1px solid var(--color-neutral-300)' }}>
                 {s.explanation}
               </div>
               {/* Synthesia score breakdown */}
@@ -245,7 +245,7 @@ export default function RunView({
             animation: 'bmrise 0.35s ease-out both',
           }}
         >
-          <div style={{ fontSize: 15, fontWeight: 800 }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>
             Committed to <code style={{ fontFamily: 'var(--font-mono)' }}>task/214</code> — pull request opened
           </div>
           <div style={{ fontSize: 13, marginTop: 6, color: 'var(--color-accent-800)' }}>
@@ -294,10 +294,10 @@ export default function RunView({
             <div style={{ marginTop: 12, background: 'var(--color-neutral-100)', border: '1px solid #c0392b', borderRadius: 4, padding: '10px 14px', animation: 'bmrise 0.3s ease-out both' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13 }}>Aegis</span>
-                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', padding: '2px 8px', borderRadius: 3, background: 'var(--color-accent-100)', color: 'var(--color-accent-800)' }}>Gate approved</span>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 8px', borderRadius: 3, background: 'var(--color-accent-100)', color: 'var(--color-accent-800)' }}>Gate approved</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 3, background: '#fbe4c4', color: '#78350f' }}>MEDIUM</span>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 3, background: '#fbe4c4', color: '#78350f' }}>MEDIUM</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-neutral-700)' }}>A09</span>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Refund amount not logged</span>
               </div>
@@ -352,7 +352,7 @@ export default function RunView({
             </span>
           </div>
           {DEMO_TESTS.map((t, i) => (
-            <div key={i} style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-neutral-200)', fontSize: 13, lineHeight: 1.5 }}>
+            <div key={i} style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-neutral-200)', fontSize: 13, lineHeight: 1.6 }}>
               <strong>Given</strong> {t.given} <strong>When</strong> {t.when} <strong>Then</strong> {t.then}
             </div>
           ))}

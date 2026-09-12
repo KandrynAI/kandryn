@@ -221,10 +221,10 @@ export default function TrustPage() {
     <>
       {/* ═══ SECTION 1 — TRUST STATUS ═══════════════════════════════════════ */}
       <header className="pad-x" style={{ padding: '64px 64px 40px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 0.98 }}>
+        <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 700, letterSpacing: '-0.022em', lineHeight: 1.02 }}>
           Security controls, stated plainly.
         </h1>
-        <p style={{ fontSize: 18, lineHeight: 1.5, color: 'var(--color-neutral-800)', marginTop: 22, maxWidth: 760, textWrap: 'pretty' }}>
+        <p style={{ fontSize: 18, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 22, maxWidth: 760, textWrap: 'pretty' }}>
           For security teams conducting vendor assessments. Everything Kandryn holds, touches, and refuses to do —
           with honest status on what is live, what is in progress, and what is not yet built.
         </p>
@@ -249,8 +249,8 @@ export default function TrustPage() {
                 }}
               >
                 <Dot tone={r.tone} />
-                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--color-text)' }}>{r.control}</div>
-                <div style={{ fontSize: 14, color: 'var(--color-neutral-800)', lineHeight: 1.45 }}>{r.status}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)' }}>{r.control}</div>
+                <div style={{ fontSize: 14, color: 'var(--color-neutral-800)', lineHeight: 1.6 }}>{r.status}</div>
                 <a href={r.anchor} style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
                   ↓ {r.link}
                 </a>
@@ -258,7 +258,7 @@ export default function TrustPage() {
             ))}
           </div>
         </div>
-        <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', marginTop: 16, lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: 'var(--color-neutral-600)', marginTop: 16, lineHeight: 1.6 }}>
           Green = live and verifiable · Amber = in progress with target date · Grey = planned. We update this table when
           status changes.
         </p>
@@ -302,16 +302,16 @@ export default function TrustPage() {
           {DATA_CARDS.map((card) => (
             <div key={card.title}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em' }}>{card.title}</div>
+                <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>{card.title}</div>
                 <SensBadge level={card.sens} />
               </div>
               <dl style={{ marginTop: 14, display: 'grid', gap: 10 }}>
                 {card.rows.map(([k, v]) => (
                   <div key={k}>
-                    <dt style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)' }}>
+                    <dt style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)' }}>
                       {k}
                     </dt>
-                    <dd style={{ margin: '3px 0 0', fontSize: 14, lineHeight: 1.5, color: 'var(--color-neutral-800)' }}>{v}</dd>
+                    <dd style={{ margin: '3px 0 0', fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)' }}>{v}</dd>
                   </div>
                 ))}
               </dl>
@@ -319,10 +319,10 @@ export default function TrustPage() {
           ))}
         </div>
         <div style={{ marginTop: 32, borderLeft: '2px solid var(--color-accent)', padding: '16px 20px', background: 'var(--color-accent-100)' }}>
-          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-accent-700)', marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-accent-700)', marginBottom: 8 }}>
             What Kandryn never processes
           </div>
-          <p style={{ fontSize: 15, lineHeight: 1.55, color: 'var(--color-text)', margin: 0, maxWidth: 820 }}>
+          <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--color-text)', margin: 0, maxWidth: 820 }}>
             Kandryn does not process end-user PII, financial records, healthcare data, production database contents,
             or any data outside the software development workflow. It has no access to your environment variables or
             your GitHub Actions secrets — those are not repository contents and no token Kandryn holds can read them.
@@ -331,10 +331,10 @@ export default function TrustPage() {
           </p>
         </div>
         <div style={{ marginTop: 20, borderLeft: '2px solid var(--color-divider)', padding: '16px 20px' }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)', marginBottom: 8 }}>
             Deletion on offboarding
           </div>
-          <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', margin: 0, maxWidth: 820 }}>
+          <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', margin: 0, maxWidth: 820 }}>
             Within 30 days of contract termination, customer data — work items, change plans, generated code, and run
             history — is deleted from Kandryn systems. Audit-log records are deleted on the same schedule unless a
             longer retention period has been contractually agreed. Selected source-code file sections are read at run
@@ -395,14 +395,14 @@ export default function TrustPage() {
             },
           ].map((blk) => (
             <div key={blk.t}>
-              <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>{blk.t}</div>
-              <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 10 }}>{blk.b}</p>
+              <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>{blk.t}</div>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 10 }}>{blk.b}</p>
             </div>
           ))}
         </div>
 
         <div style={{ marginTop: 36, borderLeft: '2px solid var(--color-accent)', padding: '18px 22px', background: 'var(--color-accent-100)' }}>
-          <p style={{ fontSize: 16, lineHeight: 1.55, color: 'var(--color-text)', margin: 0, maxWidth: 860 }}>
+          <p style={{ fontSize: 16, lineHeight: 1.6, color: 'var(--color-text)', margin: 0, maxWidth: 860 }}>
             By default, no code is committed to your repository without explicit developer action. Kandryn presents
             two competing suggestions and a ranked recommendation; the developer chooses which to commit, then clicks. An
             optional per-run auto-commit setting — off by default — commits the top-ranked suggestion automatically only
@@ -420,21 +420,21 @@ export default function TrustPage() {
         </H2>
         <div className="grid-3 stack-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 32, marginTop: 28 }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Authentication (today)</div>
-            <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 10 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Authentication (today)</div>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 10 }}>
               Email / password or OAuth via Clerk. MFA available (TOTP). MFA enforcement for the Enterprise plan: Q4 2026.
               Session management: Clerk-managed, with token expiry and refresh.
             </p>
             <div style={{ marginTop: 14 }}>
               <StatusBadge label="IN PROGRESS" tone="amber" />
-              <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 10 }}>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 10 }}>
                 SSO / SAML 2.0 — Okta, Azure AD, Google Workspace. Target: Q4 2026.
               </p>
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Authorisation</div>
-            <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 10 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Authorisation</div>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 10 }}>
               Every API endpoint requires authentication. Every database query is scoped to the authenticated user&rsquo;s
               ID. Team admins see team data; members see their own runs. No endpoint accepts a userId parameter from the
               request body — it is always derived server-side from the authenticated session.
@@ -447,7 +447,7 @@ export default function TrustPage() {
                 color: '#e6ecf5',
                 padding: '14px 16px',
                 fontSize: 12,
-                lineHeight: 1.55,
+                lineHeight: 1.6,
                 overflowX: 'auto',
               }}
             >
@@ -459,8 +459,8 @@ where: and(
             </pre>
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Staff access</div>
-            <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 10 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Staff access</div>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 10 }}>
               Two named individuals (co-founders) have Supabase database access, protected by MFA. No other staff have
               database access. There is no Kandryn admin UI for viewing customer data. Supabase infrastructure access
               logs are maintained by Supabase (SOC 2 Type II certified).
@@ -500,12 +500,12 @@ where: and(
             </tbody>
           </table>
         </div>
-        <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 20, maxWidth: 820 }}>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 20, maxWidth: 820 }}>
           The Graphify microservice clones the repository to a temporary directory, extracts the knowledge graph, and
           discards the checkout — it has no persistent storage. Kandryn stores only the resulting graph (file paths
           and symbol names), never file contents, and no code content is stored outside Supabase.
         </p>
-        <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 12, maxWidth: 820 }}>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 12, maxWidth: 820 }}>
           <strong>EU customers (future):</strong> EU data residency is on our roadmap for 2027. Customers requiring EU
           storage should contact us to discuss timeline.
         </p>
@@ -519,12 +519,12 @@ where: and(
         </H2>
         <div className="grid-2 stack-1" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 40, marginTop: 28 }}>
           <div>
-            <p style={{ fontSize: 15, lineHeight: 1.55, color: 'var(--color-neutral-800)' }}>
+            <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--color-neutral-800)' }}>
               The audit log records all of the following with timestamp, user ID, IP address, and relevant metadata:
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', columnGap: 24, rowGap: 2, marginTop: 16 }}>
               {AUDIT_EVENTS.map((e) => (
-                <div key={e} style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--color-neutral-800)', padding: '6px 0', borderBottom: '1px solid var(--color-neutral-200)' }}>
+                <div key={e} style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--color-neutral-800)', padding: '6px 0', borderBottom: '1px solid var(--color-neutral-200)' }}>
                   <span style={{ color: 'var(--color-accent)', marginRight: 8 }}>—</span>
                   {e}
                 </div>
@@ -540,12 +540,12 @@ where: and(
                 ['Filters', 'Action type, team member, date range'],
               ].map(([k, v]) => (
                 <div key={k}>
-                  <dt style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)' }}>{k}</dt>
+                  <dt style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)' }}>{k}</dt>
                   <dd style={{ margin: '2px 0 0', fontSize: 14, color: 'var(--color-neutral-800)' }}>{v}</dd>
                 </div>
               ))}
             </dl>
-            <div style={{ marginTop: 18, fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)' }}>
+            <div style={{ marginTop: 18, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-neutral-600)' }}>
               Retention by plan
             </div>
             <div style={{ marginTop: 8 }}>
@@ -560,7 +560,7 @@ where: and(
                 </div>
               ))}
             </div>
-            <p style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--color-neutral-700)', marginTop: 16 }}>
+            <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-neutral-700)', marginTop: 16 }}>
               Credential values are never logged — only key names. Audit rows are immutable. There is no delete or update
               endpoint for audit log entries.
             </p>
@@ -599,14 +599,14 @@ where: and(
             </tbody>
           </table>
         </div>
-        <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 20, maxWidth: 820 }}>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 20, maxWidth: 820 }}>
           Credentials (Jira tokens, GitHub PATs, Azure DevOps tokens) are stored in Supabase only. They are never sent to
           Anthropic, OpenAI, Resend, Railway, or any other sub-processor.
         </p>
-        <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-700)', marginTop: 12 }}>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-700)', marginTop: 12 }}>
           Last updated: August 2026. We notify customers of material sub-processor changes with 30 days&rsquo; notice.
         </p>
-        <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 12 }}>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 12 }}>
           Questions about sub-processors or to request a copy of our DPA:{' '}
           <a href="mailto:security@kandryn.com" style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
             security@kandryn.com
@@ -632,26 +632,26 @@ where: and(
           ].map((blk) => (
             <div key={blk.t}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.01em' }}>{blk.t}</div>
+                <div style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>{blk.t}</div>
                 <StatusBadge label={blk.badge[0]} tone={blk.badge[1]} />
               </div>
-              <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', marginTop: 12 }}>{blk.b}</p>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', marginTop: 12 }}>{blk.b}</p>
             </div>
           ))}
         </div>
 
         {/* Security contact */}
         <div style={{ marginTop: 40, background: 'var(--color-accent)', color: '#ffffff', padding: '28px 32px' }}>
-          <p style={{ fontSize: 16, lineHeight: 1.55, margin: 0 }}>
+          <p style={{ fontSize: 16, lineHeight: 1.6, margin: 0 }}>
             Security questions, vulnerability reports, or to request our security controls documentation:
           </p>
-          <a href="mailto:security@kandryn.com" style={{ display: 'inline-block', marginTop: 8, fontSize: 22, fontWeight: 800, color: '#ffffff' }}>
+          <a href="mailto:security@kandryn.com" style={{ display: 'inline-block', marginTop: 8, fontSize: 22, fontWeight: 600, lineHeight: 1.25, color: '#ffffff' }}>
             security@kandryn.com
           </a>
-          <p style={{ fontSize: 14, lineHeight: 1.55, marginTop: 10, color: 'var(--color-accent-200)' }}>
+          <p style={{ fontSize: 14, lineHeight: 1.6, marginTop: 10, color: 'var(--color-accent-200)' }}>
             We respond to security questions within 1 business day.
           </p>
-          <p style={{ fontSize: 13, lineHeight: 1.55, marginTop: 14, color: 'var(--color-accent-200)', maxWidth: 720 }}>
+          <p style={{ fontSize: 13, lineHeight: 1.6, marginTop: 14, color: 'var(--color-accent-200)', maxWidth: 720 }}>
             Found a vulnerability? Please disclose responsibly. We do not currently have a formal bug bounty programme,
             but we acknowledge and credit responsible disclosures.
           </p>
@@ -659,10 +659,10 @@ where: and(
 
         {/* Responsible disclosure */}
         <div style={{ marginTop: 24, borderLeft: '2px solid var(--color-divider)', padding: '16px 20px' }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-neutral-600)', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-neutral-600)', marginBottom: 8 }}>
             Responsible disclosure
           </div>
-          <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--color-neutral-800)', margin: 0, maxWidth: 760 }}>
+          <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)', margin: 0, maxWidth: 760 }}>
             To report a security vulnerability, email{' '}
             <a href="mailto:security@kandryn.com" style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
               security@kandryn.com

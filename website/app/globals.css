@@ -155,7 +155,7 @@ code, pre {
 /* ---- Tags ---- */
 .tag {
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.1em;
   padding: 3px 7px;
   display: inline-block;
@@ -171,7 +171,7 @@ code, pre {
 }
 .table thead th {
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--color-neutral-600);
@@ -195,7 +195,7 @@ code, pre {
 }
 .field label {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-neutral-700);
@@ -221,7 +221,7 @@ code, pre {
 /* ---- Shared helpers ---- */
 .kicker {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-accent-700);
@@ -552,24 +552,24 @@ code, pre {
 .band-accent { background: var(--color-accent-100); }
 
 /* ---- Type scale ---- */
-.h-display { font-size: var(--fs-display); font-weight: 800; letter-spacing: -0.025em; text-wrap: balance; }
-.h-2 { font-size: var(--fs-h2); font-weight: 800; letter-spacing: -0.02em; text-wrap: balance; }
-.h-3 { font-size: var(--fs-h3); font-weight: 800; letter-spacing: -0.01em; }
-.h-4 { font-size: var(--fs-h4); font-weight: 700; letter-spacing: -0.01em; }
+.h-display { font-size: var(--fs-display); font-weight: 600; line-height: 1.15; letter-spacing: -0.018em; text-wrap: balance; }
+.h-2 { font-size: var(--fs-h2); font-weight: 600; line-height: 1.15; letter-spacing: -0.018em; text-wrap: balance; }
+.h-3 { font-size: var(--fs-h3); font-weight: 600; line-height: 1.25; letter-spacing: -0.008em; }
+.h-4 { font-size: var(--fs-h4); font-weight: 600; line-height: 1.25; letter-spacing: -0.008em; }
 
 .lead {
   margin-top: 12px;
   max-width: 660px;
   font-size: var(--fs-lead);
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--color-neutral-800);
   text-wrap: pretty;
 }
-.prose { font-size: var(--fs-body); line-height: 1.55; color: var(--color-neutral-800); text-wrap: pretty; }
-.meta { font-size: var(--fs-sm); line-height: 1.5; color: var(--color-neutral-700); text-wrap: pretty; }
+.prose { font-size: var(--fs-body); line-height: 1.6; color: var(--color-neutral-800); text-wrap: pretty; }
+.meta { font-size: var(--fs-sm); line-height: 1.6; color: var(--color-neutral-700); text-wrap: pretty; }
 .eyebrow {
   font-size: var(--fs-xs);
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-neutral-600);
@@ -615,8 +615,9 @@ code, pre {
   padding: 22px 0;
   cursor: pointer;
   font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.008em;
   list-style: none;
 }
 .faq-q::-webkit-details-marker { display: none; }
@@ -635,3 +636,9 @@ details[open] > .faq-q::after { content: '–'; }
    points, which only held at the width they were authored for. Balanced
    wrapping lets the browser choose per viewport instead. */
 .h1-inner, .h1-home, .cta-h2 { text-wrap: balance; }
+
+/* The CTA banner heading was the one display element with no mobile size, so
+   62px survived to 360px and broke into eight lines. Inline font-size means
+   these need the same !important the h1 tiers already use. */
+@media (max-width: 820px) { .cta-h2 { font-size: 38px !important; } }
+@media (max-width: 520px) { .cta-h2 { font-size: 30px !important; } }

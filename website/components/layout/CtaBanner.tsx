@@ -31,9 +31,9 @@ export default function CtaBanner() {
         style={{
           marginTop: 20,
           fontSize: 62,
-          fontWeight: 900,
-          letterSpacing: '-0.035em',
-          lineHeight: 0.96,
+          fontWeight: 700,
+          letterSpacing: '-0.022em',
+          lineHeight: 1.02,
           maxWidth: 1000,
         }}
       >
