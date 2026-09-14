@@ -26,6 +26,7 @@ import Tasks from "@/pages/tasks";
 import TaskDetail from "@/pages/task-detail";
 import NewTask from "@/pages/new-task";
 import NotFound from "@/pages/not-found";
+import { marketingUrl } from "@/lib/marketing";
 import HistoryPage from "@/pages/HistoryPage";
 import SettingsPage from "@/pages/SettingsPage";
 import NewProject from "@/pages/new-project";
@@ -194,8 +195,10 @@ function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
               }}
             >
               Don't have an account?{" "}
-              {/* Full-page navigation to the marketing contact page. */}
-              <a href="/contact/" style={{ color: "#1a4fd6", fontWeight: 700, textDecoration: "none" }}>
+              {/* Absolute, because the marketing site is a different host —
+                  a root-relative /contact/ resolves to app.kandryn.com, hits
+                  the authenticated catch-all, and bounces back to sign-in. */}
+              <a href={marketingUrl("/contact/")} style={{ color: "#1a4fd6", fontWeight: 700, textDecoration: "none" }}>
                 Request access →
               </a>
             </p>
