@@ -198,7 +198,10 @@ export default function ProjectBoard() {
   }
 
   // Bugs live in the BUGS section of the left panel, not the board columns.
-  const all = (items ?? []).filter((it) => it.itemType !== "bug");
+  // Test cases are not backlog work either: they are generated against a
+  // committed run and read on the work item that owns them, so pushing a suite
+  // to the PLM should not bury the board under a hundred new cards.
+  const all = (items ?? []).filter((it) => it.itemType !== "bug" && it.itemType !== "test_case");
   const epics = all.filter((it) => it.itemType === "epic");
   const parentOf = new Map(all.map((it) => [it.id, it.parentId]));
   const inEpic = (it: WorkItem, epicId: number): boolean => {
