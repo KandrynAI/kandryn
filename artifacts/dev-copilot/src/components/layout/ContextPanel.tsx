@@ -124,6 +124,8 @@ export function ContextPanel() {
             if (it.status === "open") c.openBugs += 1;
             continue;
           }
+          // Excluded from the board columns, so excluded from their counts.
+          if (it.itemType === "test_case") continue;
           const col = STATUS_COL[it.status];
           if (col === "open") c.open += 1;
           else if (col === "inProgress") c.inProgress += 1;
