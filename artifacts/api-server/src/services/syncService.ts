@@ -3,6 +3,7 @@ import { db, projectsTable, tasksTable, runsTable } from "@workspace/db";
 import { getConfigs } from "./configService.js";
 import { PlmError, normalizeJiraDomain } from "./plmProjects.js";
 import { logger } from "../lib/logger.js";
+import { jiraItemType, adoItemType, type BmType } from "./plmItemType.js";
 
 /**
  * Phase 2 hierarchy sync: pulls a project's full PLM work-item tree
@@ -21,7 +22,6 @@ export interface SyncSummary {
 }
 
 type BmStatus = "open" | "in-progress" | "review" | "done";
-type BmType = "epic" | "story" | "task" | "bug";
 type BmPriority = "low" | "medium" | "high" | "critical";
 
 interface SyncedItem {
@@ -77,17 +77,6 @@ function clean(s: string): string | null {
 
 // ---- Jira -------------------------------------------------------------------
 
-const JIRA_TYPE: Record<string, BmType> = {
-  Epic: "epic",
-  Feature: "epic", // flattened into epic (decision §10.2)
-  Story: "story",
-  "User Story": "story",
-  Task: "story", // top-level Jira Task ~ story (§4.1)
-  "Sub-task": "task",
-  Subtask: "task",
-  Bug: "bug",
-};
-
 function jiraStatus(category: string | undefined): BmStatus {
   if (category === "done") return "done";
   if (category === "indeterminate") return "in-progress";
@@ -111,7 +100,9 @@ async function fetchJiraItems(
   const domain = normalizeJiraDomain(creds.domain);
   const auth = `Basic ${Buffer.from(`${creds.email}:${creds.token}`).toString("base64")}`;
   const jql = `project = "${projectKey.replace(/"/g, '\\"')}" ORDER BY updated DESC`;
-  const fields = "summary,description,issuetype,priority,parent,status,updated";
+  // labels carries the test-case marker createJiraTestCase sets. Without it a
+  // pushed test case syncs back as a Jira Task, which maps to story below.
+  const fields = "summary,description,issuetype,priority,parent,status,updated,labels";
 
   const issues: JiraIssue[] = [];
   let nextPageToken: string | undefined;
@@ -140,7 +131,7 @@ async function fetchJiraItems(
     const updated = f.updated as string | undefined;
     return {
       externalId: issue.key,
-      itemType: JIRA_TYPE[typeName] ?? "task",
+      itemType: jiraItemType(typeName, f.labels as string[] | undefined),
       title: (f.summary as string) ?? "",
       description: clean(adfToText(f.description as AdfNode)),
       acceptanceCriteria: null,
@@ -155,15 +146,6 @@ async function fetchJiraItems(
 }
 
 // ---- Azure DevOps -----------------------------------------------------------
-
-const ADO_TYPE: Record<string, BmType> = {
-  Epic: "epic",
-  Feature: "epic", // flattened (decision §10.2)
-  "User Story": "story",
-  "Product Backlog Item": "story",
-  Task: "task",
-  Bug: "bug",
-};
 
 function adoStatus(state: string | undefined): BmStatus {
   const s = (state ?? "").toLowerCase();
@@ -233,7 +215,7 @@ async function fetchAdoItems(
     const parent = f["System.Parent"];
     return {
       externalId: id,
-      itemType: ADO_TYPE[(f["System.WorkItemType"] as string) ?? ""] ?? "task",
+      itemType: adoItemType((f["System.WorkItemType"] as string) ?? ""),
       title: (f["System.Title"] as string) ?? "",
       description: clean(stripHtml(f["System.Description"] as string)),
       acceptanceCriteria: clean(stripHtml(f["Microsoft.VSTS.Common.AcceptanceCriteria"] as string)),
@@ -316,7 +298,15 @@ export async function syncProject(userId: string, projectId: number): Promise<Sy
     // Skip if the PLM hasn't changed since we last saw it.
     const priorPlm = prior.plmUpdatedAt ? new Date(prior.plmUpdatedAt).getTime() : 0;
     const nextPlm = item.plmUpdatedAt ? item.plmUpdatedAt.getTime() : 0;
-    if (nextPlm !== 0 && nextPlm === priorPlm && prior.status === item.status) {
+    // prior.itemType is compared too: a test case mis-typed as a story by an
+    // earlier sync has not changed in the PLM, so without this it would skip
+    // and keep the wrong type permanently.
+    if (
+      nextPlm !== 0 &&
+      nextPlm === priorPlm &&
+      prior.status === item.status &&
+      prior.itemType === item.itemType
+    ) {
       summary.unchanged++;
       continue;
     }
