@@ -176,7 +176,7 @@ router.post("/tasks/:taskId/suggestions", async (req, res): Promise<void> => {
     ...task,
     description: effectiveDescription ?? null,
   });
-  const suggestions = await aiOrchestrator.generateSuggestions(devCopilotTask, codeContext, stack, fileReader);
+  const { suggestions } = await aiOrchestrator.generateSuggestions(devCopilotTask, codeContext, stack, fileReader);
   const ranked = await synthesisEngine.synthesize(
     suggestions.filter((s) => s.valid),
     stack,

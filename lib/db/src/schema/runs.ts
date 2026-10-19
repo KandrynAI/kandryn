@@ -126,6 +126,13 @@ export const runsTable = pgTable(
     // Whether this run's code context came from the Graphify knowledge graph
     // (precise, low-token) rather than the keyword fallback (0011_run_graph_context.sql).
     usedGraphContext: boolean("used_graph_context").notNull().default(false),
+    /**
+     * Generation agents that threw instead of answering (0039). A run asks both
+     * models in parallel and keeps whichever reply; before this column a
+     * failure was logged and then invisible, so a run could quietly drop from
+     * two candidates to one. Null when every agent answered.
+     */
+    agentFailures: jsonb("agent_failures").$type<Array<{ agent: string; message: string }> | null>().default(null),
     // Human-readable stack this run targeted, e.g. "react · nodejs · postgresql"
     // (0013_run_stack.sql). Null for runs created before the column existed.
     stackDesc: text("stack_desc"),

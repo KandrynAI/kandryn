@@ -491,6 +491,11 @@ export default function RunDetailPage() {
     ["Stack", run.stackDesc || "Not detected"],
   ];
 
+  // A run asks both models in parallel; if one throws, the other still answers
+  // and the run looks normal while running on half the candidates. Say so —
+  // that difference is what turns one bad reply into a failed run.
+  const agentFailures = run.agentFailures ?? [];
+
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {/* Back link */}
@@ -597,6 +602,33 @@ export default function RunDetailPage() {
         {run.error && (
           <div style={{ marginBottom: 16, border: "1px solid var(--c-red)", background: "var(--c-red-bg)", color: "var(--c-red)", padding: "12px 14px", borderRadius: 4, fontSize: "var(--fs-base)" }}>
             {run.error}
+          </div>
+        )}
+
+        {agentFailures.length > 0 && (
+          <div
+            style={{
+              marginBottom: 16,
+              border: "1px solid var(--c-amber)",
+              background: "var(--c-amber-bg)",
+              padding: "10px 14px",
+              borderRadius: 4,
+              fontSize: "var(--fs-sm)",
+            }}
+          >
+            <strong style={{ fontWeight: 600 }}>
+              {agentFailures.length === 1 ? "One agent" : `${agentFailures.length} agents`} produced nothing on this run
+            </strong>
+            <p style={{ margin: "4px 0 0", color: "var(--c-ink-2)" }}>
+              This run was ranked on fewer candidates than usual. Re-running may give a better result.
+            </p>
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {agentFailures.map((f) => (
+                <li key={f.agent} style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-3)" }}>
+                  <span style={{ fontFamily: "var(--mono)" }}>{f.agent}</span> — {f.message}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
