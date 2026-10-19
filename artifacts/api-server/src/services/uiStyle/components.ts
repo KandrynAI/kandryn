@@ -72,7 +72,7 @@ export function primaryRoot(tree: string[], roots: string[]): string | null {
 /** Directory names that mark a shared primitive rather than a feature component. */
 const PRIMITIVE_DIRS = ["components/ui", "components/common", "components/shared", "shared/ui", "ui"];
 
-function isPrimitive(path: string): boolean {
+export function isPrimitive(path: string): boolean {
   return PRIMITIVE_DIRS.some((d) => path.includes(`/${d}/`) || path.startsWith(`${d}/`));
 }
 

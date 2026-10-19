@@ -12,6 +12,12 @@ type Task = {
    * prompts carry byte-identical background.
    */
   contextPack?: string | null;
+  /**
+   * The project's UI style guide (0042), or null/absent. Carried as its own
+   * field rather than folded into contextPack so that buildPlannerPrompt —
+   * which takes only the context pack — cannot receive it by accident.
+   */
+  styleGuide?: string | null;
 };
 
 // Shared output contract for both the single-file (Phase 1) and plan-aware
@@ -72,7 +78,8 @@ Respond ONLY with the JSON object, no additional text.`;
 
 function taskSection(task: Task): string {
   const context = task.contextPack?.trim() ? `${task.contextPack.trim()}\n\n` : "";
-  return `${context}## Task
+  const style = task.styleGuide?.trim() ? `${task.styleGuide.trim()}\n\n` : "";
+  return `${context}${style}## Task
 **Title:** ${task.title}
 ${task.description ? `**Description:** ${task.description}` : ""}
 ${task.acceptanceCriteria ? `**Acceptance Criteria:**\n${task.acceptanceCriteria}` : ""}`;

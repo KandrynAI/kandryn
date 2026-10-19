@@ -40,6 +40,9 @@ import { confidenceReason } from "./confidence.js";
 import { recordOverrideOutcome } from "./sequenceGate.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
 import { buildRunContextPack } from "./contextService.js";
+import type { ContextManifest } from "./contextPack.js";
+import { buildStyleGuideBlock, decideInjection, mergeUiStyleManifest } from "./uiStyle/styleGuide.js";
+import { loadProfileForRun, markStaleIfStyling } from "./uiStyleService.js";
 import type { StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
 
@@ -127,6 +130,73 @@ async function attachCoherence(
 }
 
 /**
+ * The UI style guide for this run's generation prompt, or null (0042, PR-B).
+ *
+ * Compiled HERE rather than beside the part-1 context pack, because the
+ * decision needs the change plan: the block only earns its 700 tokens when the
+ * change actually touches interface files. That is also why the planner never
+ * sees it — the plan is an input to this decision, not an output of it.
+ *
+ * Best-effort throughout. A profile that cannot be read, or a block that
+ * cannot be built, leaves the run with exactly the prompt it had before the
+ * feature existed.
+ */
+async function resolveStyleGuide(params: {
+  runId: number;
+  projectId: number;
+  userId: string;
+  /** Paths the plan will touch, or null when planning produced no plan. */
+  plannedPaths: string[] | null;
+  stackFrontend: string | null | undefined;
+  workItemText: string;
+  baseManifest: ContextManifest | null;
+}): Promise<string | null> {
+  const { runId, projectId, userId, plannedPaths, stackFrontend, workItemText, baseManifest } = params;
+  try {
+    const profile = await loadProfileForRun(projectId, userId);
+    const decision = decideInjection({ profile, plannedPaths, stackFrontend, workItemText });
+    if (!decision.inject || !profile) {
+      logger.info({ runId, reason: decision.reason }, "UI style guide not injected");
+      return null;
+    }
+
+    const block = buildStyleGuideBlock({
+      framework: profile.framework,
+      tokens: profile.tokens,
+      components: profile.components,
+      conventions: profile.conventions,
+      exemplars: profile.exemplars,
+    });
+    if (!block.text) {
+      logger.info({ runId, reason: "empty_profile" }, "UI style guide not injected");
+      return null;
+    }
+
+    await db
+      .update(runsTable)
+      .set({
+        contextManifest: mergeUiStyleManifest(baseManifest, {
+          profileId: profile.id,
+          revision: profile.revision,
+          injected: true,
+          approxTokens: block.approxTokens,
+        }),
+      })
+      .where(eq(runsTable.id, runId))
+      .catch((err) => logger.warn({ runId, err }, "Recording the UI style manifest failed"));
+
+    logger.info(
+      { runId, reason: decision.reason, revision: profile.revision, approxTokens: block.approxTokens, stale: profile.stale },
+      "UI style guide injected",
+    );
+    return block.text;
+  } catch (err) {
+    logger.warn({ runId, err }, "UI style guide could not be built; generating without it");
+    return null;
+  }
+}
+
+/**
  * Run both agents (optionally against a change plan), rank the valid ones, and
  * persist every suggestion (invalid ones too, so the UI can show why) with its
  * change set. Shared by the initial run and the plan-revision regeneration.
@@ -142,6 +212,7 @@ async function generateAndPersistSuggestions(params: {
   fileReader?: FileReader;
   planInput?: { plan: ChangePlan; context: string };
   contextPack?: string | null;
+  styleGuide?: string | null;
   coherenceGit?: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader };
 }): Promise<{
   raw: CodeSuggestion[];
@@ -150,7 +221,8 @@ async function generateAndPersistSuggestions(params: {
   inserted: (typeof suggestionsTable.$inferSelect)[];
   failures: AgentFailure[];
 }> {
-  const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput, contextPack, coherenceGit } = params;
+  const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput, contextPack, styleGuide, coherenceGit } =
+    params;
 
   const { suggestions: raw, failures } = await orchestrator.generateSuggestions(
     devTask,
@@ -159,6 +231,7 @@ async function generateAndPersistSuggestions(params: {
     fileReader,
     planInput,
     contextPack,
+    styleGuide,
   );
 
   // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
@@ -480,6 +553,18 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       return;
     }
 
+    // UI style guide (0042): decided AFTER planning, because the plan's file
+    // list is what says whether this change touches the interface at all.
+    const styleGuide = await resolveStyleGuide({
+      runId,
+      projectId: run.projectId,
+      userId,
+      plannedPaths: planInput ? planInput.plan.files.map((f) => f.path) : null,
+      stackFrontend: stack.frontend,
+      workItemText: [workItem.title, effectiveDescription, devTask.acceptanceCriteria.join(" ")].filter(Boolean).join(" "),
+      baseManifest: contextPack.manifest,
+    });
+
     const { raw, ranked, validRaw, inserted, failures } = await generateAndPersistSuggestions({
       runId,
       orchestrator,
@@ -490,6 +575,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       fileReader,
       planInput,
       contextPack: contextPack.text || null,
+      styleGuide,
       coherenceGit,
     });
 
@@ -563,6 +649,10 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         // The repo changed — schedule a Graphify re-index so future runs use a
         // fresh graph (Phase 3). Fire-and-forget; no-op if unconfigured.
         triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
+        // A committed styling change means the stored UI style profile no
+        // longer describes the repository (0042). Fire-and-forget, and never a
+        // re-extraction: the tab offers Re-extract and a human decides.
+        markStaleIfStyling(run.projectId, resolved.files.map((f) => f.path));
       }
     }
 
@@ -788,6 +878,7 @@ export async function commitFromSuggestion(
     .where(eq(runsTable.id, runId));
   // The repo changed — schedule a Graphify re-index (Phase 3). Fire-and-forget.
   triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
+  markStaleIfStyling(run.projectId, resolved.files.map((f) => f.path));
   recordOverrideOutcome(runId, "committed", { autoCommit: false });
   return { commitHash, prUrl };
 }
@@ -843,6 +934,18 @@ async function regenerateFromPlan(
     const orchestrator = new AIOrchestrator({ anthropicApiKey: creds.ANTHROPIC_API_KEY, openaiApiKey: creds.OPENAI_API_KEY });
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
 
+    // Same reasoning as the first generation: the edited plan decides whether
+    // this is interface work.
+    const styleGuide = await resolveStyleGuide({
+      runId,
+      projectId: run.projectId,
+      userId: run.userId,
+      plannedPaths: plan.files.map((f) => f.path),
+      stackFrontend: stack.frontend,
+      workItemText: [workItem.title, effectiveDescription, devTask.acceptanceCriteria.join(" ")].filter(Boolean).join(" "),
+      baseManifest: contextPack.manifest,
+    });
+
     const { raw, validRaw } = await generateAndPersistSuggestions({
       runId,
       orchestrator,
@@ -853,6 +956,7 @@ async function regenerateFromPlan(
       fileReader,
       planInput: { plan, context: assembled.context },
       contextPack: contextPack.text || null,
+      styleGuide,
       coherenceGit: { fetchFilePaths: () => git.fetchFilePaths(), fetchFileWithSha: (p) => git.fetchFileWithSha(p) },
     });
 

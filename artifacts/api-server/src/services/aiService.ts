@@ -370,12 +370,14 @@ export class AIOrchestrator {
     fileReader?: FileReader,
     planInput?: { plan: ChangePlan; context: string },
     contextPack?: string | null,
+    styleGuide?: string | null,
   ): Promise<{ suggestions: CodeSuggestion[]; failures: AgentFailure[] }> {
     const taskFields = {
       title: task.title,
       description: task.description,
       acceptanceCriteria: task.acceptanceCriteria.join("\n"),
       contextPack,
+      styleGuide,
     };
     // With a ready plan both agents implement the SAME plan (§2.1) — they compete
     // on implementation quality, not file selection. Without one, fall back to the
@@ -412,7 +414,7 @@ export class AIOrchestrator {
         // content; edits are applied against current source. With a plan, files
         // outside it are flagged as deviations (§2.4).
         const { files, valid } = await resolveFileOps(output.files, fileReader, planPaths, (path, content, failedSearch) =>
-          this.repairHunks(agent, path, content, failedSearch),
+          this.repairHunks(agent, path, content, failedSearch, styleGuide),
         );
         const primaryPath = files[0]?.filePath ?? "";
         // Record the exact model that generated this suggestion. Real agents map
@@ -475,8 +477,11 @@ export class AIOrchestrator {
     path: string,
     content: string,
     failedSearch: string,
+    styleGuide?: string | null,
   ): Promise<Hunk[] | null> {
+    const style = styleGuide?.trim() ? `${styleGuide.trim()}\n\n` : "";
     const instruction =
+      style +
       `An edit to ${path} could not be applied. This search block was not found in the file:\n\n` +
       `${failedSearch}\n\n` +
       `The file's current contents follow between the markers. Re-express the same intended change as ` +
