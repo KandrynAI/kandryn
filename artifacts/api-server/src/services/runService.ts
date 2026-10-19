@@ -37,6 +37,7 @@ import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { getConfigs } from "./configService.js";
 import { sendRunCompleted, sendRunFailed, sendRunParked } from "./emailService.js";
 import { confidenceReason } from "./confidence.js";
+import { recordOverrideOutcome } from "./sequenceGate.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
 import type { StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
@@ -520,6 +521,10 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       .set({ status: "succeeded", finishedAt: new Date(), prUrl, commitHash, committedSuggestionId, usedGraphContext })
       .where(eq(runsTable.id, runId));
 
+    // If this run was authorised past a run-order warning, record how it went.
+    // A no-op for the overwhelming majority of runs, which nobody overrode.
+    if (committedSuggestionId != null) recordOverrideOutcome(runId, "committed", { autoCommit: true });
+
     if (run.trigger === "scheduled") {
       const email = await primaryEmail(userId);
       if (email) {
@@ -542,6 +547,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     const msg = `${base}${cause}`.slice(0, 1000);
     logger.error({ runId, err }, "Run failed");
     await db.update(runsTable).set({ status: "failed", finishedAt: new Date(), error: msg }).where(eq(runsTable.id, runId));
+    recordOverrideOutcome(runId, "failed");
     if (run.trigger === "scheduled") {
       const [wi] = await db.select({ title: tasksTable.title }).from(tasksTable).where(eq(tasksTable.id, run.workItemId));
       const email = await primaryEmail(run.userId);
@@ -732,6 +738,7 @@ export async function commitFromSuggestion(
     .where(eq(runsTable.id, runId));
   // The repo changed — schedule a Graphify re-index (Phase 3). Fire-and-forget.
   triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
+  recordOverrideOutcome(runId, "committed", { autoCommit: false });
   return { commitHash, prUrl };
 }
 

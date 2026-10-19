@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { sql, eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
+import { holdIfOrderChanged } from "../services/sequenceGate.js";
 import { listScansAwaitingCollection, collectBaselineScan } from "../services/baselineScanService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
 import { backfillEncryption } from "../services/configService.js";
@@ -87,7 +88,16 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
 
   // Execute claimed runs sequentially — each executeRun never throws (it records
   // failure on the row), so one bad run can't abort the batch.
+  //
+  // The run-order re-check happens here rather than at scheduling time: the gap
+  // between the two is exactly where a new blocker appears, and a run nobody is
+  // watching should not start into an order its owner never agreed to (0038).
+  let held = 0;
   for (const id of ids) {
+    if (await holdIfOrderChanged(id)) {
+      held++;
+      continue;
+    }
     await executeRun(id);
   }
 
@@ -129,7 +139,8 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
 
   res.json({
     swept: sweptCount,
-    dispatched: ids.length,
+    dispatched: ids.length - held,
+    held,
     baselineSwept: sweptScanCount,
     baselinePending: pending.length,
     baselineCollected: collected,

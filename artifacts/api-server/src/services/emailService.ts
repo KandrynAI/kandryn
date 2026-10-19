@@ -261,6 +261,32 @@ export async function sendRunParked(
   await sendViaResend({ to: [to], subject: `Run needs review: ${d.itemTitle}`, text });
 }
 
+/**
+ * A scheduled run was held because its run-order check found something the
+ * scheduling user never saw. Unlike a parked run there is nothing to approve
+ * in place: the blocker has to be dealt with, or the run started again.
+ */
+export async function sendRunHeld(
+  to: string,
+  d: { itemTitle: string; itemKey?: string | null; runId: number; newFindings: string[] },
+): Promise<void> {
+  const text = [
+    "Your scheduled Kandryn run was held before it started.",
+    "",
+    `Work item: ${d.itemKey ? `${d.itemKey} — ` : ""}${d.itemTitle}`,
+    "",
+    "Since you scheduled it, the run order changed. These are new:",
+    ...d.newFindings.map((f) => `  • ${f}`),
+    "",
+    "No code was generated and nothing was committed. Review the run, clear the",
+    "blocker or start it again once the order is right:",
+    `${APP_BASE}/runs/${d.runId}`,
+    "",
+    "— kandryn.com",
+  ].join("\n");
+  await sendViaResend({ to: [to], subject: `Run held: ${d.itemTitle}`, text });
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

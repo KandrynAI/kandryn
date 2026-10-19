@@ -76,7 +76,24 @@ const itemLabel = (t: TaskRow): string => t.externalId ?? `#${t.id}`;
  * suggestion is produced against the repository's DEFAULT BRANCH. Anything not
  * merged there is invisible to the run, however finished it looks on a board.
  */
-export async function analyzeWorkItem(workItemId: number, actor: SequenceActor): Promise<SequenceCheck> {
+export interface ComputedCheck {
+  item: TaskRow;
+  project: typeof projectsTable.$inferSelect;
+  policy: SequencePolicy;
+  canOverride: boolean;
+  findings: SequenceFinding[];
+  suggestedFirst: SequenceCheck["suggestedFirst"];
+}
+
+/**
+ * Run the analysis WITHOUT writing a snapshot.
+ *
+ * Split out because the run endpoint recomputes the check on every request,
+ * and a run that comes back clear must not leave a row behind — otherwise the
+ * snapshot table grows by one for every ordinary run on a healthy board. The
+ * caller persists only when there is something a human will have to answer for.
+ */
+export async function computeCheck(workItemId: number, actor: SequenceActor): Promise<ComputedCheck> {
   const [item] = await db
     .select()
     .from(tasksTable)
@@ -95,7 +112,7 @@ export async function analyzeWorkItem(workItemId: number, actor: SequenceActor):
   const canOverride = policy === "warn" || isAdmin;
 
   if (policy === "off") {
-    return persistCheck({ item, project, policy, canOverride, findings: [], suggestedFirst: [], actor });
+    return { item, project, policy, canOverride, findings: [], suggestedFirst: [] };
   }
 
   const siblings = await db
@@ -221,7 +238,13 @@ export async function analyzeWorkItem(workItemId: number, actor: SequenceActor):
     };
   });
 
-  return persistCheck({ item, project, policy, canOverride, findings, suggestedFirst, actor });
+  return { item, project, policy, canOverride, findings, suggestedFirst };
+}
+
+/** Analyse and store the snapshot. What the explicit check endpoint calls, and
+ *  what the UI needs because the impact request is keyed on the stored row. */
+export async function analyzeWorkItem(workItemId: number, actor: SequenceActor): Promise<SequenceCheck> {
+  return persistCheck(await computeCheck(workItemId, actor), actor);
 }
 
 // ---------------------------------------------------------------------------
@@ -440,16 +463,8 @@ export async function resolvePolicy(teamId: number | null): Promise<SequencePoli
   return team?.policy ?? DEFAULT_SEQUENCE_POLICY;
 }
 
-async function persistCheck(args: {
-  item: TaskRow;
-  project: typeof projectsTable.$inferSelect;
-  policy: SequencePolicy;
-  canOverride: boolean;
-  findings: SequenceFinding[];
-  suggestedFirst: SequenceCheck["suggestedFirst"];
-  actor: SequenceActor;
-}): Promise<SequenceCheck> {
-  const { item, project, policy, canOverride, findings, suggestedFirst, actor } = args;
+export async function persistCheck(computed: ComputedCheck, actor: SequenceActor): Promise<SequenceCheck> {
+  const { item, project, policy, canOverride, findings, suggestedFirst } = computed;
   const verdict = verdictFrom(findings);
   const fingerprint = computeFingerprint(findings.map((f) => f.id));
   const expiresAt = new Date(Date.now() + SEQUENCE_CHECK_TTL_MINUTES * 60 * 1000);

@@ -12,6 +12,11 @@ export type RunStatus =
   // project threshold and awaits a human decision before generation. A distinct
   // status (not `running`) so the dispatcher's stuck-run sweep never reaps it.
   | "awaiting_review"
+  // Sequence Guard (0038): a scheduled run whose order check turned up a
+  // warning the scheduling user never acknowledged. Like awaiting_review it is
+  // a distinct status, not `running`, so the dispatcher's stuck-run sweep
+  // cannot reap something that is deliberately waiting for a human.
+  | "held"
   | "succeeded"
   | "failed"
   | "canceled";

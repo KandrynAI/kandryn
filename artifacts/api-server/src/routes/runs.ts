@@ -26,6 +26,9 @@ import { runNarratia } from "../services/narratiaService.js";
 import { pushAsMarkdown, pushToConfluence, pushToNotion } from "../services/narratiaPushService.js";
 import type { RunbookTarget } from "../../../../shared/types/narratiaResult.js";
 import * as audit from "../services/auditService.js";
+import { evaluateGate, recordOverrideOutcome, type SequenceBlock } from "../services/sequenceGate.js";
+import { sequenceOverridesTable } from "@workspace/db";
+import { OVERRIDE_REASON_CATEGORIES } from "../../../../shared/types/sequence.js";
 
 const router: IRouter = Router();
 
@@ -45,6 +48,19 @@ const CreateRunBody = z.object({
   // the other contexts are set server-side only.
   parentRunId: z.coerce.number().int().positive().optional(),
   triggerContext: z.enum(["remediation"]).optional(),
+  // Sequence Guard (0038). Present only when the user has been shown the
+  // run-order dialog and chose to go ahead regardless. Everything in it is
+  // re-verified server-side; none of it is taken on trust.
+  sequence: z
+    .object({
+      checkId: z.coerce.number().int().positive(),
+      decision: z.literal("override"),
+      reasonCategory: z.enum(OVERRIDE_REASON_CATEGORIES),
+      reasonText: z.string().max(1000).optional(),
+      acknowledgedFindingIds: z.array(z.string().max(32)).max(50),
+      acknowledgedImpact: z.boolean(),
+    })
+    .optional(),
 });
 
 const CommitRunBody = z.object({
@@ -59,7 +75,7 @@ const ListRunsQuery = z.object({
   projectId: z.coerce.number().int().positive().optional(),
   workItemId: z.coerce.number().int().positive().optional(),
   status: z
-    .enum(["scheduled", "queued", "running", "awaiting_review", "succeeded", "failed", "canceled"])
+    .enum(["scheduled", "queued", "running", "awaiting_review", "held", "succeeded", "failed", "canceled"])
     .optional(),
   // Cap aligned with the endpoint's own default (200) for project-scoped
   // listing — capping an explicit limit lower than the default made a valid
@@ -122,9 +138,10 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
     }
   }
 
-  // --- Scheduled path -------------------------------------------------------
+  // --- Schedule validation (before the gate, so a bad time fails fast) ------
+  let when: Date | null = null;
   if (scheduledAt) {
-    const when = new Date(scheduledAt);
+    when = new Date(scheduledAt);
     const now = Date.now();
     if (when.getTime() <= now) {
       res.status(422).json({ error: "scheduledAt must be in the future." });
@@ -143,16 +160,44 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
       res.status(429).json({ error: `You already have ${MAX_PENDING_SCHEDULED} pending runs. Wait for some to finish.` });
       return;
     }
+  }
 
-    const [run] = await db
+  // --- Run-order gate (Sequence Guard, 0038) --------------------------------
+  // An Aegis remediation is exempt: it exists to fix something already on the
+  // default branch, so making it wait behind the ordinary queue would leave a
+  // live security finding unfixed for the sake of tidiness.
+  const sequenceExempt = triggerContext === "remediation";
+  const gate = sequenceExempt
+    ? ({ outcome: "proceed" } as const)
+    : await evaluateGate({
+        workItemId: workItem.id,
+        actor: { userId: req.userId, teamId: req.teamId ?? null, teamRole: req.teamRole ?? null },
+        sequence: parsed.data.sequence as SequenceBlock | undefined,
+        scheduledAt: when,
+        ipAddress: audit.getIp(req),
+        userAgent: req.headers["user-agent"],
+      });
+
+  if (gate.outcome === "reject") {
+    res.status(gate.status).json({ error: gate.message, code: gate.code, check: gate.check });
+    return;
+  }
+
+  const scheduled = when !== null;
+
+  // The run and the decision that authorises it are written together. The
+  // decision is a record, not a log: if it cannot be stored, the run it would
+  // have authorised must not start.
+  const { run, overrideId } = await db.transaction(async (tx) => {
+    const [created] = await tx
       .insert(runsTable)
       .values({
         userId: req.userId,
-        projectId: workItem.projectId,
+        projectId: workItem.projectId!,
         workItemId: workItem.id,
         repositoryId: runRepo.id,
-        status: "scheduled",
-        trigger: "scheduled",
+        status: scheduled ? "scheduled" : "queued",
+        trigger: scheduled ? "scheduled" : "manual",
         refinePrompt: refinePrompt ?? null,
         autoCommit,
         scheduledAt: when,
@@ -161,60 +206,74 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
         triggerContext: triggerContext ?? null,
       })
       .returning();
-    req.log.info({ runId: run.id, workItemId: workItem.id, scheduledAt }, "Run scheduled");
-    audit.log({
-      userId: req.userId,
-      teamId: req.teamId ?? null,
-      action: "run.scheduled",
-      entityType: "run",
-      entityId: run.id,
-      metadata: {
+
+    if (gate.outcome !== "override") return { run: created, overrideId: null as number | null };
+
+    // scheduledAt is held on the draft as an ISO string because that is the
+    // form the record hash covers; the column wants a Date, so it is supplied
+    // separately rather than spread.
+    const { scheduledAt: _hashedScheduledAt, ...draft } = gate.override;
+    const [ov] = await tx
+      .insert(sequenceOverridesTable)
+      .values({
+        ...draft,
         workItemId: workItem.id,
-        trigger: "manual",
-        scheduledAt: when.toISOString(),
-        hasRefinePrompt: Boolean(refinePrompt),
-      },
-      ipAddress: audit.getIp(req),
-      userAgent: req.headers["user-agent"],
-    });
-    res.status(202).json(run);
-    return;
-  }
+        projectId: workItem.projectId,
+        runId: created.id,
+        checkId: gate.check.checkId,
+        scheduledAt: when,
+      })
+      .returning({ id: sequenceOverridesTable.id });
+    return { run: created, overrideId: ov.id };
+  });
 
-  // --- Inline path ----------------------------------------------------------
-  const [run] = await db
-    .insert(runsTable)
-    .values({
-      userId: req.userId,
-      projectId: workItem.projectId,
-      workItemId: workItem.id,
-      repositoryId: runRepo.id,
-      status: "queued",
-      trigger: "manual",
-      refinePrompt: refinePrompt ?? null,
-      autoCommit,
-      runByUserId: req.userId,
-      parentRunId: parentRunId ?? null,
-      triggerContext: triggerContext ?? null,
-    })
-    .returning();
-
-  req.log.info({ runId: run.id, workItemId: workItem.id, autoCommit }, "Run started inline");
+  req.log.info(
+    { runId: run.id, workItemId: workItem.id, scheduled, overrideId },
+    scheduled ? "Run scheduled" : "Run started inline",
+  );
   audit.log({
     userId: req.userId,
     teamId: req.teamId ?? null,
-    action: "run.triggered",
+    action: scheduled ? "run.scheduled" : "run.triggered",
     entityType: "run",
     entityId: run.id,
     metadata: {
       workItemId: workItem.id,
       trigger: "manual",
-      scheduledAt: null,
+      scheduledAt: when?.toISOString() ?? null,
       hasRefinePrompt: Boolean(refinePrompt),
+      ...(sequenceExempt ? { sequenceExempt: "aegis_remediation" } : {}),
     },
     ipAddress: audit.getIp(req),
     userAgent: req.headers["user-agent"],
   });
+
+  if (gate.outcome === "override" && overrideId != null) {
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "sequence.override_confirmed",
+      entityType: "run",
+      entityId: run.id,
+      metadata: {
+        overrideId,
+        runId: run.id,
+        workItemId: workItem.id,
+        findingIds: gate.check.findings.map((f) => f.id),
+        verdict: gate.check.verdict,
+        reasonCategory: gate.override.reasonCategory,
+        impactSource: gate.impact.source,
+      },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+  }
+
+  if (scheduled) {
+    res.status(202).json(run);
+    return;
+  }
+
   await executeRun(run.id);
 
   const [finished] = await db.select().from(runsTable).where(eq(runsTable.id, run.id));
@@ -488,6 +547,7 @@ router.post("/runs/:id/cancel", async (req, res): Promise<void> => {
     return;
   }
   req.log.info({ runId: run.id }, "Run canceled");
+  recordOverrideOutcome(run.id, "canceled");
   audit.log({
     userId: req.userId,
     teamId: req.teamId ?? null,
