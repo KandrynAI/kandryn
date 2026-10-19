@@ -320,10 +320,11 @@ where invariants actually live; then high-degree graph nodes; then
 README/docs, and optionally Confluence/Notion — credentials already exist for
 runbook *push*, so reading them as a *source* is free.
 
-Storage: `0038_domain_context.sql` + Drizzle. `domain_contexts` (scope, status,
-revision, model, token cost) and `domain_rules` (statement, **evidence as
-file:line or PLM key**, confidence, source, status proposed/confirmed/rejected,
-superseded), plus glossary, entities and workflows.
+Storage: `0039_domain_context.sql` + Drizzle (0038 went to Sequence Guard).
+`domain_contexts` (scope, status, revision, model, token cost) and
+`domain_rules` (statement, **evidence as file:line or PLM key**, confidence,
+source, status proposed/confirmed/rejected, superseded), plus glossary,
+entities and workflows.
 
 The risk that drives the design: an extracted rule is an LLM inference. Stored
 as fact and injected into every prompt, one wrong rule silently poisons every

@@ -2,6 +2,7 @@ import { pgTable, serial, text, integer, timestamp, index, unique } from "drizzl
 
 export type TeamPlan = "free" | "pro" | "max" | "enterprise";
 export type TeamRole = "admin" | "member";
+export type SequencePolicy = "off" | "warn" | "admin_override_only";
 
 export const teamsTable = pgTable(
   "teams",
@@ -15,6 +16,10 @@ export const teamsTable = pgTable(
     // fall back to the plan default (AUDIT_RETENTION_DAYS). Admin-configurable;
     // supports multi-year retention for regulated customers.
     auditRetentionDays: integer("audit_retention_days"),
+    // Run-order policy (0038). Null = the application default, 'warn'. Nullable
+    // rather than defaulted so a user with no team row gets the same default
+    // through one code path, matching auditRetentionDays above.
+    sequencePolicy: text("sequence_policy").$type<SequencePolicy | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("teams_owner_idx").on(t.ownerUserId)],

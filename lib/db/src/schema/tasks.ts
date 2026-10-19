@@ -54,6 +54,10 @@ export const tasksTable = pgTable(
     plmUpdatedAt: timestamp("plm_updated_at", { withTimezone: true }),
     // Raw PLM status string for display fidelity (the mapped `status` drives logic).
     plmStatus: text("plm_status"),
+    // Sprint/backlog rank from the tracker, when it returns one (0038). Feeds
+    // only the advisory 'out_of_rank' caution; null wherever the tracker gives
+    // nothing, and the check skips that finding entirely when rank is absent.
+    plmRank: integer("plm_rank"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
