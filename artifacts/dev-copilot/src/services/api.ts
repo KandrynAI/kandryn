@@ -368,6 +368,8 @@ export interface Run {
   approvedAt?: string | null;
   usedGraphContext?: boolean;
   stackDesc?: string | null;
+  /** Agents that threw instead of answering (0039). Absent when all replied. */
+  agentFailures?: Array<{ agent: string; message: string }> | null;
   review?: ReviewResult | null;
   reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
   securityScan?: AegisScanResult | null;

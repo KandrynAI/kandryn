@@ -5,7 +5,7 @@ import { buildPrompt, buildPlanPrompt } from "../stack/prompts.js";
 import { describeStack } from "./stackPromptBuilder.js";
 import { logger } from "../lib/logger.js";
 import { statsFor, countLines, renderChangeSet } from "./suggestionFilesUtil.js";
-import { applyHunks, applyErrorMessage } from "./patchService.js";
+import { applyHunks, applyErrorMessage, type Hunk } from "./patchService.js";
 import { computeFileDiff } from "./diffService.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import type { CodeSuggestion, SuggestionFile } from "../../../../shared/types/codeSuggestion.js";
@@ -92,6 +92,26 @@ const FileOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("delete"), path: z.string().min(1), deviationReason: z.string().optional() }),
 ]);
 
+/**
+ * The output contract, in words.
+ *
+ * Shared by both providers. It previously existed only in the OpenAI call's
+ * system message, so Claude was asked for the same JSON with none of the same
+ * instruction — an asymmetry that showed up as Claude dropping out of runs
+ * with a schema-parse failure while OpenAI answered fine.
+ */
+const OUTPUT_CONTRACT =
+  "You are an expert software engineer. Respond with a single valid JSON object " +
+  'matching: { "explanation": string, "files": FileOp[] } where each FileOp is ' +
+  'one of { "op": "create", "path": string, "content": string }, ' +
+  '{ "op": "edit", "path": string, "hunks": [{ "search": string, "replace": string }] }, ' +
+  'or { "op": "delete", "path": string }. Follow the operation and hunk rules in the user message exactly.';
+
+/** A corrected set of hunks for one file, after a search block failed to match. */
+const RepairSchema = z.object({
+  hunks: z.array(z.object({ search: z.string().min(1), replace: z.string() })).min(1),
+});
+
 const ModelOutputSchema = z.object({
   explanation: z.string().default(""),
   files: z.array(FileOpSchema).min(1),
@@ -99,6 +119,12 @@ const ModelOutputSchema = z.object({
 
 type FileOp = z.infer<typeof FileOpSchema>;
 type ModelOutput = z.infer<typeof ModelOutputSchema>;
+
+/** An agent that threw instead of answering. Persisted on the run (0039). */
+export interface AgentFailure {
+  agent: string;
+  message: string;
+}
 
 // ---------------------------------------------------------------------------
 // Credentials type
@@ -162,10 +188,23 @@ function mockCopilot(stack: StackProfile): ModelOutput {
  * the source SHA for staleness. A suggestion is invalid if any file fails to
  * apply — invalid suggestions never reach Synthesia.
  */
-async function resolveFileOps(
+/**
+ * One corrective attempt for an edit whose search block did not match: given
+ * the path, the real content and the text that was not found, return hunks
+ * that do match, or null to give up.
+ */
+export type HunkRepair = (path: string, content: string, failedSearch: string) => Promise<Hunk[] | null>;
+
+/**
+ * Exported for the repair tests: this module imports no database, and the
+ * retry is the one piece of generation whose behaviour is worth pinning
+ * without a model in the loop.
+ */
+export async function resolveFileOps(
   ops: FileOp[],
   reader?: FileReader,
   planPaths?: Set<string>,
+  repair?: HunkRepair,
 ): Promise<{ files: SuggestionFile[]; valid: boolean }> {
   const files: SuggestionFile[] = [];
   let valid = true;
@@ -239,7 +278,27 @@ async function resolveFileOps(
       continue;
     }
 
-    const res = applyHunks(src.content, op.hunks);
+    let res = applyHunks(src.content, op.hunks);
+    let hunks = op.hunks;
+
+    // A search block that is not in the file is the common generation error,
+    // and it is recoverable: we hold the real content and know exactly which
+    // text was missing, so the model can be told what it got wrong. Only
+    // `no_match` is retried — `multiple_matches` and `overlap` mean the model
+    // saw the file correctly and needs more context or fewer hunks, which a
+    // re-ask of the same question does not supply.
+    if (!res.ok && res.reason === "no_match" && repair) {
+      const corrected = await repair(op.path, src.content, res.search);
+      if (corrected) {
+        const retry = applyHunks(src.content, corrected);
+        if (retry.ok) {
+          logger.info({ path: op.path }, "Edit repaired after a failed search block");
+          res = retry;
+          hunks = corrected;
+        }
+      }
+    }
+
     if (res.ok) {
       const d = computeFileDiff(src.content, res.content);
       files.push({
@@ -247,7 +306,7 @@ async function resolveFileOps(
         op: "edit",
         filePath: op.path,
         content: res.content,
-        hunks: op.hunks,
+        hunks,
         sourceBlobSha: src.sha,
         diff: d.hunks,
         resolved: true,
@@ -297,13 +356,20 @@ export class AIOrchestrator {
     this.openaiModel = creds?.openaiModel || DEFAULT_OPENAI_MODEL;
   }
 
+  /**
+   * Ask every agent, and report both what came back and who did not answer.
+   *
+   * The failures are returned rather than only logged: a run that quietly
+   * falls from two candidates to one loses the redundancy that covers a single
+   * bad reply, and nobody downstream could previously tell that had happened.
+   */
   async generateSuggestions(
     task: DevCopilotTask,
     codeContext: string,
     stack: StackProfile,
     fileReader?: FileReader,
     planInput?: { plan: ChangePlan; context: string },
-  ): Promise<CodeSuggestion[]> {
+  ): Promise<{ suggestions: CodeSuggestion[]; failures: AgentFailure[] }> {
     const taskFields = {
       title: task.title,
       description: task.description,
@@ -331,6 +397,7 @@ export class AIOrchestrator {
 
     const results = await Promise.allSettled(jobs.map(([p]) => p));
     const suggestions: CodeSuggestion[] = [];
+    const failures: AgentFailure[] = [];
 
     const mapped: Array<[(typeof results)[number], CodeSuggestion["agent"]]> = results.map(
       (result, i) => [result, jobs[i][1]],
@@ -342,7 +409,9 @@ export class AIOrchestrator {
         // Resolve the model's operations into a change set: create files carry
         // content; edits are applied against current source. With a plan, files
         // outside it are flagged as deviations (§2.4).
-        const { files, valid } = await resolveFileOps(output.files, fileReader, planPaths);
+        const { files, valid } = await resolveFileOps(output.files, fileReader, planPaths, (path, content, failedSearch) =>
+          this.repairHunks(agent, path, content, failedSearch),
+        );
         const primaryPath = files[0]?.filePath ?? "";
         // Record the exact model that generated this suggestion. Real agents map
         // to their provider's resolved (possibly pinned) model; mocks have none.
@@ -358,24 +427,89 @@ export class AIOrchestrator {
           model,
         });
       } else {
-        logger.warn({ agent, err: result.reason }, `${agent} suggestion failed`);
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        logger.error({ agent, err: result.reason }, `${agent} produced no suggestion`);
+        failures.push({ agent, message: message.slice(0, 500) });
       }
     }
 
-    return suggestions;
+    return { suggestions, failures };
   }
 
   private async callClaude(prompt: string): Promise<ModelOutput> {
     const client = new Anthropic({ apiKey: this.anthropicApiKey });
     const message = await client.messages.create({
       model: this.claudeModel,
-      max_tokens: 8192,
+      max_tokens: 16384,
+      system: OUTPUT_CONTRACT,
       messages: [{ role: "user", content: prompt }],
     });
+
+    // A truncated reply is unparseable JSON, and "invalid JSON" is a useless
+    // thing to read in a log when the real cause is a change too large for the
+    // token ceiling. Say which it was.
+    if (message.stop_reason === "max_tokens") {
+      throw new Error(
+        `Claude's reply hit the ${16384}-token ceiling and was cut off mid-JSON. The change is probably too large for one response; plan fewer files.`,
+      );
+    }
 
     const block = message.content[0];
     if (block.type !== "text") throw new Error("Claude returned non-text block");
     return ModelOutputSchema.parse(extractJson<unknown>(block.text));
+  }
+
+  /**
+   * One corrective attempt after an edit's search block did not match.
+   *
+   * The model is told exactly what it got wrong and handed the real file, so
+   * this is a different question from the one it already answered badly.
+   * Bounded to a single attempt by the caller: a model that cannot anchor
+   * against the file in front of it twice will not manage it on a third go,
+   * and the failure is more useful than the latency.
+   */
+  private async repairHunks(
+    agent: CodeSuggestion["agent"],
+    path: string,
+    content: string,
+    failedSearch: string,
+  ): Promise<Hunk[] | null> {
+    const instruction =
+      `An edit to ${path} could not be applied. This search block was not found in the file:\n\n` +
+      `${failedSearch}\n\n` +
+      `The file's current contents follow between the markers. Re-express the same intended change as ` +
+      `hunks whose "search" text is copied EXACTLY from between those markers, each occurring exactly once.\n\n` +
+      `<<<FILE ${path}>>>\n${content}\n<<<END FILE>>>\n\n` +
+      `Respond with a single JSON object: { "hunks": [{ "search": string, "replace": string }] }`;
+
+    try {
+      if (agent === "claude") {
+        const message = await new Anthropic({ apiKey: this.anthropicApiKey }).messages.create({
+          model: this.claudeModel,
+          max_tokens: 4096,
+          system: "You correct a failed search/replace edit. Reply with JSON only.",
+          messages: [{ role: "user", content: instruction }],
+        });
+        const block = message.content[0];
+        if (block.type !== "text") return null;
+        return RepairSchema.parse(extractJson<unknown>(block.text)).hunks;
+      }
+      if (agent === "openai") {
+        const res = await new OpenAI({ apiKey: this.openaiApiKey }).chat.completions.create({
+          model: this.openaiModel,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: "You correct a failed search/replace edit. Reply with JSON only." },
+            { role: "user", content: instruction },
+          ],
+        });
+        return RepairSchema.parse(extractJson<unknown>(res.choices[0]?.message?.content ?? "{}")).hunks;
+      }
+      return null;
+    } catch (err) {
+      logger.warn({ agent, path, err }, "Edit repair attempt failed");
+      return null;
+    }
   }
 
   private async callOpenAI(prompt: string): Promise<ModelOutput> {

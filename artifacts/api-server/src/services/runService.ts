@@ -14,7 +14,7 @@ import { GitService } from "./gitService.js";
 import { getRunRepository } from "./repoResolver.js";
 import { loadSuggestionFiles } from "./suggestionFiles.js";
 import { resolveCommitFiles, STALE_BRANCH_MESSAGE } from "./commitResolver.js";
-import { AIOrchestrator, SynthesisEngine, type FileReader } from "./aiService.js";
+import { AIOrchestrator, SynthesisEngine, type AgentFailure, type FileReader } from "./aiService.js";
 import { checkCoherence, buildRepoSymbolIndex, coherenceSupported, sameCoherenceLanguage, type RepoSymbolIndex } from "./coherence/index.js";
 import { isGraphServable, triggerRepoIndex } from "./graphifyService.js";
 import { canAdminister } from "./resourceAdmin.js";
@@ -146,10 +146,11 @@ async function generateAndPersistSuggestions(params: {
   ranked: CodeSuggestion[];
   validRaw: CodeSuggestion[];
   inserted: (typeof suggestionsTable.$inferSelect)[];
+  failures: AgentFailure[];
 }> {
   const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput, coherenceGit } = params;
 
-  const raw = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader, planInput);
+  const { suggestions: raw, failures } = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader, planInput);
 
   // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
   const validRaw = raw.filter((s) => s.valid);
@@ -222,7 +223,7 @@ async function generateAndPersistSuggestions(params: {
     if (fileRows.length > 0) await db.insert(suggestionFilesTable).values(fileRows);
   }
 
-  return { raw, ranked, validRaw, inserted };
+  return { raw, ranked, validRaw, inserted, failures };
 }
 
 /**
@@ -449,7 +450,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       return;
     }
 
-    const { raw, ranked, validRaw, inserted } = await generateAndPersistSuggestions({
+    const { raw, ranked, validRaw, inserted, failures } = await generateAndPersistSuggestions({
       runId,
       orchestrator,
       synth,
@@ -460,6 +461,24 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       planInput,
       coherenceGit,
     });
+
+    // Which agents dropped out (0039). Recorded even on a run that went on to
+    // succeed, because losing one of two candidates is the difference between
+    // a bad reply being survivable and being fatal, and it was previously
+    // invisible everywhere but the server log.
+    if (failures.length > 0) {
+      await db.update(runsTable).set({ agentFailures: failures }).where(eq(runsTable.id, runId));
+    }
+
+    // No agent answered at all. Previously this fell through to "succeeded"
+    // with zero suggestions — a run that did nothing and said it was fine.
+    if (raw.length === 0) {
+      throw new Error(
+        failures.length > 0
+          ? `No agent produced a suggestion.\n\n${failures.map((f) => `${f.agent}: ${f.message}`).join("\n\n")}`
+          : "No agent produced a suggestion.",
+      );
+    }
 
     // Both agents produced changes that could not be applied — fail the run with
     // the specific reasons rather than committing anything (1.4).
