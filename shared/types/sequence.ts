@@ -86,6 +86,13 @@ export interface ImpactAnalysis {
 export interface SequenceFact {
   id: string;
   text: string;
+  /**
+   * True when the text came from a tracker field a user wrote — a title,
+   * description or acceptance criterion. Rendered inside delimiters and
+   * declared as data in any model prompt, because it can contain anything,
+   * including something shaped like an instruction.
+   */
+  untrusted?: boolean;
 }
 
 export const OVERRIDE_REASON_CATEGORIES = [
