@@ -370,6 +370,18 @@ export interface Run {
   stackDesc?: string | null;
   /** Agents that threw instead of answering (0039). Absent when all replied. */
   agentFailures?: Array<{ agent: string; message: string }> | null;
+  /**
+   * What project context this run's prompts carried (0040). Identifiers and
+   * counts only — never the pack text. Null when the run carried none.
+   */
+  contextManifest?: {
+    version: 1;
+    compiledAt: string;
+    budgetTokens: number;
+    usedTokens: number;
+    truncated: boolean;
+    sections: Array<{ kind: 'parent_chain'; included: number; available: number; truncated: boolean; refs: string[] }>;
+  } | null;
   review?: ReviewResult | null;
   reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
   securityScan?: AegisScanResult | null;

@@ -87,6 +87,30 @@ export interface PersistedAegisScanResult {
 }
 
 /**
+ * Record of the project context compiled into a run's prompts (0040). Mirrors
+ * shared/types/contextPack.ts (kept local because lib/db is a composite project
+ * rooted at src/ and cannot import from ../../../../shared).
+ */
+export interface PersistedContextManifestSection {
+  kind: "parent_chain";
+  /** How many entries of this kind made it into the pack. */
+  included: number;
+  /** How many were available before the budget was applied. */
+  available: number;
+  truncated: boolean;
+  /** Identifiers only — tracker keys where known, else `#<id>`. */
+  refs: string[];
+}
+export interface PersistedContextManifest {
+  version: 1;
+  compiledAt: string;
+  budgetTokens: number;
+  usedTokens: number;
+  truncated: boolean;
+  sections: PersistedContextManifestSection[];
+}
+
+/**
  * A durable execution of the agent pipeline against a work item. Every run
  * (manual or scheduled) is a row here so background/scheduled runs have somewhere
  * to persist results (there is no HTTP response to return to).
@@ -133,6 +157,13 @@ export const runsTable = pgTable(
      * two candidates to one. Null when every agent answered.
      */
     agentFailures: jsonb("agent_failures").$type<Array<{ agent: string; message: string }> | null>().default(null),
+    /**
+     * What project context this run's prompts carried (0040). Identifiers,
+     * paths and counts only — never the pack text, so reading a manifest
+     * cannot widen what the reader can see. Null for runs predating the
+     * column and for runs whose pack came out empty.
+     */
+    contextManifest: jsonb("context_manifest").$type<PersistedContextManifest | null>().default(null),
     // Human-readable stack this run targeted, e.g. "react · nodejs · postgresql"
     // (0013_run_stack.sql). Null for runs created before the column existed.
     stackDesc: text("stack_desc"),
