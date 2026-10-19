@@ -380,7 +380,13 @@ export interface Run {
     budgetTokens: number;
     usedTokens: number;
     truncated: boolean;
-    sections: Array<{ kind: 'parent_chain'; included: number; available: number; truncated: boolean; refs: string[] }>;
+    sections: Array<{
+      kind: 'parent_chain' | 'reference_material';
+      included: number;
+      available: number;
+      truncated: boolean;
+      refs: string[];
+    }>;
   } | null;
   review?: ReviewResult | null;
   reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
@@ -1767,3 +1773,66 @@ export function fetchSequenceOverride(id: number): Promise<SequenceOverrideRow> 
 
 export const sequenceOverridesCsvUrl = (days: number): string =>
   `/api/sequence-overrides/export.csv?days=${days}`;
+
+// --- Project knowledge (0041) ----------------------------------------------
+// Reference documents a run can draw on as background. Uploads go straight to
+// storage via a signed URL because the API function caps a request body at
+// 4.5 MB, well under the 15 MB a real architecture PDF can be.
+
+export type KnowledgeDocType = 'architecture' | 'requirements' | 'design' | 'other';
+
+export interface KnowledgeSource {
+  id: number;
+  title: string;
+  docType: KnowledgeDocType;
+  fileName: string;
+  sizeBytes: number;
+  chunkCount: number;
+  createdAt: string;
+  status: 'pending' | 'parsing' | 'ready' | 'failed';
+  error: string | null;
+}
+
+export interface KnowledgeList {
+  /** False when the deploy has no storage configured — the page says so. */
+  storageConfigured: boolean;
+  canUpload: boolean;
+  sources: KnowledgeSource[];
+}
+
+export function fetchKnowledge(projectId: number): Promise<KnowledgeList> {
+  return request<KnowledgeList>(`/api/projects/${projectId}/knowledge`);
+}
+
+export function requestKnowledgeUpload(
+  projectId: number,
+  body: { fileName: string; mimeType: string; sizeBytes: number; docType: KnowledgeDocType; title?: string },
+): Promise<{ sourceId: number; uploadUrl: string; expiresIn: number }> {
+  return request(`/api/projects/${projectId}/knowledge/uploads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export function completeKnowledgeUpload(
+  projectId: number,
+  sourceId: number,
+): Promise<{ id: number; status: string; chunkCount: number; error: string | null }> {
+  return request(`/api/projects/${projectId}/knowledge/uploads/${sourceId}/complete`, { method: 'POST' });
+}
+
+export async function deleteKnowledgeSource(projectId: number, sourceId: number): Promise<void> {
+  const res = await fetch(`/api/projects/${projectId}/knowledge/${sourceId}`, { method: 'DELETE' });
+  if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status);
+}
+
+/** PUT the file to the signed storage URL. Not an /api call — no JSON body. */
+export async function putToSignedUrl(uploadUrl: string, file: File): Promise<void> {
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) throw new ApiError('The file could not be uploaded to storage.', res.status);
+}

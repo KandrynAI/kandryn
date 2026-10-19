@@ -104,6 +104,10 @@ export default function NewProject() {
               until one is bound. This keeps each project's repository, stack profile, and graph index
               isolated from other projects.
             </p>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              You can add architecture and requirements documents from the project's Knowledge page
+              after creating it.
+            </p>
           </div>
         )}
       </Card>

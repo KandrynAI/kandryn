@@ -15,6 +15,7 @@
     "@clerk/express": "^2.1.11",
     "@clerk/shared": "^4.8.7",
     "@octokit/rest": "^22.0.1",
+    "@supabase/supabase-js": "^2.118.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
@@ -23,9 +24,11 @@
     "drizzle-orm": "catalog:",
     "express": "^5",
     "http-proxy-middleware": "^3.0.5",
+    "mammoth": "^1.13.0",
     "openai": "^6.35.0",
     "pino": "^9",
     "pino-http": "^10",
+    "unpdf": "^1.9.0",
     "zod": "catalog:"
   },
   "devDependencies": {

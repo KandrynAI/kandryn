@@ -92,13 +92,17 @@ export interface PersistedAegisScanResult {
  * rooted at src/ and cannot import from ../../../../shared).
  */
 export interface PersistedContextManifestSection {
-  kind: "parent_chain";
+  kind: "parent_chain" | "reference_material";
   /** How many entries of this kind made it into the pack. */
   included: number;
   /** How many were available before the budget was applied. */
   available: number;
   truncated: boolean;
-  /** Identifiers only — tracker keys where known, else `#<id>`. */
+  /**
+   * Identifiers only — tracker keys (or `#<id>`) for ancestors, and
+   * `<sourceId>:<chunkId>` for document passages (0041). Never titles,
+   * headings or text.
+   */
   refs: string[];
 }
 export interface PersistedContextManifest {

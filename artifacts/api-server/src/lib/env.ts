@@ -27,6 +27,12 @@ const OPTIONAL_ENV: EnvSpec[] = [
   { name: "ENABLE_DEMO_AGENTS",critical: false, description: "When 'true', adds mock AntiGravity/Copilot suggestions (default off)" },
   { name: "CONFIG_ENCRYPTION_KEY", critical: false, description: "32-byte key (base64/hex) encrypting integration credentials at rest; when absent, credentials are stored plaintext" },
   { name: "CORS_ALLOWED_ORIGINS", critical: false, description: "Comma-separated cross-origin browser allowlist (default: app.kandryn.com, kandryn.com, localhost dev). Add preview-deploy origins here." },
+  // Project knowledge (0041). All three unset = the feature is simply off: the
+  // routes answer 503 and nothing else changes. Only the NAMES appear in the
+  // startup log; the service-role key's value is never logged anywhere.
+  { name: "SUPABASE_URL",             critical: false, description: "Supabase project URL, for the private project-knowledge storage bucket (document upload is unavailable without it)" },
+  { name: "SUPABASE_SERVICE_ROLE_KEY",critical: false, description: "Supabase service-role key used to sign knowledge upload URLs (never logged; document upload is unavailable without it)" },
+  { name: "KNOWLEDGE_BUCKET",         critical: false, description: "Private Supabase storage bucket holding uploaded project documents (default 'project-knowledge')" },
 ];
 
 /**

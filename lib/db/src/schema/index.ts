@@ -15,3 +15,4 @@ export * from "./baselineScans";
 export * from "./workItemLinks";
 export * from "./sequenceChecks";
 export * from "./sequenceOverrides";
+export * from "./knowledge";
