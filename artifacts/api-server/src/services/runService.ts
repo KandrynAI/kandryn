@@ -39,6 +39,7 @@ import { sendRunCompleted, sendRunFailed, sendRunParked } from "./emailService.j
 import { confidenceReason } from "./confidence.js";
 import { recordOverrideOutcome } from "./sequenceGate.js";
 import { extractKeywords, dbTaskToDevCopilotTask } from "../routes/taskActions.js";
+import { buildRunContextPack } from "./contextService.js";
 import type { StackProfile } from "../stack/detector.js";
 import { logger } from "../lib/logger.js";
 
@@ -140,6 +141,7 @@ async function generateAndPersistSuggestions(params: {
   stack: StackProfile;
   fileReader?: FileReader;
   planInput?: { plan: ChangePlan; context: string };
+  contextPack?: string | null;
   coherenceGit?: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader };
 }): Promise<{
   raw: CodeSuggestion[];
@@ -148,9 +150,16 @@ async function generateAndPersistSuggestions(params: {
   inserted: (typeof suggestionsTable.$inferSelect)[];
   failures: AgentFailure[];
 }> {
-  const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput, coherenceGit } = params;
+  const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput, contextPack, coherenceGit } = params;
 
-  const { suggestions: raw, failures } = await orchestrator.generateSuggestions(devTask, codeContext, stack, fileReader, planInput);
+  const { suggestions: raw, failures } = await orchestrator.generateSuggestions(
+    devTask,
+    codeContext,
+    stack,
+    fileReader,
+    planInput,
+    contextPack,
+  );
 
   // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
   const validRaw = raw.filter((s) => s.valid);
@@ -335,6 +344,21 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
 
+    // Project context (Project Context part 1): the item's ancestor chain,
+    // compiled once and given to the planner and both generators, so the plan
+    // and the implementation argue from the same background. Best-effort —
+    // buildRunContextPack returns an empty pack rather than throwing, and the
+    // manifest write is guarded, because background is an improvement to a run
+    // and never a precondition for one.
+    const contextPack = await buildRunContextPack(userId, run.projectId, workItem.id);
+    if (contextPack.manifest) {
+      await db
+        .update(runsTable)
+        .set({ contextManifest: contextPack.manifest })
+        .where(eq(runsTable.id, runId))
+        .catch((err) => logger.warn({ runId, err }, "Recording the context manifest failed"));
+    }
+
     // Change plan (Phase 2): plan which files the change touches before
     // generation, then feed the plan + per-file context to BOTH agents so they
     // implement the same plan (§2.1). Tree-primary — the graph only enhances
@@ -388,6 +412,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
           graph: repo.graphJson as unknown as GraphifyGraph | null,
           graphStatus: repo.graphStatus,
           graphBuiltAt: repo.graphBuiltAt,
+          contextPack: contextPack.text || null,
           anthropicApiKey: creds.ANTHROPIC_API_KEY,
         });
         logger.info({ runId, ...planSummary, plan: undefined }, "Change plan produced");
@@ -459,6 +484,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       stack,
       fileReader,
       planInput,
+      contextPack: contextPack.text || null,
       coherenceGit,
     });
 
@@ -801,6 +827,9 @@ async function regenerateFromPlan(
       ? `${workItem.description ?? ""}\n\nRefinement request: ${run.refinePrompt}`
       : workItem.description;
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
+    // Same background the first generation had — a regeneration against an
+    // edited plan must not quietly know less than the run it replaces.
+    const contextPack = await buildRunContextPack(run.userId, run.projectId, workItem.id);
     const orchestrator = new AIOrchestrator({ anthropicApiKey: creds.ANTHROPIC_API_KEY, openaiApiKey: creds.OPENAI_API_KEY });
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
 
@@ -813,6 +842,7 @@ async function regenerateFromPlan(
       stack,
       fileReader,
       planInput: { plan, context: assembled.context },
+      contextPack: contextPack.text || null,
       coherenceGit: { fetchFilePaths: () => git.fetchFilePaths(), fetchFileWithSha: (p) => git.fetchFileWithSha(p) },
     });
 

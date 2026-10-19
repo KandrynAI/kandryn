@@ -6,6 +6,12 @@ type Task = {
   title: string;
   description?: string | null;
   acceptanceCriteria?: string | null;
+  /**
+   * Compiled project context (Project Context part 1), or null/absent when
+   * there is none. Rendered by taskSection so the single-file and plan-aware
+   * prompts carry byte-identical background.
+   */
+  contextPack?: string | null;
 };
 
 // Shared output contract for both the single-file (Phase 1) and plan-aware
@@ -65,7 +71,8 @@ A correct edit (note the \`search\` includes the signature line for uniqueness, 
 Respond ONLY with the JSON object, no additional text.`;
 
 function taskSection(task: Task): string {
-  return `## Task
+  const context = task.contextPack?.trim() ? `${task.contextPack.trim()}\n\n` : "";
+  return `${context}## Task
 **Title:** ${task.title}
 ${task.description ? `**Description:** ${task.description}` : ""}
 ${task.acceptanceCriteria ? `**Acceptance Criteria:**\n${task.acceptanceCriteria}` : ""}`;

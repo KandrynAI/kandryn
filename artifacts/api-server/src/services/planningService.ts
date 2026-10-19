@@ -380,6 +380,7 @@ interface PlannerContext {
   stack: StackProfile;
   tree: string[];
   candidates: PlanCandidateFile[];
+  contextPack?: string | null;
 }
 
 function buildPlannerPrompt(ctx: PlannerContext, feedback: string | null): string {
@@ -392,9 +393,11 @@ function buildPlannerPrompt(ctx: PlannerContext, feedback: string | null): strin
         .join("\n")
     : "No candidates were retrieved. Plan from the directory tree and stack below.";
 
+  const contextSection = ctx.contextPack?.trim() ? `${ctx.contextPack.trim()}\n\n` : "";
+
   return `You are a senior engineer planning a multi-file code change. Produce a PLAN ONLY — which files to touch, the operation on each, and a one-line rationale per file. Write NO code.
 
-## Work item
+${contextSection}## Work item
 Title: ${ctx.workItem.title}
 Description: ${ctx.workItem.description || "(none)"}
 Acceptance criteria:
@@ -515,6 +518,13 @@ export interface PlanningInput {
    */
   graphStatus: string | null;
   graphBuiltAt: Date | string | null;
+  /**
+   * Compiled project context (Project Context part 1), or null when there is
+   * none. The planner and the generators receive the SAME block — a plan made
+   * without the background the implementation then gets is a plan arguing with
+   * itself.
+   */
+  contextPack?: string | null;
   anthropicApiKey: string;
 }
 
@@ -541,7 +551,8 @@ export interface PlanningSummary {
  * graph is an enhancement on the tree-primary path: its absence is not an error.
  */
 export async function runPlanning(input: PlanningInput): Promise<PlanningSummary> {
-  const { runId, projectId, userId, teamId, workItem, keywords, stack, tree, graph, graphStatus, graphBuiltAt, anthropicApiKey } = input;
+  const { runId, projectId, userId, teamId, workItem, keywords, stack, tree, graph, graphStatus, graphBuiltAt, contextPack, anthropicApiKey } =
+    input;
 
   // Retrieval (tree-primary; graph enhances candidate quality only when SERVABLE
   // — succeeded AND fresh. Planning makes this decision itself so a stale graph
@@ -566,7 +577,7 @@ export async function runPlanning(input: PlanningInput): Promise<PlanningSummary
   // Planner call.
   const tPlan = Date.now();
   const treeSet = new Set(tree);
-  const result = await callPlanner({ workItem, stack, tree, candidates }, treeSet, anthropicApiKey).catch(
+  const result = await callPlanner({ workItem, stack, tree, candidates, contextPack }, treeSet, anthropicApiKey).catch(
     (err): PlannerResult => {
       logger.error({ runId, err }, "Planner threw unexpectedly");
       return { plan: null, status: "failed", error: "Planning failed unexpectedly.", inputTokens: 0, outputTokens: 0 };

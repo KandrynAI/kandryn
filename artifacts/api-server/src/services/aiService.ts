@@ -369,11 +369,13 @@ export class AIOrchestrator {
     stack: StackProfile,
     fileReader?: FileReader,
     planInput?: { plan: ChangePlan; context: string },
+    contextPack?: string | null,
   ): Promise<{ suggestions: CodeSuggestion[]; failures: AgentFailure[] }> {
     const taskFields = {
       title: task.title,
       description: task.description,
       acceptanceCriteria: task.acceptanceCriteria.join("\n"),
+      contextPack,
     };
     // With a ready plan both agents implement the SAME plan (§2.1) — they compete
     // on implementation quality, not file selection. Without one, fall back to the

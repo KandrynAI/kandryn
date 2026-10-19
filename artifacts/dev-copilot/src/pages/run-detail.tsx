@@ -92,6 +92,18 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   canceled: "canceled",
 };
 
+/**
+ * The info-strip value for the project context a run carried (0040). Reads the
+ * manifest, which holds counts and identifiers only — the pack text is never
+ * sent to the client.
+ */
+function contextCellValue(manifest: Run["contextManifest"]): string {
+  const parents = manifest?.sections.find((s) => s.kind === "parent_chain");
+  if (!parents || parents.included === 0) return "None";
+  const noun = parents.included === 1 ? "parent item" : "parent items";
+  return `${parents.included} ${noun}${parents.truncated ? " · trimmed" : ""}`;
+}
+
 const IN_PROGRESS: RunStatus[] = ["scheduled", "queued", "running"];
 // How often to re-read the run while something is happening. Only runs while the
 // tab is visible (see the polling effect).
@@ -489,6 +501,7 @@ export default function RunDetailPage() {
     ["Auto-commit", run.autoCommit ? "On" : "Off"],
     ["When", run.scheduledAt ? new Date(run.scheduledAt).toLocaleString() : run.startedAt ? new Date(run.startedAt).toLocaleString() : "—"],
     ["Stack", run.stackDesc || "Not detected"],
+    ["Context", contextCellValue(run.contextManifest)],
   ];
 
   // A run asks both models in parallel; if one throws, the other still answers
@@ -532,7 +545,7 @@ export default function RunDetailPage() {
       </div>
 
       {/* Info strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", borderTop: "1px solid var(--c-border)", borderBottom: "1px solid var(--c-border)", marginTop: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${infoCells.length}, 1fr)`, borderTop: "1px solid var(--c-border)", borderBottom: "1px solid var(--c-border)", marginTop: 10 }}>
         {infoCells.map(([label, value], i) => (
           <div key={label} style={{ padding: "12px 20px", borderRight: i < infoCells.length - 1 ? "1px solid var(--c-border)" : "none" }}>
             <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{label}</div>

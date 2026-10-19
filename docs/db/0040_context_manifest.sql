@@ -1,0 +1,34 @@
+-- Kandryn — record the project context a run was given  (migration 0040)
+--
+-- Project Context part 1: a run now receives a compiled context pack (the
+-- work item's ancestor chain today, project documents next) alongside the
+-- title, description and acceptance criteria it has always had. Once a prompt
+-- carries context assembled by us rather than written by the user, "why did
+-- the agent think that" needs an answer, and the prompt itself is gone the
+-- moment the request returns.
+--
+-- The manifest is that answer: what was included, what was dropped, and how
+-- much of the budget it cost. It stores IDENTIFIERS AND PATHS ONLY — work
+-- item ids, tracker keys, document names, counts, token numbers. It never
+-- stores the pack text, file contents or document bodies, so a manifest can
+-- be read by anyone who can read the run without widening what they can see.
+--
+-- Shape (version 1):
+--   {
+--     "version": 1,
+--     "compiledAt": "2026-10-19T12:00:00.000Z",
+--     "budgetTokens": 1800,
+--     "usedTokens": 740,
+--     "truncated": false,
+--     "sections": [
+--       { "kind": "parent_chain", "included": 2, "available": 3,
+--         "truncated": true, "refs": ["PAY-1", "PAY-7"] }
+--     ]
+--   }
+--
+-- Nullable: null on every run predating this column, and on any run whose
+-- pack came out empty (a work item with no ancestors and nothing else to say).
+--
+-- Additive + idempotent. Safe to re-run.
+
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS context_manifest jsonb;
