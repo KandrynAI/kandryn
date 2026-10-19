@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation, useParams, useSearch } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import {
@@ -33,7 +33,6 @@ import NewProject from "@/pages/new-project";
 import ProjectSettingsPage from "@/pages/ProjectSettingsPage";
 import GovernancePage from "@/pages/GovernancePage";
 import ProjectBoard from "@/pages/project-board";
-import KnowledgePage from "@/pages/knowledge";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
 import RunReportPage from "@/pages/run-report";
@@ -210,6 +209,20 @@ function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
   );
 }
 
+/**
+ * The Knowledge page moved into Project settings as a tab, so there is exactly
+ * one home for it. The old route stays as a redirect and carries the query
+ * string through — the post-create flow's ?welcome=1 arrives this way when a
+ * bookmark or an older link is followed.
+ */
+function KnowledgeRedirect() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const search = useSearch();
+  const query = new URLSearchParams(search);
+  query.set("tab", "knowledge");
+  return <Redirect to={`/p/${projectId}/settings?${query.toString()}`} replace />;
+}
+
 /** Root: redirect signed-in users to /tasks, others to /sign-in */
 function RootRoute() {
   const { isSignedIn, isLoaded } = useAuth();
@@ -291,10 +304,11 @@ function ProtectedApp() {
         <Switch>
           <Route path="/projects/new" component={NewProject} />
           <Route path="/projects/:projectId/settings" component={ProjectSettingsPage} />
+          <Route path="/p/:projectId/settings" component={ProjectSettingsPage} />
           <Route path="/p/:projectId/governance" component={GovernancePage} />
           <Route path="/p/:projectId/board" component={ProjectBoard} />
           <Route path="/p/:projectId/runs" component={RunsPage} />
-          <Route path="/p/:projectId/knowledge" component={KnowledgePage} />
+          <Route path="/p/:projectId/knowledge" component={KnowledgeRedirect} />
           <Route path="/p/:projectId/repositories" component={Repositories} />
           <Route path="/p/:projectId/repositories/:id" component={RepositoryDetail} />
           <Route path="/runs/:runId/report" component={RunReportPage} />
