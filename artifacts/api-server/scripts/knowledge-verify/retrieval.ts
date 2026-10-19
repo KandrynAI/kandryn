@@ -168,6 +168,46 @@ async function main() {
     q,
   );
 
+  // --- Replace semantics at the data layer -------------------------------
+  // The route indexes the new source first and removes the old one only once
+  // the new one is ready; what matters here is that the swap leaves exactly
+  // one ready copy and no stranded chunks.
+  await reset();
+  const pRep = await project(U, "REP");
+  const oldSrc = await source(U, pRep.id, "old-arch", { contentHash: "hash-old" });
+  await chunk(oldSrc, 0, "Policy validation", POLICY_TEXT);
+  const newSrc = await source(U, pRep.id, "new-arch", { contentHash: "hash-new" });
+  await chunk(newSrc, 0, "Policy validation", `${POLICY_TEXT} Revised for the 2026 schedule.`);
+
+  // Mid-replace both exist, which is the point: a failure here must leave the
+  // original serving.
+  let both = await retrieveReferences({ userId: U, projectId: pRep.id, workItem });
+  check("replace: both copies are retrievable before the swap completes", both.length === 2, String(both.length));
+
+  await db.delete(knowledgeSourcesTable).where(eq(knowledgeSourcesTable.id, oldSrc.id));
+  const afterSwap = await retrieveReferences({ userId: U, projectId: pRep.id, workItem });
+  check(
+    "replace: exactly one ready copy survives the swap",
+    afterSwap.length === 1 && afterSwap[0].sourceId === newSrc.id,
+    JSON.stringify(afterSwap.map((r) => r.sourceId)),
+  );
+
+  const orphans = await db
+    .select()
+    .from(knowledgeChunksTable)
+    .where(eq(knowledgeChunksTable.sourceId, oldSrc.id));
+  check("replace: the old chunks went with the old source (cascade)", orphans.length === 0, String(orphans.length));
+
+  // And the freed hash can be reused, so re-uploading the original later is
+  // not blocked by the partial unique index.
+  let reusable = true;
+  try {
+    await source(U, pRep.id, "old-again", { contentHash: "hash-old" });
+  } catch {
+    reusable = false;
+  }
+  check("replace: the removed document's hash is free to use again", reusable);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
 }

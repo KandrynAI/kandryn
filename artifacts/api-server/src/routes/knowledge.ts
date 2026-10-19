@@ -11,6 +11,8 @@ import {
 } from "../services/documentParser.js";
 import {
   StorageNotConfiguredError,
+  StorageOpError,
+  storageErrorResponse,
   UPLOAD_URL_TTL_SECONDS,
   buildStoragePath,
   createSignedUploadUrl,
@@ -55,7 +57,27 @@ const UploadRequest = z.object({
   sizeBytes: z.number().int().positive(),
   docType: z.enum(DOC_TYPES),
   title: z.string().min(1).max(200).optional(),
+  /**
+   * Replace an existing document. The new source is created and indexed
+   * normally; the old one is removed only once the new one reaches `ready`,
+   * so a failed replacement leaves the original exactly as it was.
+   */
+  replaceSourceId: z.number().int().positive().optional(),
 });
+
+const CompleteRequest = z.object({
+  replaceSourceId: z.number().int().positive().optional(),
+});
+
+const UpdateRequest = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    docType: z.enum(DOC_TYPES).optional(),
+  })
+  .refine((b) => b.title !== undefined || b.docType !== undefined, {
+    message: "Provide a title or a document type.",
+  });
+
 
 // ---------------------------------------------------------------------------
 // Access
@@ -178,7 +200,7 @@ router.post("/projects/:id/knowledge/uploads", async (req, res): Promise<void> =
     return;
   }
 
-  const { fileName, mimeType, sizeBytes, docType, title } = parsed.data;
+  const { fileName, mimeType, sizeBytes, docType, title, replaceSourceId } = parsed.data;
   const ext = (fileName.split(".").pop() ?? "").toLowerCase();
   if (!ALLOWED_EXTENSIONS.includes(ext as (typeof ALLOWED_EXTENSIONS)[number])) {
     res.status(400).json({ error: "Upload a .md, .txt, .csv, .pdf or .docx file." });
@@ -187,6 +209,26 @@ router.post("/projects/:id/knowledge/uploads", async (req, res): Promise<void> =
   if (sizeBytes > MAX_SIZE_BYTES) {
     res.status(400).json({ error: "That file is larger than 15 MB." });
     return;
+  }
+
+  // A replace must name a source of THIS user and project, and inherits the
+  // old title and type unless the caller sent new ones.
+  let replacing: typeof knowledgeSourcesTable.$inferSelect | undefined;
+  if (replaceSourceId != null) {
+    [replacing] = await db
+      .select()
+      .from(knowledgeSourcesTable)
+      .where(
+        and(
+          eq(knowledgeSourcesTable.id, replaceSourceId),
+          eq(knowledgeSourcesTable.userId, project.userId),
+          eq(knowledgeSourcesTable.projectId, project.id),
+        ),
+      );
+    if (!replacing) {
+      res.status(404).json({ error: "Document not found" });
+      return;
+    }
   }
 
   const existing = await db
@@ -198,7 +240,9 @@ router.post("/projects/:id/knowledge/uploads", async (req, res): Promise<void> =
         eq(knowledgeSourcesTable.projectId, project.id),
       ),
     );
-  if (existing.length >= MAX_SOURCES_PER_PROJECT) {
+  // A replace does not consume a second slot: the old row goes the moment the
+  // new one is ready, so counting both would refuse a replace at the cap.
+  if (!replacing && existing.length >= MAX_SOURCES_PER_PROJECT) {
     res.status(400).json({ error: `A project can hold ${MAX_SOURCES_PER_PROJECT} documents. Remove one first.` });
     return;
   }
@@ -208,32 +252,46 @@ router.post("/projects/:id/knowledge/uploads", async (req, res): Promise<void> =
     return;
   }
 
+  // The signed URL comes FIRST and the row second, so a storage failure
+  // leaves nothing behind to clean up or to block the next attempt.
   const storagePath = buildStoragePath(project.userId, project.id, fileName);
   let uploadUrl: string;
   try {
     uploadUrl = await createSignedUploadUrl(storagePath);
   } catch (err) {
     if (err instanceof StorageNotConfiguredError) {
-      res.status(503).json({ error: err.message });
+      res.status(503).json({ code: "STORAGE_NOT_CONFIGURED", error: err.message });
+      return;
+    }
+    if (err instanceof StorageOpError) {
+      const { status, body } = storageErrorResponse(err);
+      res.status(status).json(body);
       return;
     }
     throw err;
   }
 
-  const [source] = await db
-    .insert(knowledgeSourcesTable)
-    .values({
-      userId: project.userId,
-      projectId: project.id,
-      docType,
-      title: title?.trim() || fileName,
-      fileName,
-      mimeType,
-      sizeBytes,
-      storagePath,
-      status: "pending",
-    })
-    .returning();
+  let source: typeof knowledgeSourcesTable.$inferSelect;
+  try {
+    [source] = await db
+      .insert(knowledgeSourcesTable)
+      .values({
+        userId: project.userId,
+        projectId: project.id,
+        docType,
+        title: title?.trim() || replacing?.title || fileName,
+        fileName,
+        mimeType,
+        sizeBytes,
+        storagePath,
+        status: "pending",
+      })
+      .returning();
+  } catch (err) {
+    // Nothing is half-done: bin the object we just minted a URL for.
+    await deleteObject(storagePath);
+    throw err;
+  }
 
   res.status(201).json({ sourceId: source.id, uploadUrl, expiresIn: UPLOAD_URL_TTL_SECONDS });
 });
@@ -268,6 +326,32 @@ router.post("/projects/:id/knowledge/uploads/:sourceId/complete", async (req, re
     return;
   }
 
+  // The document this one replaces, if any. Resolved before any work so a
+  // bad id is refused rather than discovered after indexing; scoped to this
+  // user and project like every other read here.
+  const replaceParsed = CompleteRequest.safeParse(req.body ?? {});
+  if (!replaceParsed.success) {
+    res.status(400).json({ error: "Invalid request" });
+    return;
+  }
+  let replacing: typeof knowledgeSourcesTable.$inferSelect | undefined;
+  if (replaceParsed.data.replaceSourceId != null && replaceParsed.data.replaceSourceId !== source.id) {
+    [replacing] = await db
+      .select()
+      .from(knowledgeSourcesTable)
+      .where(
+        and(
+          eq(knowledgeSourcesTable.id, replaceParsed.data.replaceSourceId),
+          eq(knowledgeSourcesTable.userId, project.userId),
+          eq(knowledgeSourcesTable.projectId, project.id),
+        ),
+      );
+    if (!replacing) {
+      res.status(404).json({ error: "Document not found" });
+      return;
+    }
+  }
+
   /** Mark the source failed, bin the object, and answer. Never leaks text. */
   const fail = async (status: number, message: string): Promise<void> => {
     await db
@@ -286,7 +370,14 @@ router.post("/projects/:id/knowledge/uploads/:sourceId/complete", async (req, re
     bytes = await downloadObject(source.storagePath);
   } catch (err) {
     if (err instanceof StorageNotConfiguredError) {
-      res.status(503).json({ error: err.message });
+      res.status(503).json({ code: "STORAGE_NOT_CONFIGURED", error: err.message });
+      return;
+    }
+    if (err instanceof StorageOpError && err.kind !== "other") {
+      // A misconfigured bucket is not this document's fault — leave the row
+      // alone so a retry works once the deploy is fixed.
+      const { status, body } = storageErrorResponse(err);
+      res.status(status).json(body);
       return;
     }
     await fail(400, "The uploaded file could not be read. Try uploading it again.");
@@ -372,6 +463,23 @@ router.post("/projects/:id/knowledge/uploads/:sourceId/complete", async (req, re
     throw err;
   }
 
+  // The new document is ready, so now — and only now — the one it replaces
+  // can go. Up to this point a failure left the original untouched.
+  if (replacing) {
+    await deleteObject(replacing.storagePath);
+    await db.delete(knowledgeSourcesTable).where(eq(knowledgeSourcesTable.id, replacing.id));
+    audit.log({
+      userId: req.userId,
+      teamId: req.teamId ?? null,
+      action: "knowledge.source_replaced",
+      entityType: "knowledge_source",
+      entityId: source.id,
+      metadata: { oldSourceId: replacing.id, newSourceId: source.id },
+      ipAddress: audit.getIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+  }
+
   // Fire-and-forget, and metadata only — never a word of the document.
   audit.log({
     userId: req.userId,
@@ -394,6 +502,78 @@ router.post("/projects/:id/knowledge/uploads/:sourceId/complete", async (req, re
     status: "ready",
     chunkCount: result.chunks.length,
     error: result.warning,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /projects/:id/knowledge/:sourceId — title and type only
+// ---------------------------------------------------------------------------
+
+router.patch("/projects/:id/knowledge/:sourceId", async (req, res): Promise<void> => {
+  const params = SourceParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  const parsed = UpdateRequest.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Provide a title (1–200 characters) or a document type.", details: z.treeifyError(parsed.error) });
+    return;
+  }
+  const project = await readableProject(actorOf(req), params.data.id);
+  if (!project || !canWrite(actorOf(req), project)) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  const { title, docType } = parsed.data;
+  const changed: string[] = [];
+  const set: Partial<typeof knowledgeSourcesTable.$inferInsert> = {};
+  if (title !== undefined) {
+    set.title = title.trim();
+    changed.push("title");
+  }
+  if (docType !== undefined) {
+    set.docType = docType;
+    changed.push("docType");
+  }
+
+  const [updated] = await db
+    .update(knowledgeSourcesTable)
+    .set(set)
+    .where(
+      and(
+        eq(knowledgeSourcesTable.id, params.data.sourceId),
+        eq(knowledgeSourcesTable.userId, project.userId),
+        eq(knowledgeSourcesTable.projectId, project.id),
+      ),
+    )
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "knowledge.source_updated",
+    entityType: "knowledge_source",
+    entityId: updated.id,
+    metadata: { sourceId: updated.id, changed },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
+
+  res.json({
+    id: updated.id,
+    title: updated.title,
+    docType: updated.docType,
+    fileName: updated.fileName,
+    sizeBytes: updated.sizeBytes,
+    chunkCount: updated.chunkCount,
+    createdAt: updated.createdAt,
+    ...effectiveStatus(updated),
   });
 });
 

@@ -1806,7 +1806,15 @@ export function fetchKnowledge(projectId: number): Promise<KnowledgeList> {
 
 export function requestKnowledgeUpload(
   projectId: number,
-  body: { fileName: string; mimeType: string; sizeBytes: number; docType: KnowledgeDocType; title?: string },
+  body: {
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    docType: KnowledgeDocType;
+    title?: string;
+    /** Replace this document once the new file is indexed. */
+    replaceSourceId?: number;
+  },
 ): Promise<{ sourceId: number; uploadUrl: string; expiresIn: number }> {
   return request(`/api/projects/${projectId}/knowledge/uploads`, {
     method: 'POST',
@@ -1818,8 +1826,25 @@ export function requestKnowledgeUpload(
 export function completeKnowledgeUpload(
   projectId: number,
   sourceId: number,
+  replaceSourceId?: number,
 ): Promise<{ id: number; status: string; chunkCount: number; error: string | null }> {
-  return request(`/api/projects/${projectId}/knowledge/uploads/${sourceId}/complete`, { method: 'POST' });
+  return request(`/api/projects/${projectId}/knowledge/uploads/${sourceId}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(replaceSourceId != null ? { replaceSourceId } : {}),
+  });
+}
+
+export function updateKnowledgeSource(
+  projectId: number,
+  sourceId: number,
+  body: { title?: string; docType?: KnowledgeDocType },
+): Promise<KnowledgeSource> {
+  return request(`/api/projects/${projectId}/knowledge/${sourceId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 export async function deleteKnowledgeSource(projectId: number, sourceId: number): Promise<void> {
@@ -1827,12 +1852,32 @@ export async function deleteKnowledgeSource(projectId: number, sourceId: number)
   if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status);
 }
 
-/** PUT the file to the signed storage URL. Not an /api call — no JSON body. */
-export async function putToSignedUrl(uploadUrl: string, file: File): Promise<void> {
-  const res = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
+/**
+ * PUT the file to the signed storage URL. Not an /api call — no JSON body.
+ *
+ * XMLHttpRequest rather than fetch: `upload.onprogress` is the only way to
+ * get real byte progress in every browser we target. fetch can stream a
+ * request body, but only over HTTP/2 with a duplex option that Safari does
+ * not implement, so a progress bar built on it would be a fake one.
+ */
+export function putToSignedUrl(
+  uploadUrl: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl, true);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(new ApiError('The file could not be uploaded to storage.', xhr.status));
+    xhr.onerror = () => reject(new ApiError('The file could not be uploaded to storage.', 0));
+    xhr.onabort = () => reject(new ApiError('The upload was cancelled.', 0));
+    xhr.send(file);
   });
-  if (!res.ok) throw new ApiError('The file could not be uploaded to storage.', res.status);
 }

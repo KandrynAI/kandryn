@@ -60,6 +60,8 @@ const ACTION_LABELS: Record<string, string> = {
   "sequence.override_outcome": "Override outcome recorded",
   "sequence.policy_changed": "Run order policy changed",
   "knowledge.source_added": "Document added",
+  "knowledge.source_updated": "Document updated",
+  "knowledge.source_replaced": "Document replaced",
   "knowledge.source_deleted": "Document removed",
   "tests.generated": "Tests generated",
   "tests.committed": "Tests committed",

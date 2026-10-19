@@ -7,6 +7,7 @@
 // documentParser.test.ts and retrieval.ts.
 import express from "express";
 import { db, knowledgeChunksTable, knowledgeSourcesTable, projectsTable, teamsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import knowledgeRouter from "../../src/routes/knowledge.js";
 import { logger } from "../../src/lib/logger.js";
 
@@ -158,6 +159,112 @@ async function main() {
   CURRENT = { userId: "u1", teamId: team.id, teamRole: "admin" };
   const adminList = await call("GET", `/projects/${teamProject.id}/knowledge`);
   t("a team admin is told they may upload", adminList.body?.canUpload === true, JSON.stringify(adminList.body));
+
+  // --- The upload-fix prompt's numbered server tests ---------------------
+  CURRENT = { userId: "u1", teamId: null, teamRole: null };
+  const { mine: p2 } = await seed();
+
+  // 2. A signed-URL failure must leave no knowledge_sources row. Storage is
+  //    unconfigured here, which is the earliest possible failure of that call.
+  const failedUpload = await call("POST", `/projects/${p2.id}/knowledge/uploads`, upload());
+  const afterFail = await db
+    .select()
+    .from(knowledgeSourcesTable)
+    .where(eq(knowledgeSourcesTable.projectId, p2.id));
+  t(
+    "2. a failed signed-URL call leaves no source row",
+    afterFail.length === 0 && failedUpload.status === 503,
+    `${afterFail.length} rows, status ${failedUpload.status}`,
+  );
+
+  // A row to work the rest of the tests against, in each interesting status.
+  const mk = async (over: Record<string, unknown> = {}) => {
+    const [row] = await db
+      .insert(knowledgeSourcesTable)
+      .values({
+        userId: "u1",
+        projectId: p2.id,
+        docType: "architecture",
+        title: "Platform architecture",
+        fileName: "arch.md",
+        mimeType: "text/markdown",
+        sizeBytes: 120,
+        storagePath: "u1/x/arch.md",
+        status: "ready",
+        chunkCount: 2,
+        ...over,
+      })
+      .returning();
+    return row;
+  };
+
+  // 4. PATCH validation.
+  const ready = await mk();
+  const empty = await call("PATCH", `/projects/${p2.id}/knowledge/${ready.id}`, {});
+  t("4. PATCH with an empty body -> 400", empty.status === 400, String(empty.status));
+  const patchBadType = await call("PATCH", `/projects/${p2.id}/knowledge/${ready.id}`, { docType: "legal" });
+  t("4b. PATCH with an unknown docType -> 400", patchBadType.status === 400, String(patchBadType.status));
+  const longTitle = await call("PATCH", `/projects/${p2.id}/knowledge/${ready.id}`, { title: "x".repeat(201) });
+  t("4c. PATCH with a title over 200 chars -> 400", longTitle.status === 400, String(longTitle.status));
+  const okPatch = await call("PATCH", `/projects/${p2.id}/knowledge/${ready.id}`, {
+    title: "Renamed",
+    docType: "requirements",
+  });
+  t(
+    "4d. PATCH renames and retypes the document",
+    okPatch.status === 200 && okPatch.body.title === "Renamed" && okPatch.body.docType === "requirements",
+    JSON.stringify(okPatch.body),
+  );
+  CURRENT = { userId: "u2", teamId: null, teamRole: null };
+  const foreignPatch = await call("PATCH", `/projects/${p2.id}/knowledge/${ready.id}`, { title: "Mine now" });
+  t("4e. PATCH on another user's source -> 404", foreignPatch.status === 404, String(foreignPatch.status));
+  CURRENT = { userId: "u1", teamId: null, teamRole: null };
+
+  // 5. Replace: the target must belong to this user and project.
+  const otherProjectRow = await db
+    .insert(projectsTable)
+    .values({ userId: "u1", name: "Other", plmProvider: "jira", plmProjectKey: "OTH" })
+    .returning();
+  const elsewhere = await mk({ projectId: otherProjectRow[0].id, storagePath: "u1/y/other.md" });
+  const replaceCrossProject = await call("POST", `/projects/${p2.id}/knowledge/uploads`, upload({ replaceSourceId: elsewhere.id }));
+  t(
+    "5. replaceSourceId from another project is rejected",
+    replaceCrossProject.status === 404,
+    `${replaceCrossProject.status} ${JSON.stringify(replaceCrossProject.body)}`,
+  );
+  const missingTarget = await call("POST", `/projects/${p2.id}/knowledge/uploads`, upload({ replaceSourceId: 999999 }));
+  t("5b. an unknown replaceSourceId is rejected", missingTarget.status === 404, String(missingTarget.status));
+  // The replace target is resolved BEFORE storage is consulted, so a bad id
+  // is a 404 rather than the 503 an unconfigured deploy would otherwise give.
+  const goodTarget = await call("POST", `/projects/${p2.id}/knowledge/uploads`, upload({ replaceSourceId: ready.id }));
+  t(
+    "5c. a valid replace target gets past validation to the storage check",
+    goodTarget.status === 503,
+    `${goodTarget.status} ${JSON.stringify(goodTarget.body)}`,
+  );
+  const stillThere = await db.select().from(knowledgeSourcesTable).where(eq(knowledgeSourcesTable.id, ready.id));
+  t("5d. a failed replace leaves the original untouched", stillThere.length === 1 && stillThere[0].status === "ready");
+
+  // 6. Delete works when the storage object is missing — here storage cannot
+  //    even be reached, which is the harshest version of that case.
+  const del = await call("DELETE", `/projects/${p2.id}/knowledge/${ready.id}`);
+  const gone = await db.select().from(knowledgeSourcesTable).where(eq(knowledgeSourcesTable.id, ready.id));
+  t("6. delete succeeds with no storage object", del.status === 204 && gone.length === 0, `${del.status}`);
+
+  // 7. The list hides nothing: pending and failed rows are returned.
+  const pending = await mk({ status: "pending", title: "Still uploading", chunkCount: 0 });
+  const failed = await mk({ status: "failed", title: "Bad file", error: "No readable text was found.", chunkCount: 0 });
+  const listed = await call("GET", `/projects/${p2.id}/knowledge`);
+  const ids = (listed.body.sources as Array<{ id: number; status: string }>).map((r) => r.id);
+  t(
+    "7. the list returns pending and failed rows",
+    ids.includes(pending.id) && ids.includes(failed.id),
+    JSON.stringify(listed.body.sources),
+  );
+  const failedRow = (listed.body.sources as Array<{ id: number; status: string; error: string | null }>).find(
+    (r) => r.id === failed.id,
+  );
+  t("7b. a failed row carries its reason", failedRow?.status === "failed" && !!failedRow?.error, JSON.stringify(failedRow));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();

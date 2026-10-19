@@ -74,6 +74,8 @@ export const AUDIT_ACTIONS = [
 
   // Project knowledge (0041) — metadata only; document text is never logged.
   'knowledge.source_added',
+  'knowledge.source_updated',
+  'knowledge.source_replaced',
   'knowledge.source_deleted',
 
   // Tests
