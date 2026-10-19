@@ -57,6 +57,7 @@ export default function KnowledgePanel({ projectId, welcome = false }: { project
   const [, navigate] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadArea = useRef<HTMLDivElement>(null);
+  const chooseButton = useRef<HTMLButtonElement>(null);
 
   const [data, setData] = useState<KnowledgeList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,7 +101,9 @@ export default function KnowledgePanel({ projectId, welcome = false }: { project
 
   const focusUpload = () => {
     uploadArea.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    fileInput.current?.focus();
+    // The file input is hidden and cannot hold focus; the button is what the
+    // user needs to reach.
+    chooseButton.current?.focus();
   };
 
   const onUpload = async () => {
@@ -239,6 +242,9 @@ export default function KnowledgePanel({ projectId, welcome = false }: { project
       ) : data.canUpload ? (
         <div ref={uploadArea} style={{ border: "1px solid var(--c-border)", borderRadius: 6, padding: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* The button below opens this, so the picker itself stays hidden:
+                one control that always does something, rather than a disabled
+                Upload button sitting next to the thing you were meant to click. */}
             <input
               ref={fileInput}
               type="file"
@@ -248,7 +254,7 @@ export default function KnowledgePanel({ projectId, welcome = false }: { project
                 setFile(e.target.files?.[0] ?? null);
                 setUploadError(null);
               }}
-              style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-2)" }}
+              style={{ display: "none" }}
             />
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <select
@@ -286,13 +292,42 @@ export default function KnowledgePanel({ projectId, welcome = false }: { project
                   flex: "1 1 180px",
                 }}
               />
-              <Button size="sm" onClick={onUpload} disabled={!file || uploading}>
+              <Button
+                ref={chooseButton}
+                size="sm"
+                onClick={() => (file ? onUpload() : fileInput.current?.click())}
+                disabled={uploading}
+              >
                 {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                {uploading ? "Uploading…" : "Upload"}
+                {uploading ? "Uploading…" : file ? "Upload" : "Choose a file"}
               </Button>
             </div>
             <p style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>
-              .md, .txt, .csv, .pdf or .docx, up to 15 MB.
+              {file ? (
+                <>
+                  <span style={{ color: "var(--c-ink-2)" }}>{file.name}</span>
+                  {" · "}
+                  {formatSize(file.size)}
+                  {" · "}
+                  <button
+                    onClick={() => fileInput.current?.click()}
+                    disabled={uploading}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      font: "inherit",
+                      color: "var(--c-ink-3)",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    change
+                  </button>
+                </>
+              ) : (
+                ".md, .txt, .csv, .pdf or .docx, up to 15 MB."
+              )}
             </p>
             {uploadError && (
               <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-amber, #b4802a)", display: "flex", gap: 6 }}>
@@ -352,18 +387,34 @@ export default function KnowledgePanel({ projectId, welcome = false }: { project
                 >
                   {style.label}
                 </span>
+                {/* Labelled, not a bare icon: a muted trash glyph on the right
+                    of a row reads as decoration, and people could not find
+                    how to remove a document. */}
                 {data.canUpload && (
                   <button
                     onClick={() => onDelete(s)}
                     disabled={deletingId === s.id}
-                    title="Remove document"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--c-ink-4)", padding: 2 }}
+                    title="Remove this document"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      background: "none",
+                      border: "1px solid var(--c-border)",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      color: "var(--c-ink-3)",
+                      fontSize: "var(--fs-xs)",
+                      padding: "3px 8px",
+                      whiteSpace: "nowrap",
+                    }}
                   >
                     {deletingId === s.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     )}
+                    {deletingId === s.id ? "Removing…" : "Remove"}
                   </button>
                 )}
               </div>
