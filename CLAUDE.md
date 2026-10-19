@@ -2,7 +2,8 @@
 
 > Single source of truth for continuing development. Covers **what the product does**,
 > the **UI/UX**, the **functional flows**, and the **technical architecture**. Kept current
-> with the shipped app (Phases 1–5 live on kandryn.com + app.kandryn.com).
+> with the shipped app (kandryn.com + app.kandryn.com). Last reconciled against the
+> codebase on 2026-10-19, through migration `0039`.
 
 ---
 
@@ -14,6 +15,7 @@ Kandryn is an **AI-powered developer delivery assistant**. It connects to Azure 
 - Review ranked suggestions and **commit** the chosen one → branch + PR.
 - **Create** work items from Kandryn (optionally pushed into the PLM) and **break down** an epic/story into children with AI.
 - **Generate tests** for a committed change, commit the test script to the same PR, and **push test cases** back into the PLM.
+- Be **warned when an item is out of order** — a prerequisite that has not landed on the default branch is invisible to a run — then override with a reason, which is stored as an immutable, attributed decision record.
 
 Three deployables share one backend + database:
 - **Marketing website** (`website/`) — public Next.js site at `/` (kandryn.com)
@@ -98,7 +100,9 @@ Standalone **Clerk production instance** (`pk_live_…`), Frontend API at `clerk
 
 PostgreSQL on **Supabase**. Schema in `lib/db/src/schema/`. **All PKs are `serial` integers** (a uuid FK can't reference a serial PK). **Every query scoped to `userId`** — no global data.
 
-`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`. Later additive migrations to apply in Supabase before deploy: `0007_test_cases.sql`, `0008_score_breakdown.sql`, `0009_veria_review.sql`, `0010_graphify_graph.sql`, `0011_run_graph_context.sql`, `0012_test_script.sql`, `0013_run_stack.sql`, `0014_aegis.sql`, `0015_narratia.sql`, `0016_aegis_remediation.sql`, `0017_multitenancy.sql`, `0018_audit_log.sql`, `0019_repositories_project_scope.sql`, `0020_per_project_repositories.sql`, `0021_graph_status.sql`, `0022_suggestion_files.sql`, `0023_suggestion_file_source_sha.sql`, `0024_suggestion_file_diff.sql`, `0025_change_plans.sql`, `0026_suggestion_file_deviation.sql`, `0027_suggestion_superseded.sql`, `0028_coherence.sql`, `0029_confidence_gate.sql`.
+`pnpm run db:migrate` = **`drizzle-kit push`**. For **additive** prod changes, also add an idempotent `docs/db/NNNN_*.sql` and apply it in the Supabase SQL editor before deploying (else the new column 500s the write path). Applied so far: `0001_projects_runs_hierarchy.sql`, `0002_runs_committed_suggestion.sql`. Later additive migrations to apply in Supabase before deploy: `0007_test_cases.sql`, `0008_score_breakdown.sql`, `0009_veria_review.sql`, `0010_graphify_graph.sql`, `0011_run_graph_context.sql`, `0012_test_script.sql`, `0013_run_stack.sql`, `0014_aegis.sql`, `0015_narratia.sql`, `0016_aegis_remediation.sql`, `0017_multitenancy.sql`, `0018_audit_log.sql`, `0019_repositories_project_scope.sql`, `0020_per_project_repositories.sql`, `0021_graph_status.sql`, `0022_suggestion_files.sql`, `0023_suggestion_file_source_sha.sql`, `0024_suggestion_file_diff.sql`, `0025_change_plans.sql`, `0026_suggestion_file_deviation.sql`, `0027_suggestion_superseded.sql`, `0028_coherence.sql`, `0029_confidence_gate.sql`, `0030_model_pinning.sql`, `0031_audit_retention_override.sql`, `0032_segregation_of_duties.sql`, `0033_audit_hash_chain.sql`, `0034_aegis_override.sql`, `0035_baseline_scan.sql`, `0036_baseline_file_paths.sql`, `0037_baseline_model.sql`, `0038_sequence_guard.sql`, `0039_agent_failures.sql`.
+
+> **`drizzle-kit push` does not create triggers.** `0033` (audit hash chain) and `0038` (override immutability) both install one, and a database brought up by push alone has the tables without them — every other check passes while the rows are silently mutable. Those two must be applied by hand.
 
 | Table | Key columns |
 |---|---|
@@ -108,7 +112,15 @@ PostgreSQL on **Supabase**. Schema in `lib/db/src/schema/`. **All PKs are `seria
 | `runs` | `id`, `user_id`, `project_id`, `work_item_id`, `repository_id` (**snapshot of the target repo taken at run creation (0020); `executeRun`/`commitFromSuggestion` read it via `getRunRepository`**, plain int FK in SQL), `status` (`scheduled`/`queued`/`running`/`succeeded`/`failed`/`canceled`), `trigger` (`manual`\|`scheduled`), `refine_prompt`, `auto_commit`, `scheduled_at`/`started_at`/`finished_at`, `error`, `pr_url`, `commit_hash`, `committed_suggestion_id` (plain int, no FK — avoids a schema import cycle). Indexed on user_id, (status, scheduled_at) |
 | `suggestions` | `id`, `run_id` FK, `agent` (`claude`/`openai`/`copilot`/`antigravity`), `explanation`, `language`, `score`, `recommendation`. **`code`/`file_path` @deprecated (0022) — nullable, no longer written; the change set lives in `suggestion_files`** |
 | `suggestion_files` | `id`, `suggestion_id` FK (cascade), `seq`, `op` (`create`/`edit`/`delete`), `file_path`, `content` (resolved content for create/edit), `hunks` jsonb (edit search/replace pairs, 0023), `source_blob_sha` (source read at generation, for staleness, 0023), `diff` jsonb (structured server-computed diff, 0024), `resolved`, `apply_status` (`pending`/`applied`/`failed`), `apply_error`, `lines_added`, `lines_removed` (0022). **Unique (suggestion_id, seq)**. Generation emits one file. Read via `loadSuggestionFiles`/`suggestionPrimaryFile` (`services/suggestionFiles.ts`) |
-| `integration_configs` | composite PK (`user_id`, `key`), `value` (plaintext — **never log**) |
+| `teams` / `team_members` / `team_invites` / `team_integrations` | multi-tenancy (0017). `teams.audit_retention_days` (0031), `teams.sequence_policy` (`off`\|`warn`\|`admin_override_only`, 0038) |
+| `audit_log` | immutable action trail (0018) + tamper-evident per-team hash chain `prev_hash`/`row_hash`, set by a DB trigger (0033). Writes are **fire-and-forget, never awaited** |
+| `change_plans` / `change_plan_files` | the pre-generation plan (0025): `candidate_files` jsonb, `retrieval_mode`, `confidence_score`/`confidence_signals` (0029), `notes` (records context truncation) |
+| `aegis_overrides` | immutable record of a cleared security gate (0034) — frozen findings, mandatory reason, `same_actor` |
+| `baseline_scans` | whole-codebase security scan via Anthropic Message Batches (0035–0037) |
+| `work_item_links` | dependency edges (0038). `link_type` `blocks`\|`parent`\|`relates`, `source` `tracker`\|`inferred`\|`manual`. Only `blocks`/`tracker` is written today; `source` is in the unique key so a human-confirmed edge can coexist with the tracker's |
+| `sequence_checks` | snapshot of a run-order check as **shown to a user** (0038) — findings, facts, `fingerprint` (staleness), cached `impact`, 15-min expiry |
+| `sequence_overrides` | **immutable** decision record (0038). A DB trigger blocks every UPDATE except the four `ON DELETE SET NULL` FKs, so deleting a run leaves the record standing. `record_hash` excludes those FKs for that reason |
+| `integration_configs` | composite PK (`user_id`, `key`), `value` — **encrypted at rest** via `configCrypto.ts` (AES-256-GCM) when `CONFIG_ENCRYPTION_KEY` is set. **Never log** |
 | `waitlist` | marketing signups |
 
 ### Config keys (`configService.ts → CONFIG_KEYS`)
@@ -124,7 +136,7 @@ The end-to-end user journey, mapped to the code paths:
 2. **Create a project** (`/projects/new`) — 3-step wizard binds one **PLM project** + one **repository**. Create validates both bindings live and rejects a duplicate PLM binding with a friendly 409.
 3. **Sync** (`POST /projects/:id/sync`) — pulls the epic→story→task hierarchy from Jira/ADO into `tasks`, keyed on `(project_id, external_id)`; resolves parents; cancels pending runs on items that closed upstream.
 4. **Author work** — **New item** (local or pushed to the PLM) and **Break down** an epic/story into AI-proposed children you edit/approve.
-5. **Run** — from a work item, **Run now** (inline) or **Schedule**. `runService.executeRun` fetches Git context, runs Claude + OpenAI, ranks with the SynthesisEngine, and persists suggestions. Scheduled runs are claimed by the cron dispatcher.
+5. **Run** — from a work item, **Run now** (inline) or **Schedule**. The **run-order check** (0038) runs first: clear items start with no dialog, out-of-order ones open the Sequence dialog and need an explicit, recorded override. `runService.executeRun` fetches Git context, runs Claude + OpenAI, ranks with the SynthesisEngine, and persists suggestions. Scheduled runs are claimed by the cron dispatcher.
 6. **Commit** — commit the chosen suggestion → branch `task/<id>` → PR `[Kandryn] <title>`; the item moves to **review**; `committed_suggestion_id` is recorded.
 7. **Test** — generate Given/When/Then cases + a runnable script, commit the script onto the **same PR**, and push selected cases back to the PLM (mirrored locally as `test_case`).
 
@@ -137,7 +149,8 @@ Public (mounted **before** `requireAuth`): `POST /api/waitlist`, `POST /api/cont
 - **Repositories:** `GET/POST /api/repositories`, `GET/PATCH/DELETE /api/repositories/:id`, `GET /api/repositories/:repoId/stack`. **Graphify:** `GET /api/repositories/:repoId/graph` (status: `built`/`builtAt`/`nodeCount`/`stale`), `POST /api/repositories/:repoId/graph` (upload graph.json), `POST /api/repositories/:repoId/graph/rebuild` (re-index via the microservice; `202`, or `503` when unconfigured).
 - **Projects:** `GET /api/projects` (with counts), `POST /api/projects`, `GET/PATCH/DELETE /api/projects/:id`, `POST /api/projects/backfill`, `GET /api/plm/:provider/projects`, `POST /api/projects/:id/sync`, `GET /api/projects/:id/work-items`, `POST /api/projects/:id/work-items` (`pushToPlm`).
 - **Work items:** `PATCH /api/work-items/:id` (local edit; `done` propagates via `closeTask`), `POST /api/work-items/:id/breakdown` (proposals, not saved), `POST /api/work-items/:id/push-to-plm` (promote a local-only item into Jira/ADO → records externalId/source/plmUrl; `409` if already linked).
-- **Runs:** `POST /api/work-items/:id/runs` (inline → `{run,suggestions}`; `scheduledAt` future ≤30d → `202`; ≤20 pending/user), `GET /api/runs?projectId=&status=&limit=`, `GET /api/runs/:id`, `POST /api/runs/:id/cancel`, `POST /api/runs/:id/commit`, `POST /api/runs/:id/review` (Veria), `POST /api/runs/:id/security` (Aegis), `POST /api/runs/:id/runbook` (Narratia; body `{target: markdown|confluence|notion}`). **Confidence gate (Phase 4):** `POST /api/runs/:id/plan/approve` (generate the parked plan as-is), `POST /api/runs/:id/plan/reject` (run → `canceled`, no suggestions); edit-then-approve reuses `POST /api/runs/:id/plan/revise`.
+- **Runs:** `POST /api/work-items/:id/runs` (inline → `{run,suggestions}`; `scheduledAt` future ≤30d → `202`; ≤20 pending/user). **Gated by Sequence Guard (0038):** an out-of-order item is refused `409 SEQUENCE_CHECK_REQUIRED` / `403 OVERRIDE_NOT_PERMITTED` / `409 SEQUENCE_STALE`, each carrying a freshly recomputed `check`; an optional `sequence` block overrides, and the run + decision row are written in **one transaction**, `GET /api/runs?projectId=&status=&limit=`, `GET /api/runs/:id`, `POST /api/runs/:id/cancel`, `POST /api/runs/:id/commit`, `POST /api/runs/:id/review` (Veria), `POST /api/runs/:id/security` (Aegis), `POST /api/runs/:id/runbook` (Narratia; body `{target: markdown|confluence|notion}`). **Confidence gate (Phase 4):** `POST /api/runs/:id/plan/approve` (generate the parked plan as-is), `POST /api/runs/:id/plan/reject` (run → `canceled`, no suggestions); edit-then-approve reuses `POST /api/runs/:id/plan/revise`.
+- **Sequence Guard (0038):** `POST /api/work-items/:id/sequence-check` → `SequenceCheck`; `POST .../sequence-check/:checkId/impact` → `ImpactAnalysis`; `POST .../sequence-check/:checkId/event` (`heeded`\|`canceled`, 204). `GET /api/projects/:id/run-order` (waves + `waitsOn` per item). `GET|PUT /api/team/sequence-policy` (PUT admin-only). Admin reads: `GET /api/sequence-overrides`, `/:id`, `/export.csv`.
 - **Tests:** `POST /api/work-items/:id/tests/generate`, `.../tests/commit-script` (same branch/PR), `.../tests/push`.
 - **Legacy task flow (still mounted):** `POST /api/tasks/:taskId/suggestions` (rate-limited 20/min), `.../commit`, `.../complete`; `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/:id`.
 - **Internal (cron):** `GET|POST /api/internal/dispatch-runs` — `CRON_SECRET` bearer-guarded, before `requireAuth`.
@@ -152,21 +165,43 @@ artifacts/api-server/src/
   app.ts             Express setup: clerk middleware, routes, error handler, rate limit
   index.ts           Local entry; Vercel uses api/index.js → dist/serverless.mjs
   lib/env.ts         Startup env validation      lib/logger.ts  pino singleton
-  middlewares/       requireAuth.ts, clerkProxyMiddleware.ts
-  routes/            index.ts (mounts: public before requireAuth, rest after)
-                     repositories, projects, runs, workItems, tests,
-                     tasks, taskActions, stats, config, waitlist, contact, internal, health
+  middlewares/       requireAuth.ts, team.ts (attachTeam + requireAdmin), clerkProxyMiddleware.ts
+  routes/            index.ts (mounts: public before requireAuth, then attachTeam, rest after)
+                     repositories, projects, runs, sequence, workItems, tests, baseline,
+                     teams, reports, audit, tasks, taskActions, stats, config,
+                     waitlist, contact, internal, health
   services/
-    configService    per-user credential store
+    configService    per-user credential store (+ configCrypto: AES-256-GCM at rest)
     gitService       GitHub (Octokit) + Azure Repos; branch/commit/PR; commitChanges(baseSha), branchHeadSha
+    repoResolver     getProjectRepository / getRunRepository (0020 binding)
     aiService        AIOrchestrator + SynthesisEngine + generateBreakdown + generateTests (+ AIFormatError)
+    patchService     search/replace hunk application (strict: exact, once, no fuzzy)
+    diffService      server-side structured diffs    commitResolver  staleness re-check before commit
+    planningService  runPlanning + candidate retrieval + assemblePlanContext
+    confidenceScore  pure scoring core  ·  confidence  db-backed signals
+    coherence/       static cross-file coherence check
     plmService       closeTask across ADO + Jira
     plmProjects      list/validate PLM projects; normalizeJiraDomain(); PlmError
     plmWrite         create PLM work items + test cases (Jira/ADO)
-    syncService      project-scoped PLM hierarchy sync → tasks
-    runService       executeRun() + commitFromSuggestion() (+ RunError)
-    emailService     Resend: contact, waitlist, run-completed/failed
-  adapters/          gitService, azureDevOpsAdapter, jiraAdapter
+    plmItemType      db-free type mapping (test-case label handling)
+    plmLinks         db-free parsing of Jira issuelinks / ADO relations (0038)
+    syncService      project-scoped PLM hierarchy sync → tasks (+ reconcileTrackerLinks)
+    runService       executeRun() + commitFromSuggestion() + approvePlan/rejectPlan (+ RunError)
+    veriaService     post-commit review      aegisService / aegisPlmService / aegisOverrideService
+    baselineScanService (+ baselineScanCore)  whole-codebase scan via Message Batches
+    narratiaService / narratiaPushService     runbooks → markdown/Confluence/Notion
+    graphifyService  knowledge-graph indexing (+ graphUsability)
+    securityStatus   db-free commit-status publishing (GitHub/ADO)
+    pullRequestState db-free live PR state lookup (0038)
+    sequenceService  run-order analysis (+ sequenceGraph, pure)
+    sequenceImpactService (+ sequenceImpact, pure)  grounded impact narrative
+    sequenceGate     the run-request gate + scheduled hold + outcome hooks
+    sequenceRecordHash  pure canonical hash for the decision record
+    auditService     fire-and-forget audit log + retention + chain verification
+    teamService / resourceAdmin               teams, and canAdminister(actor, resource)
+    emailService     Resend: contact, waitlist, run-completed/failed/parked/held
+  adapters/          gitService, azureDevOpsAdapter, jiraAdapter  (LEGACY task flow only)
+  scripts/           sequence-verify/  data-layer checks needing DATABASE_URL (see its README)
   stack/             detector.ts (path-based StackProfile), prompts.ts
 ```
 
@@ -180,6 +215,9 @@ artifacts/api-server/src/
 - **Commit/PR:** branch is deterministic `task/<id>`. `GitService.commitChanges(baseSha?)` defaults to the default-branch HEAD; the **test-script commit** passes the branch's own HEAD (`branchHeadSha`) so it stacks on the existing PR instead of overwriting the implementation commit.
 - **Graphify** (`graphifyService.ts`, `graphify-service/` microservice): a per-repo knowledge graph (`repositories.graph_json`/`graph_built_at`/`graph_node_count`) gives runs precise, low-token file context. `runService` picks the graph path when `isGraphServable(graphStatus, graphBuiltAt)` — **`graph_status='succeeded'` AND fresh <24h** → `git.fetchFileContextWithGraph` returns `{context, usedGraph}`; a graph marked **`stale`** (set on a repository **URL change**, since the old graph reflects different content), or `indexing`/`failed`/`idle`, is refused and retrieval falls back to tree-only (`retrievalMode='keyword'`). A URL change also fires a self-healing `triggerRepoIndex` when the microservice is configured (`stale`→`indexing`→`succeeded`). So `retrievalMode='graph'` on a plan means the graph is **current**, not merely that one exists. (`isGraphUsable` remains the age-only helper used for the repo-detail staleness badge.) `usedGraph` persists to `runs.used_graph_context` (surfaced as a "Graph context" badge on run detail). **Phase 2:** the Python microservice (`/index`) clones + runs `graphify extract` and POSTs the graph to `POST /api/internal/graphify-callback` (guarded by `GRAPHIFY_SERVICE_SECRET`); triggered fire-and-forget on repo connect. **Phase 3:** `triggerRepoIndex()` (shared helper) also re-indexes after every commit (auto + manual) and on the **Rebuild graph** button (`POST /repositories/:repoId/graph/rebuild`, `503` when `GRAPHIFY_SERVICE_URL` unset). Re-indexing is a full re-extract via `/index` (a partial sparse-checkout would drop cross-file edges); developers without the microservice can still upload a `graph.json` by hand. Graph work is a **no-op unless `GRAPHIFY_SERVICE_URL` + `GRAPHIFY_SERVICE_SECRET` are set** — the keyword fallback (`fetchFileContext`) always runs otherwise.
 - **Confidence gate** (`confidenceScore.ts` pure core + `confidence.ts`, Phase 4): a pre-generation HITL check. `runPlanning` scores each `ready` plan 0–1 and persists `change_plans.confidence_score`/`confidence_signals` (raw inputs, for recalibration). Score = renormalised weighted average over available signals (absent = neutral, not a penalty): **score gap** 0.40 (top-two candidate scores, retained on `candidate_files.score`), **retrieval_mode** 0.20 (graph=1.0/keyword=0.5, relative), **candidate density** 0.20, **historical acceptance** 0.20 (exact file-set-match on prior committed, un-revised plans; neutral at 0 priors). Weights + the `projects.confidence_threshold` default **0.6 are uncalibrated placeholders**. `executeRun` gates AFTER the plan is written, BEFORE generation, covering interactive + scheduled alike: `confidence_score < threshold` → plan + run become **`awaiting_review`** (a distinct `RunStatus`, so the dispatcher's `running`-only stuck-sweep can't reap it) and generation does not start. A run with **no `ready` plan** (no key / planning failure) is not gated — Phase 1 fallback. **Exits:** approve (`executeRun(reusePlan)` — no re-plan/re-gate), edit-then-approve (`/plan/revise`), reject (run → `canceled`, nothing downstream since all guard on `committedSuggestionId`). Scheduled parks email the owner (`sendRunParked`); no auto-approve/retry/expiry — it waits indefinitely. Surfaced by the run-detail banner (signal-derived reason via `confidenceReason`), the runs-list "Needs review" badge, the left-rail counter, and the right-panel `awaiting_review` view (tags scheduled vs manual).
+
+- **Sequence Guard** (`sequenceService` + pure `sequenceGraph`, `sequenceImpactService` + pure `sequenceImpact`, `sequenceGate`, `0038`): run-order checking with an audited override. Kandryn generates against the **default branch**, so a prerequisite that has not landed there is invisible to a run — the whole feature follows from that one fact. `analyzeWorkItem` is deterministic and model-free (≈19 ms on a 400-item project) and produces eight finding types: `unmet_blocker`, `blocker_pr_unmerged`, `blocker_gate_blocked`, `children_incomplete`, `file_overlap`, `dependency_cycle`, `out_of_rank`, `inferred_prerequisite` (the last is unused — step 9 was skipped, so **every edge in the graph came from a tracker or a human**). A **blocked Aegis gate is tested before an open PR**, because a gate-blocked item always has a PR and checking the PR first would silently demote it from warning to caution. `sequenceGate.evaluateGate` is the single place the run-request rules live, shared by the route and the dispatcher; the server recomputes on every request and **never reads a client-supplied verdict**. A `clear` verdict writes no rows at all (`computeCheck` is split from `persistCheck` for this). **Impact** is two layers: a deterministic template assessment that is always available, then an optional `claude-sonnet-4-5` narrative, zod-validated, 8 s abort, with every risk required to cite fact ids — anything citing a fact not in the bundle is dropped, and if nothing survives the deterministic layer is used. The override flow therefore never depends on a model being up. Tracker titles and acceptance criteria travel as `untrusted` facts and render inside `<untrusted>` tags; facts carry **paths, never file contents**. **Scheduled runs are re-checked at dispatch** (`holdIfOrderChanged`) — a warning the scheduling user never acknowledged sets the run to `held` and emails them; cautions do not hold. Aegis remediation is **exempt** and audited as such. Known limits: "done" is read from the tracker, not the PR (Kandryn never learns a PR merged — the impact step does a live lookup and corrects it, so the error is in the safe direction); Jira has no backlog rank, so `out_of_rank` is ADO-only; parent edges are not stored because `tasks.parent_id` already is the source of truth.
+- **Generation resilience (0039):** `generateSuggestions` returns `{suggestions, failures}` rather than swallowing a rejected agent. Failures persist to `runs.agent_failures` and surface as an amber note on run detail, because a run quietly dropping from two candidates to one is what turns a single bad reply into a failed run. A run where **every** agent failed now throws instead of reporting success with zero suggestions. Both providers share one `OUTPUT_CONTRACT` system prompt (the Claude call previously had none), and a reply that stops on `max_tokens` says it was cut off mid-JSON instead of surfacing as a parse error. An edit whose search block is not in the file gets **one** corrective attempt against the real content (`resolveFileOps`'s `repair` hook) — only `no_match`, since `multiple_matches`/`overlap` mean the model read the file correctly; a repair that also fails leaves the original error and stores nothing.
 
 ### Error-handling conventions
 - Express 5 auto-propagates async throws → global handler in `app.ts` returns `{ error }`. Use try/catch only to return a non-500.
@@ -221,6 +259,9 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 - **RunPanel** (`components/runs/RunPanel.tsx`, Sheet) — refinement textarea, **auto-commit** checkbox (off by default), **Schedule for later** checkbox → `datetime-local` (default +1h, ≤30d), footer **Run now** / **Schedule run**. Run now → navigate to run detail; Schedule → toast + refresh the board's scheduled badges.
 - **NewItemDialog** (`components/workitems/NewItemDialog.tsx`) — type (epic/story/task/bug), parent (epics/stories), title, description, acceptance criteria, **"Also create in Jira/ADO"** toggle.
 - **BreakdownDialog** (`components/workitems/BreakdownDialog.tsx`) — calls breakdown on open (loading), shows editable proposal rows (checkbox, type select, title, description, AC bullets), batch **"Also create in PLM"**, creates approved children under the parent.
+- **SequenceDialog** (`components/sequence/SequenceDialog.tsx`, 0038) — the run-order gate, on the **Radix dialog** so focus trapping, Esc and aria come from a primitive that already gets them right. Step 1: findings (severity in **words** as well as colour) + "Do this first". Step 2: impact, reason category, free-text reason, acknowledgement checkbox. Warnings use the **amber** token — never red; this is a caution about ordering, not a failure. Closing posts `canceled`, opening a blocker posts `heeded`. The submit rule lives in `lib/overrideReady.ts` (extracted so it can be tested — a `.tsx` cannot be, since the dev-copilot runner strips types but does not compile JSX) with its minimum pinned to the server's by a test.
+- **RunOrderView** (`components/board/RunOrderView.tsx`) — open work grouped into waves, cycle group separate. A board view toggle, not the legacy `/tasks` page, because `run-order` is project-scoped. The board's "Waits on PAY-A" chips come from the **same single call**, so there is no request per row.
+- **SequenceDecisions / SequencePolicySection** (`components/settings/`) — the Decisions sub-view on the audit tab (detail drawer + CSV export) and the admin-only policy radio on the team tab.
 - **TestStage** (`components/tests/TestStage.tsx`) — **Generate tests** → editable test **script** (filePath + code, framework badge, Regenerate, **Commit to PR**) + **test cases** (Given/When/Then checkbox rows, **Push to PLM**; blocked with a note + **Push item to PLM** promote button when the work item isn't PLM-linked). Generated cases + script persist on the committed suggestion (`suggestions.test_cases`/`test_script`, migration `0012`), so the run detail **rehydrates** them on reload; per-case PLM push status (`plmKey`/`plmUrl`, stored on each `test_cases` entry) shows as a **Pushed · KEY** badge across reloads. Regenerate replaces both and clears push status.
 
 ### Contexts + client
@@ -298,6 +339,9 @@ These are the natural next tasks; none are blocking today:
   latin-ext, Vietnamese). Removing the two entries is a real byte win; check
   for stragglers with `grep -rn "fontWeight: [89]00\|font-weight: [89]00"` in
   `website/` first.
+- **Inferred prerequisites were deliberately skipped** (Sequence Guard step 9). Every edge in `work_item_links` came from a tracker or a human; nothing in the dependency graph is a model guess. Building it means a `sequenceInference` team flag, `source='inferred'` links capped at `caution`, and evidence quotes that must actually appear in the item text.
+- **Jira backlog rank is not synced**, so the `out_of_rank` finding is Azure-DevOps-only. Jira's rank is a LexoRank string on a per-site custom field, which needs a `/field` discovery request per sync — skipped for the weakest of the eight finding types.
+- **`projects.confidence_threshold` default 0.6 is still uncalibrated**, and there is now one real data point against it: run #36 scored **exactly 0.6** and passed the gate (`score < threshold`), then failed on a hallucinated edit anchor. The signal called the plan marginal and was right. `runs.agent_failures` (0039) accumulates similar evidence — `SELECT agent_failures FROM runs WHERE agent_failures IS NOT NULL` says whether a dropped agent is a one-off or a pattern.
 - **Domain context at connect (planned, not built — see below).**
 
 ### Domain context at connect — design notes
@@ -434,7 +478,11 @@ Still open:
 - **Jira issue search must use `/rest/api/3/search/jql`** (classic `/search` is 410); Jira domains must be normalized to include `https://`.
 - **`website/` is outside the pnpm workspace** — build/test with npm inside `website/`; metadata routes need `dynamic='force-static'` under static export.
 - **No live external services in the sandbox** — smoke-test real flows on the Vercel deploy.
-- **Model IDs:** Claude `claude-sonnet-4-5`, OpenAI `gpt-4o`.
+- **A DB trigger's error reaches you on `err.cause`, not `err`** — the same Drizzle wrapping as `23505`. An assertion matching only `String(err)` reports a **false pass** when an immutability trigger fires; this happened while testing `0038` and was only caught by checking in `psql` directly.
+- **Postgres `jsonb` reorders object keys.** A value round-tripped through the database comes back deep-equal but not string-equal, so anything hashed or compared must be canonicalised first (`sequenceRecordHash.canonicalJson`) — hashing the stored form would never match hashing what was written.
+- **`drizzle-kit push` creates tables but not triggers** (see §6). It also does not fail or warn, so the gap is invisible.
+- **Data-layer checks live in `artifacts/api-server/scripts/sequence-verify/`**, not `pnpm test` — they need `DATABASE_URL` and they truncate the tables they use. Its README has the throwaway-Postgres recipe; `artifacts/api-server/tsconfig.json` includes `scripts` so they are typechecked.
+- **Model IDs:** Claude `claude-sonnet-4-5`, OpenAI `gpt-4o`, Aegis `claude-fable-5` (ZDR fallback `claude-opus-5`).
 
 ---
 
