@@ -276,6 +276,70 @@ These are the natural next tasks; none are blocking today:
 - **PLM status propagation beyond `done`** (e.g. mark In Progress when a run starts) — deferred; adds write scope.
 - **Legacy vs. new flow** — the single-task flow (`/tasks`, `/workspace`, `taskActions.ts`, OpenAPI codegen) coexists with the project/board/runs flow; eventual consolidation.
 - **Shell consistency** — the sidebar was quieted (Claude-Code style); TabBar and page headers could follow.
+- **Domain context at connect (planned, not built — see below).**
+
+### Domain context at connect — design notes
+
+Backlogged. A run today gets the work item's title, description and AC, the
+stack profile, candidate files and a capped tree. Nothing in that chain knows
+what the business *does*. `stack_profile` is technical (six enums) and the
+Graphify graph is structural (symbols, `calls`/`imports`/`inherits`) — neither
+carries domain meaning. Run #32 on the PnC demo is the evidence: Synthesia's
+own critique was that the agent "interprets 'policy existence' validation as
+checking whether claims are returned rather than explicitly verifying the
+policy exists". It had the code and the AC and still got the domain wrong.
+
+Shape: extract a **Domain Context** after stack + graph + first PLM sync (the
+signal is in the combination), store it, inject it per run, re-verify on drift.
+
+Sources by value: PLM epics/stories/AC first (already synced, already in
+business language, badly under-used); then schema/migration/validator files,
+where invariants actually live; then high-degree graph nodes; then
+README/docs, and optionally Confluence/Notion — credentials already exist for
+runbook *push*, so reading them as a *source* is free.
+
+Storage: `0038_domain_context.sql` + Drizzle. `domain_contexts` (scope, status,
+revision, model, token cost) and `domain_rules` (statement, **evidence as
+file:line or PLM key**, confidence, source, status proposed/confirmed/rejected,
+superseded), plus glossary, entities and workflows.
+
+The risk that drives the design: an extracted rule is an LLM inference. Stored
+as fact and injected into every prompt, one wrong rule silently poisons every
+later run — worse than no context, because it is confident and invisible. So:
+evidence on every rule, a human review gate before first use, only `confirmed`
+rules injected as authoritative. Same move the Phase 4 confidence gate already
+makes by parking a run at `awaiting_review`.
+
+"Always verified" has two readings, both worth building: is the context still
+true (rules cite files; a commit touching them marks the rule `needs_review`,
+mirroring how the graph goes `stale`), and is this task consistent with the
+context (pre-generation contradiction check; post-commit diff check — a sibling
+to Veria and Aegis).
+
+Enhancements: feed a domain-coverage signal into `confidenceScore.ts`; **fix
+the parent-work-item gap first** (`dbTaskToDevCopilotTask` never maps
+`parentId`, so a run never sees the epic above its story — that epic is
+business context, already synced, costing nothing: cheapest real win here);
+evidence-linked reviewed rules are governance-page material and plug into the
+audit log; it fits the product's named-agent model.
+
+Scope caution: "full context of the app" will not survive a large repository
+inside any sane token budget. Design for a small, high-value, evidence-backed
+set — glossary, core entities, key workflows, perhaps 20–50 reviewed rules.
+Thirty rules a human confirmed beat five hundred the model guessed.
+
+Open questions, to answer before building:
+1. Scope per project or per repository? (Leaning project-scoped business
+   context with repo-scoped evidence, since repos get re-pointed.)
+2. Human review gate before first use — recommended yes.
+3. Does project creation block on it, or stay background with visible status?
+4. Cost ceiling: it runs on the customer's own Anthropic key. Cap? Show an
+   estimate first?
+5. Advisory or enforcing — does a confirmed-rule violation warn, or block like
+   the Aegis gate?
+6. Who confirms rules — admins only, matching the team/role model?
+7. Conflict: a work item's AC contradicts a confirmed rule. Which wins?
+
 - **Known adapter caveats:** Jira create maps `task → Task` (not `Sub-task`) with a best-effort `parent` link; ADO `commitChanges` uses `changeType:"edit"` (new-file adds may fail on Azure Repos — **GitHub is the primary, auto-synced provider**); test-case push requires a PLM-linked work item.
 
 ### Marketing site — claim-verification status
