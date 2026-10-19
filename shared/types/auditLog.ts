@@ -63,6 +63,15 @@ export const AUDIT_ACTIONS = [
   'narratia.runbook_generated',
   'narratia.runbook_pushed',
 
+  // Sequence Guard (0038) — run-order checks and the override decision trail.
+  'sequence.flagged',
+  'sequence.override_confirmed',
+  'sequence.heeded',
+  'sequence.canceled',
+  'sequence.run_held',
+  'sequence.override_outcome',
+  'sequence.policy_changed',
+
   // Tests
   'tests.generated',
   'tests.committed',

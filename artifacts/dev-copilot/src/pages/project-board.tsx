@@ -7,6 +7,7 @@ import { RunPanel } from "@/components/runs/RunPanel";
 import { NewItemDialog } from "@/components/workitems/NewItemDialog";
 import { BreakdownDialog } from "@/components/workitems/BreakdownDialog";
 import { WorkItemPanel } from "@/components/board/WorkItemPanel";
+import { RunOrderView } from "@/components/board/RunOrderView";
 import { useTopBarActions } from "@/context/TopBarContext";
 import { useRightPanel } from "@/context/RightPanelContext";
 import {
@@ -15,7 +16,9 @@ import {
   fetchRuns,
   fetchRepositories,
   syncProject,
+  fetchRunOrder,
   ApiError,
+  type RunOrderItem,
   type Project,
   type WorkItem,
   type Run,
@@ -71,6 +74,11 @@ export default function ProjectBoard() {
   const [scheduledItems, setScheduledItems] = useState<Set<number>>(new Set());
   // Latest run per work item id — drives the per-card run progress state.
   const [runByWorkItem, setRunByWorkItem] = useState<Map<number, Run>>(new Map());
+  // Unmet blockers per item, for the "Waits on" chip (0038). One call for the
+  // whole board rather than a check per row.
+  const [waitsOnByItem, setWaitsOnByItem] = useState<Map<number, string[]>>(new Map());
+  const [runOrder, setRunOrder] = useState<{ items: RunOrderItem[]; cycleCount: number } | null>(null);
+  const [showOrder, setShowOrder] = useState(false);
   const { open: openRightPanel } = useRightPanel();
 
   const loadScheduled = useCallback(() => {
@@ -79,6 +87,18 @@ export default function ProjectBoard() {
       .then((rs) => setScheduledItems(new Set(rs.map((r) => r.workItemId))))
       .catch(() => {
         /* badge is best-effort */
+      });
+  }, [projectId]);
+
+  const loadRunOrder = useCallback(() => {
+    if (!Number.isFinite(projectId)) return;
+    fetchRunOrder(projectId)
+      .then((o) => {
+        setRunOrder(o);
+        setWaitsOnByItem(new Map(o.items.filter((i) => i.waitsOn.length > 0).map((i) => [i.itemId, i.waitsOn])));
+      })
+      .catch(() => {
+        /* chips are best-effort; the gate is enforced server-side regardless */
       });
   }, [projectId]);
 
@@ -101,7 +121,8 @@ export default function ProjectBoard() {
   useEffect(() => {
     load();
     loadScheduled();
-  }, [load, loadScheduled]);
+    loadRunOrder();
+  }, [load, loadScheduled, loadRunOrder]);
 
   // Poll every 5s for the latest run per work item, so cards reflect run
   // progress (running / completed / failed) without a manual refresh.
@@ -165,11 +186,14 @@ export default function ProjectBoard() {
         <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
         {syncing ? "Syncing…" : "Sync"}
       </button>
+      <button className="bm-ghost" onClick={() => setShowOrder((v) => !v)}>
+        <GitFork size={12} />{showOrder ? "Board" : "Run order"}
+      </button>
       <button className="bm-ghost" onClick={() => setNewItemOpen(true)}>
         <Plus size={12} />New item
       </button>
     </>,
-    [projectId, syncing],
+    [projectId, syncing, showOrder],
   );
 
   if (loading) {
@@ -252,7 +276,17 @@ export default function ProjectBoard() {
         </div>
       )}
 
-      {/* Board */}
+      {/* Suggested order, in place of the status board (0038). */}
+      {showOrder && runOrder ? (
+        <RunOrderView
+          items={runOrder.items}
+          cycleCount={runOrder.cycleCount}
+          onOpen={(itemId) => {
+            const found = items?.find((i) => i.id === itemId);
+            if (found) setSelectedItem(found);
+          }}
+        />
+      ) : (
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", flex: 1, overflow: "hidden", borderTop: "1px solid var(--c-border)" }}>
         {COLUMNS.map((col, colIdx) => {
           const colItems = visible.filter((it) => col.statuses.includes(it.status));
@@ -274,6 +308,7 @@ export default function ProjectBoard() {
                     key={it.id}
                     item={it}
                     scheduled={scheduledItems.has(it.id)}
+                    waitsOn={waitsOnByItem.get(it.id) ?? []}
                     activeRun={runByWorkItem.get(it.id)}
                     onOpen={() => setSelectedItem(it)}
                     onRun={() => openRun(it, false)}
@@ -287,6 +322,7 @@ export default function ProjectBoard() {
           );
         })}
       </div>
+      )}
 
       <WorkItemPanel
         item={selectedItem}
@@ -373,6 +409,7 @@ const linkBtn: React.CSSProperties = {
 function WorkItemCard({
   item,
   scheduled,
+  waitsOn,
   activeRun,
   onOpen,
   onRun,
@@ -382,6 +419,8 @@ function WorkItemCard({
 }: {
   item: WorkItem;
   scheduled: boolean;
+  /** Keys of unmet blockers; empty when this item is clear to run. */
+  waitsOn: string[];
   activeRun: Run | undefined;
   onOpen: () => void;
   onRun: () => void;
@@ -418,6 +457,26 @@ function WorkItemCard({
         <span className={typeClass}>{item.itemType.replace("_", " ")}</span>
         {item.externalId && (
           <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-sm)", color: "var(--c-ink-4)" }}>{item.externalId}</span>
+        )}
+        {/* Only rows with an unmet blocker get a chip; a clear row stays quiet
+            (0038). Neutral, not amber — this is information, not a warning. */}
+        {waitsOn.length > 0 && (
+          <span
+            title={`Waits on ${waitsOn.join(", ")}`}
+            style={{
+              marginLeft: "auto",
+              fontSize: "var(--fs-xs)",
+              color: "var(--c-ink-4)",
+              border: "1px solid var(--c-hairline)",
+              borderRadius: 3,
+              padding: "0 4px",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Waits on {waitsOn[0]}
+            {waitsOn.length > 1 ? ` +${waitsOn.length - 1}` : ""}
+          </span>
         )}
       </div>
 
