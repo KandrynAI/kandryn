@@ -182,7 +182,7 @@ export default function ProjectBoard() {
   useTopBarActions(
     <>
       <Link href={`/p/${projectId}/runs`} className="bm-ghost">Runs</Link>
-      <Link href={`/p/${projectId}/knowledge`} className="bm-ghost">Knowledge</Link>
+      <Link href={`/p/${projectId}/settings?tab=knowledge`} className="bm-ghost">Knowledge</Link>
       <button className="bm-ghost" onClick={onSync} disabled={syncing}>
         <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
         {syncing ? "Syncing…" : "Sync"}

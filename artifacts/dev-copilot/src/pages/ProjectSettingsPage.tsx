@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams, useLocation, Link } from "wouter";
+import { useParams, useLocation, useSearch, Link } from "wouter";
+import KnowledgePanel from "@/components/knowledge/KnowledgePanel";
 import {
   fetchProject,
   updateProject,
@@ -21,6 +22,13 @@ export default function ProjectSettingsPage() {
   const projectId = Number(params.projectId);
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  // Same ?tab= pattern as the user Settings page: read once at mount, local
+  // state thereafter, URL left alone. `welcome` is the post-create flag and
+  // belongs to the Knowledge tab alone.
+  const search = useSearch();
+  const query = new URLSearchParams(search);
+  const [tab, setTab] = useState<"general" | "knowledge">(query.get("tab") === "knowledge" ? "knowledge" : "general");
+  const welcome = query.get("welcome") === "1";
 
   const [project, setProject] = useState<Project | null>(null);
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -135,17 +143,46 @@ export default function ProjectSettingsPage() {
   if (loading) {
     return <div className="mx-auto max-w-2xl px-6 py-6 text-sm text-muted-foreground">Loading…</div>;
   }
-  if (!project) {
+  // GET /projects/:id is owner-only, so a team member of a team-visible
+  // project cannot load the General tab. Knowledge must still open for them:
+  // it enforces its own access server-side (owner or team member reads,
+  // canAdminister writes), and that rule is unchanged by moving the panel
+  // here. Without this, the move would quietly revoke their read access.
+  if (!project && tab !== "knowledge") {
     return <div className="mx-auto max-w-2xl px-6 py-6 text-sm text-destructive">Project not found.</div>;
   }
 
   const currentRepo = repos[0];
 
-  return (
-    <div className="mx-auto max-w-2xl px-6 py-6">
-      <h1 className="text-lg font-semibold tracking-tight">Project settings</h1>
-      <p className="mb-6 mt-1 text-xs text-muted-foreground">{project.name}</p>
+  const tabBtn = (key: "general" | "knowledge"): React.CSSProperties => ({
+    fontSize: 13,
+    fontWeight: tab === key ? 600 : 500,
+    padding: "8px 2px",
+    background: "none",
+    border: "none",
+    borderBottom: tab === key ? "2px solid var(--c-blue)" : "2px solid transparent",
+    color: tab === key ? "var(--c-blue)" : "var(--c-ink-3)",
+    cursor: "pointer",
+  });
 
+  return (
+    <div className={`mx-auto px-6 py-6 ${tab === "knowledge" ? "max-w-3xl" : "max-w-2xl"}`}>
+      <h1 className="text-lg font-semibold tracking-tight">Project settings</h1>
+      {project && <p className="mt-1 text-xs text-muted-foreground">{project.name}</p>}
+
+      <div className="mb-6 mt-4 flex gap-5 border-b" style={{ borderColor: "var(--c-border)" }}>
+        {/* General is hidden when the project itself could not be read —
+            offering the tab would only lead to "Project not found". */}
+        {project && (
+          <button style={tabBtn("general")} onClick={() => setTab("general")}>General</button>
+        )}
+        <button style={tabBtn("knowledge")} onClick={() => setTab("knowledge")}>Knowledge</button>
+      </div>
+
+      {tab === "knowledge" ? (
+        <KnowledgePanel projectId={projectId} welcome={welcome} />
+      ) : project ? (
+      <>
       {/* General */}
       <section className="mb-8">
         <div className={groupLabel}>General</div>
@@ -338,6 +375,8 @@ export default function ProjectSettingsPage() {
           )}
         </div>
       </section>
+      </>
+      ) : null}
     </div>
   );
 }

@@ -23,6 +23,9 @@ export function deriveTabMeta(path: string): OpenTab {
   if (p === "/dashboard") return { path, title: "Dashboard", kind: "dashboard" };
   if (p === "/history") return { path, title: "History", kind: "history" };
   if (p === "/settings") return { path, title: "Settings", kind: "settings" };
+  // Project settings, under either path shape. Header tabs are only ever
+  // opened explicitly, so this titles the tab if one is opened for it.
+  if (/^\/(?:p|projects)\/[^/]+\/settings$/.test(p)) return { path, title: "Settings", kind: "settings" };
   return { path: p, title: p, kind: "other" };
 }
 

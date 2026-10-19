@@ -105,8 +105,7 @@ export default function NewProject() {
               isolated from other projects.
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              You can add architecture and requirements documents from the project's Knowledge page
-              after creating it.
+              Next you can add documents for background (optional).
             </p>
           </div>
         )}
@@ -143,7 +142,7 @@ export default function NewProject() {
                   plmProjectKey: plmKey,
                 });
                 toast({ title: "Project created", description: `${project.name} is ready.` });
-                navigate(`/p/${project.id}/board`);
+                navigate(`/p/${project.id}/settings?tab=knowledge&welcome=1`);
               } catch (err) {
                 // A 409 means this PLM project is already bound to a project.
                 // Show the friendly message and, if we know it, a shortcut there.

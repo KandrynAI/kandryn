@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, Link } from "wouter";
+import { useLocation } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Trash2, Loader2, FileText, AlertTriangle, RotateCcw } from "lucide-react";
+import { Upload, Trash2, Loader2, FileText, AlertTriangle, RotateCcw } from "lucide-react";
 import {
-  fetchProject,
   fetchKnowledge,
   requestKnowledgeUpload,
   completeKnowledgeUpload,
   deleteKnowledgeSource,
   putToSignedUrl,
   ApiError,
-  type Project,
   type KnowledgeList,
   type KnowledgeSource,
   type KnowledgeDocType,
@@ -45,13 +43,21 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function KnowledgePage() {
-  const params = useParams<{ projectId: string }>();
-  const projectId = Number(params.projectId);
+/**
+ * The project-knowledge panel: upload area, document list, and all of their
+ * states. Lives here rather than on a page of its own so Project settings is
+ * the single home for it (the old /p/:id/knowledge route redirects there).
+ *
+ * `welcome` is driven ONLY by the ?welcome=1 URL flag the post-create
+ * navigation sets. Nothing is persisted: reloading that URL shows the banner
+ * again, opening the tab normally never does, and skipping leaves no trace.
+ */
+export default function KnowledgePanel({ projectId, welcome = false }: { projectId: number; welcome?: boolean }) {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
+  const uploadArea = useRef<HTMLDivElement>(null);
 
-  const [project, setProject] = useState<Project | null>(null);
   const [data, setData] = useState<KnowledgeList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,9 +74,7 @@ export default function KnowledgePage() {
       if (!Number.isFinite(projectId)) return;
       if (!silent) setLoading(true);
       try {
-        const [p, k] = await Promise.all([fetchProject(projectId), fetchKnowledge(projectId)]);
-        setProject(p);
-        setData(k);
+        setData(await fetchKnowledge(projectId));
         setError(null);
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "Could not load documents.");
@@ -84,6 +88,20 @@ export default function KnowledgePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const toBoard = useCallback(() => navigate(`/p/${projectId}/board`), [navigate, projectId]);
+
+  // A brand-new project must never land on a dead end: if this deploy has no
+  // document storage there is nothing to add, so the welcome flow goes
+  // straight to the board instead of showing an unusable step.
+  useEffect(() => {
+    if (welcome && data && !data.storageConfigured) toBoard();
+  }, [welcome, data, toBoard]);
+
+  const focusUpload = () => {
+    uploadArea.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    fileInput.current?.focus();
+  };
 
   const onUpload = async () => {
     if (!file) return;
@@ -141,7 +159,7 @@ export default function KnowledgePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 px-5 py-6">
+      <div className="flex flex-col gap-4">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-28 w-full" />
         {[0, 1].map((i) => (
@@ -153,7 +171,7 @@ export default function KnowledgePage() {
 
   if (error || !data) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 px-5 py-16 text-center">
+      <div className="flex flex-col items-center gap-3 py-16 text-center">
         <p className="text-sm text-muted-foreground">{error ?? "Documents could not be loaded."}</p>
         <Button variant="outline" size="sm" onClick={() => load()}>
           <RotateCcw className="mr-2 h-4 w-4" />Try again
@@ -162,24 +180,49 @@ export default function KnowledgePage() {
     );
   }
 
-  return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-6">
-      <div>
-        <Link href={`/p/${projectId}/board`}>
-          <Button variant="ghost" size="sm" className="-ml-2">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            {project?.name ?? "Board"}
-          </Button>
-        </Link>
-      </div>
+  // Driven only by the URL flag, and never shown where uploading is
+  // impossible — the storage-unconfigured case has already redirected.
+  const showWelcome = welcome && data.storageConfigured;
 
-      <div>
-        <h1 style={{ fontSize: "var(--fs-xl)", fontWeight: 600, color: "var(--c-ink)" }}>Project knowledge</h1>
-        <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", marginTop: 4 }}>
-          Documents Kandryn can use as background when it runs work items in this project. Reference only. Do not
-          upload credentials.
-        </p>
-      </div>
+  return (
+    <div className="flex flex-col gap-5">
+      <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)" }}>
+        Documents Kandryn can use as background when it runs work items in this project. Reference only. Do not
+        upload credentials.
+      </p>
+
+      {showWelcome && (
+        <div style={{ border: "1px solid var(--c-border)", borderRadius: 6, padding: 16 }}>
+          <div style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "var(--c-ink)" }}>
+            Add project documents (optional)
+          </div>
+          <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-3)", marginTop: 6, lineHeight: 1.6 }}>
+            Architecture, requirements or design documents give Kandryn background when it runs work items here. You
+            can add them now or any time from Project settings.
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 12 }}>
+            <Button size="sm" onClick={toBoard}>
+              {data.sources.length > 0 ? "Continue to board" : "Skip for now"}
+            </Button>
+            {data.canUpload && (
+              <button
+                onClick={focusUpload}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  fontSize: "var(--fs-sm)",
+                  color: "var(--c-ink-3)",
+                  textDecoration: "underline",
+                }}
+              >
+                Add documents
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {!data.storageConfigured ? (
         <div
@@ -194,7 +237,7 @@ export default function KnowledgePage() {
           Document storage is not configured.
         </div>
       ) : data.canUpload ? (
-        <div style={{ border: "1px solid var(--c-border)", borderRadius: 6, padding: 16 }}>
+        <div ref={uploadArea} style={{ border: "1px solid var(--c-border)", borderRadius: 6, padding: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input
               ref={fileInput}
