@@ -63,6 +63,8 @@ const ACTION_LABELS: Record<string, string> = {
   "knowledge.source_updated": "Document updated",
   "knowledge.source_replaced": "Document replaced",
   "knowledge.source_deleted": "Document removed",
+  "ui_style.extracted": "UI style extracted",
+  "ui_style.updated": "UI style settings changed",
   "tests.generated": "Tests generated",
   "tests.committed": "Tests committed",
   "tests.pushed_to_plm": "Tests pushed to PLM",

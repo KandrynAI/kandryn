@@ -1881,3 +1881,81 @@ export function putToSignedUrl(
     xhr.send(file);
   });
 }
+
+// --- UI style profile (0042) ------------------------------------------------
+// How the project's interface is already styled, read from the repository by
+// static parsing. Values only — no file contents ever cross this boundary.
+
+export interface UiStyleToken {
+  name: string;
+  value: string;
+  scope?: string;
+  source: { file: string; line: number };
+}
+
+export interface UiStyleComponentRow {
+  name: string;
+  path: string;
+  group: 'primitive' | 'composed';
+  importPath: string;
+  usedBy: number | null;
+  hasVariants?: boolean;
+}
+
+export interface UiStyleProfileView {
+  status: 'none' | 'pending' | 'extracting' | 'ready' | 'not_applicable' | 'failed';
+  canEdit: boolean;
+  stale?: boolean;
+  enabled?: boolean;
+  revision?: number;
+  uiRoot?: string | null;
+  uiRootOptions?: string[];
+  sourceRef?: string | null;
+  framework?: {
+    ui: string | null;
+    uiVersion?: string | null;
+    styling: Array<{ name: string; version?: string | null }>;
+    componentLib?: string | null;
+  } | null;
+  tokens?: {
+    colors: UiStyleToken[];
+    typography: UiStyleToken[];
+    radius: UiStyleToken[];
+    spacing: UiStyleToken[];
+    shadows: UiStyleToken[];
+    other: UiStyleToken[];
+  } | null;
+  components?: UiStyleComponentRow[] | null;
+  conventions?: {
+    classHelper?: { name: string; importPath: string } | null;
+    iconLibrary?: string | null;
+    primitives?: string[];
+    fileNaming?: string | null;
+    colocatedStyles?: boolean;
+    theming?: string | null;
+    layoutShell?: string | null;
+  } | null;
+  exemplars?: Array<{ path: string; sha: string }> | null;
+  warnings?: string[];
+  error?: string | null;
+  extractedAt?: string | null;
+}
+
+export function fetchUiStyle(projectId: number): Promise<UiStyleProfileView> {
+  return request<UiStyleProfileView>(`/api/projects/${projectId}/ui-style`);
+}
+
+export function extractUiStyle(projectId: number): Promise<UiStyleProfileView> {
+  return request<UiStyleProfileView>(`/api/projects/${projectId}/ui-style/extract`, { method: 'POST' });
+}
+
+export function updateUiStyle(
+  projectId: number,
+  body: { enabled?: boolean; uiRoot?: string },
+): Promise<UiStyleProfileView> {
+  return request<UiStyleProfileView>(`/api/projects/${projectId}/ui-style`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}

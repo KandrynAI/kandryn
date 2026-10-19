@@ -16,3 +16,4 @@ export * from "./workItemLinks";
 export * from "./sequenceChecks";
 export * from "./sequenceOverrides";
 export * from "./knowledge";
+export * from "./uiStyleProfiles";
