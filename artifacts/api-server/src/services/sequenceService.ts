@@ -504,6 +504,8 @@ export async function persistCheck(computed: ComputedCheck, actor: SequenceActor
   return {
     checkId: row.id,
     workItemId: item.id,
+    itemKey: itemLabel(item),
+    itemTitle: item.title,
     verdict,
     findings,
     suggestedFirst,
@@ -523,6 +525,12 @@ export interface RunOrderItem {
   title: string;
   status: string;
   wave: number | null;
+  /**
+   * Keys of the items directly blocking this one that are not done yet. Lets
+   * the board render a "Waits on PAY-A" chip from the call it already makes
+   * for the order view, rather than a check per row.
+   */
+  waitsOn: string[];
 }
 
 /**
@@ -572,6 +580,19 @@ export async function projectRunOrder(
   const waveOf = new Map<number, number>();
   waves.forEach((w, i) => w.forEach((id) => waveOf.set(id, i + 1)));
 
+  // Unmet direct blockers per item. Everything needed is already loaded, so
+  // this is map lookups rather than another query.
+  const openById = new Map(open.map((t) => [t.id, t]));
+  const blockersOf = new Map<number, string[]>();
+  for (const e of edges) {
+    // A blocker missing from `open` is done, and therefore satisfied.
+    const from = openById.get(e.from);
+    if (!from) continue;
+    const list = blockersOf.get(e.to);
+    if (list) list.push(itemLabel(from));
+    else blockersOf.set(e.to, [itemLabel(from)]);
+  }
+
   return {
     items: open.map((t) => ({
       itemId: t.id,
@@ -579,6 +600,7 @@ export async function projectRunOrder(
       title: t.title,
       status: t.status,
       wave: waveOf.get(t.id) ?? null,
+      waitsOn: (blockersOf.get(t.id) ?? []).sort(),
     })),
     cycleCount: cyclic.length,
   };

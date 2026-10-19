@@ -15,7 +15,15 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Play, CalendarClock, Loader2 } from "lucide-react";
-import { createRun, ApiError, type RunDetail } from "@/services/api";
+import {
+  createRun,
+  checkSequence,
+  sequenceRefusal,
+  ApiError,
+  type RunDetail,
+  type SequenceCheck,
+} from "@/services/api";
+import { SequenceDialog, type SequenceConfirmation } from "@/components/sequence/SequenceDialog";
 
 /**
  * Convert a `datetime-local` value (local wall-clock, no zone) to an ISO UTC
@@ -66,6 +74,11 @@ export function RunPanel({
   const [scheduleOn, setScheduleOn] = useState(false);
   const [scheduleAt, setScheduleAt] = useState(defaultScheduleValue);
   const [busy, setBusy] = useState<"run" | "schedule" | null>(null);
+  // Run-order gate (0038). `pending` remembers what the user asked for so the
+  // same request can be replayed with the override attached once confirmed.
+  const [seqCheck, setSeqCheck] = useState<SequenceCheck | null>(null);
+  const [seqNotice, setSeqNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ mode: "run" | "schedule"; iso: string | null } | null>(null);
 
   // Reflect the requested default and any pre-filled prompt when opened. The
   // prompt stays fully editable — this only seeds it.
@@ -90,31 +103,85 @@ export function RunPanel({
     setTimeout(reset, 200);
   };
 
-  const runNow = async () => {
+  /**
+   * Start (or schedule) a run, handling the run-order gate.
+   *
+   * The check is asked for up front so a clear item never sees a dialog — the
+   * common case stays one click. The server recomputes it anyway, so a refusal
+   * on the actual request is still handled here: that is the path where the
+   * world moved while the dialog was open.
+   */
+  const submit = async (mode: "run" | "schedule", iso: string | null, sequence?: SequenceConfirmation) => {
     if (!item) return;
-    setBusy("run");
+    setBusy(mode);
     try {
       const result = await createRun(item.id, {
         refinePrompt: refinePrompt.trim() || undefined,
         autoCommit,
+        scheduledAt: iso ?? undefined,
         parentRunId,
         triggerContext,
+        sequence,
       });
-      // Inline runs resolve to a RunDetail.
+      setSeqCheck(null);
+      setSeqNotice(null);
+      setPending(null);
+      if (mode === "schedule") {
+        toast({
+          title: "Run scheduled",
+          description: `${item.title} will run ${new Date(iso!).toLocaleString()}.`,
+        });
+        close();
+        onScheduled?.();
+        return;
+      }
       const runId = (result as RunDetail).run?.id;
       close();
       if (runId) navigate(`/runs/${runId}`);
     } catch (err) {
       setBusy(null);
+      const refusal = sequenceRefusal(err);
+      if (refusal) {
+        // Always re-render against the check the server just computed, not the
+        // one the dialog was holding.
+        setSeqCheck(refusal.check);
+        setPending({ mode, iso });
+        setSeqNotice(
+          refusal.code === "SEQUENCE_STALE" ? "Things changed while this was open. Review again." : null,
+        );
+        return;
+      }
       toast({
-        title: "Run failed to start",
+        title: mode === "run" ? "Run failed to start" : "Could not schedule run",
         description: err instanceof ApiError ? err.message : "Something went wrong.",
         variant: "destructive",
       });
     }
   };
 
-  const schedule = async () => {
+  /** Ask first, so a clear item never pays for a dialog it does not need. */
+  const start = async (mode: "run" | "schedule", iso: string | null) => {
+    if (!item) return;
+    setBusy(mode);
+    try {
+      const check = await checkSequence(item.id);
+      if (check.verdict !== "clear") {
+        setBusy(null);
+        setSeqCheck(check);
+        setSeqNotice(null);
+        setPending({ mode, iso });
+        return;
+      }
+    } catch {
+      // The check is advisory on the client; the server enforces it regardless.
+      // A failure here must not stop someone running their work.
+    }
+    await submit(mode, iso);
+  };
+
+  const runNow = () => void start("run", null);
+
+  const schedule = () => {
     if (!item) return;
     const iso = localInputToIsoUtc(scheduleAt);
     if (!iso) {
@@ -125,29 +192,7 @@ export function RunPanel({
       toast({ title: "Scheduled time must be in the future", variant: "destructive" });
       return;
     }
-    setBusy("schedule");
-    try {
-      await createRun(item.id, {
-        refinePrompt: refinePrompt.trim() || undefined,
-        autoCommit,
-        scheduledAt: iso,
-        parentRunId,
-        triggerContext,
-      });
-      toast({
-        title: "Run scheduled",
-        description: `${item.title} will run ${new Date(iso).toLocaleString()}.`,
-      });
-      close();
-      onScheduled?.();
-    } catch (err) {
-      setBusy(null);
-      toast({
-        title: "Could not schedule run",
-        description: err instanceof ApiError ? err.message : "Something went wrong.",
-        variant: "destructive",
-      });
-    }
+    void start("schedule", iso);
   };
 
   return (
@@ -239,6 +284,32 @@ export function RunPanel({
           )}
         </SheetFooter>
       </SheetContent>
+
+      {/* The run-order gate. Rendered alongside the sheet rather than inside
+          it so the two modals do not fight over focus. */}
+      <SequenceDialog
+        open={seqCheck !== null}
+        check={seqCheck}
+        itemKey={seqCheck?.itemKey ?? ""}
+        itemTitle={seqCheck?.itemTitle ?? item?.title ?? ""}
+        staleNotice={seqNotice}
+        busy={busy !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setSeqCheck(null);
+            setSeqNotice(null);
+            setPending(null);
+          }
+        }}
+        onOpenItem={(itemId) => {
+          close();
+          navigate(`/tasks/${itemId}`);
+        }}
+        onConfirm={(confirmation) => {
+          if (!pending) return;
+          void submit(pending.mode, pending.iso, confirmation);
+        }}
+      />
     </Sheet>
   );
 }

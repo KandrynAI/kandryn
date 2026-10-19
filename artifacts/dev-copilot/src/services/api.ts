@@ -681,6 +681,8 @@ export function createRun(
     // Remediation re-run: links the new run to the source run whose review it addresses.
     parentRunId?: number;
     triggerContext?: 'remediation';
+    /** Run-order override (0038). Re-verified server-side; never trusted. */
+    sequence?: SequenceOverrideInput;
   } = {},
 ): Promise<RunDetail | Run> {
   return request<RunDetail | Run>(`/api/work-items/${workItemId}/runs`, {
@@ -1586,3 +1588,168 @@ export function setTeamIntegration(
     body: JSON.stringify({ key, value }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Sequence Guard (0038)
+// ---------------------------------------------------------------------------
+
+export type SequenceVerdict = 'clear' | 'caution' | 'warning';
+export type SequencePolicy = 'off' | 'warn' | 'admin_override_only';
+
+export interface SequenceFinding {
+  id: string;
+  type: string;
+  severity: 'caution' | 'warning';
+  summary: string;
+  source: 'tracker' | 'kandryn' | 'inferred';
+  confidence: 'high' | 'medium' | 'low';
+  evidence: { itemKeys?: string[]; runIds?: number[]; prUrls?: string[]; files?: string[] };
+}
+
+export interface SequenceCheck {
+  checkId: number;
+  workItemId: number;
+  itemKey: string;
+  itemTitle: string;
+  verdict: SequenceVerdict;
+  findings: SequenceFinding[];
+  suggestedFirst: { itemKey: string; itemId: number; reason: string }[];
+  policy: SequencePolicy;
+  canOverride: boolean;
+  expiresAt: string;
+}
+
+export interface ImpactRisk {
+  title: string;
+  severity: 'low' | 'medium' | 'high';
+  likelihood: 'unlikely' | 'possible' | 'likely';
+  explanation: string;
+  factRefs: string[];
+  mitigation: string;
+}
+
+export interface ImpactAnalysis {
+  summary: string;
+  risks: ImpactRisk[];
+  affectedItems: string[];
+  affectedFiles: string[];
+  alternative: string;
+  source: 'ai' | 'deterministic';
+  model?: string;
+}
+
+export interface SequenceOverrideRow {
+  id: number;
+  userId: string;
+  userRole: string;
+  workItemKey: string;
+  workItemTitle: string;
+  verdictAtDecision: string;
+  findingsAcknowledged: SequenceFinding[];
+  impactShown: ImpactAnalysis;
+  impactSource: 'ai' | 'deterministic';
+  impactModel: string | null;
+  reasonCategory: string;
+  reasonText: string | null;
+  policySnapshot: Record<string, unknown>;
+  runId: number | null;
+  scheduledAt: string | null;
+  ipAddress: string | null;
+  recordHash: string;
+  createdAt: string;
+  outcomes?: Array<{ id: number; metadata: Record<string, unknown> | null; createdAt: string }>;
+}
+
+export interface RunOrderItem {
+  itemId: number;
+  itemKey: string;
+  title: string;
+  status: string;
+  wave: number | null;
+  waitsOn: string[];
+}
+
+/** The block the run request carries when the user chooses to go ahead anyway. */
+export interface SequenceOverrideInput {
+  checkId: number;
+  decision: 'override';
+  reasonCategory: string;
+  reasonText?: string;
+  acknowledgedFindingIds: string[];
+  acknowledgedImpact: true;
+}
+
+export const SEQUENCE_CHECK_REQUIRED = 'SEQUENCE_CHECK_REQUIRED';
+export const OVERRIDE_NOT_PERMITTED = 'OVERRIDE_NOT_PERMITTED';
+export const SEQUENCE_STALE = 'SEQUENCE_STALE';
+
+/**
+ * Pull the run-order refusal out of an ApiError, if that is what it is.
+ *
+ * The server attaches a freshly computed check to every refusal, so the dialog
+ * can re-render against the real current state rather than whatever it was
+ * showing. Returns null for any other error.
+ */
+export function sequenceRefusal(err: unknown): { code: string; message: string; check: SequenceCheck } | null {
+  if (!(err instanceof ApiError)) return null;
+  const body = err.body as { code?: string; error?: string; check?: SequenceCheck } | undefined;
+  if (!body?.code || !body.check) return null;
+  if (![SEQUENCE_CHECK_REQUIRED, OVERRIDE_NOT_PERMITTED, SEQUENCE_STALE, 'REASON_REQUIRED', 'IMPACT_NOT_ACKNOWLEDGED'].includes(body.code)) {
+    return null;
+  }
+  return { code: body.code, message: body.error ?? 'This work item may need other work first.', check: body.check };
+}
+
+export function checkSequence(workItemId: number): Promise<SequenceCheck> {
+  return request<SequenceCheck>(`/api/work-items/${workItemId}/sequence-check`, { method: 'POST' });
+}
+
+export function fetchImpact(workItemId: number, checkId: number): Promise<ImpactAnalysis> {
+  return request<ImpactAnalysis>(`/api/work-items/${workItemId}/sequence-check/${checkId}/impact`, {
+    method: 'POST',
+  });
+}
+
+/** Fire-and-forget trail for the non-override paths. Never worth failing on. */
+export function postSequenceEvent(
+  workItemId: number,
+  checkId: number,
+  event: 'heeded' | 'canceled',
+): Promise<void> {
+  return request<void>(`/api/work-items/${workItemId}/sequence-check/${checkId}/event`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event }),
+  }).catch(() => undefined);
+}
+
+export function fetchRunOrder(projectId: number): Promise<{ items: RunOrderItem[]; cycleCount: number }> {
+  return request(`/api/projects/${projectId}/run-order`);
+}
+
+export function fetchSequencePolicy(): Promise<{ policy: SequencePolicy; isDefault: boolean }> {
+  return request('/api/team/sequence-policy');
+}
+
+export function updateSequencePolicy(policy: SequencePolicy): Promise<{ policy: SequencePolicy }> {
+  return request('/api/team/sequence-policy', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ policy }),
+  });
+}
+
+export function fetchSequenceOverrides(params: { days?: number; userId?: string } = {}): Promise<SequenceOverrideRow[]> {
+  const q = new URLSearchParams();
+  if (params.days) q.set('days', String(params.days));
+  if (params.userId) q.set('userId', params.userId);
+  const qs = q.toString();
+  return request(`/api/sequence-overrides${qs ? `?${qs}` : ''}`);
+}
+
+export function fetchSequenceOverride(id: number): Promise<SequenceOverrideRow> {
+  return request(`/api/sequence-overrides/${id}`);
+}
+
+export const sequenceOverridesCsvUrl = (days: number): string =>
+  `/api/sequence-overrides/export.csv?days=${days}`;

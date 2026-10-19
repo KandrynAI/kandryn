@@ -3,6 +3,7 @@ import { useConfig, type ConfigMap } from "@/context/ConfigContext";
 import { useTeam } from "@/context/TeamContext";
 import TeamTab from "@/components/settings/TeamTab";
 import AuditTab from "@/components/settings/AuditTab";
+import SequencePolicySection from "@/components/settings/SequencePolicySection";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
@@ -466,7 +467,11 @@ export default function SettingsPage() {
       {tab === "audit" && team && isAdmin ? (
         <AuditTab />
       ) : tab === "team" && team ? (
-        <TeamTab />
+        <>
+          {/* Admin-only, like the rest of the team settings on this tab. */}
+          {isAdmin ? <SequencePolicySection /> : null}
+          <TeamTab />
+        </>
       ) : loading ? (
         <div className="flex flex-col gap-2.5">
           {[1, 2, 3].map((i) => (

@@ -13,6 +13,7 @@ import {
   type TeamMemberRow,
 } from "@/services/api";
 import { marketingUrl } from "@/lib/marketing";
+import SequenceDecisions from "@/components/settings/SequenceDecisions";
 
 const ACTION_LABELS: Record<string, string> = {
   "user.signed_in": "Sign in",
@@ -162,6 +163,10 @@ export default function AuditTab() {
   const { team, isAdmin } = useTeam();
   const teamId = team?.id;
 
+  // Two views on the same tab: the full activity log, and the decision
+  // records on their own, because an auditor looking for "who overrode what"
+  // should not have to filter a log to find them.
+  const [view, setView] = useState<"log" | "decisions">("log");
   const [days, setDays] = useState(30);
   const [action, setAction] = useState("");
   const [memberId, setMemberId] = useState("");
@@ -223,6 +228,24 @@ export default function AuditTab() {
 
   return (
     <div>
+      <nav style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <button
+          type="button"
+          className={`al-pill${view === "log" ? " active" : ""}`}
+          onClick={() => setView("log")}
+        >
+          Activity
+        </button>
+        <button
+          type="button"
+          className={`al-pill${view === "decisions" ? " active" : ""}`}
+          onClick={() => setView("decisions")}
+        >
+          Decisions
+        </button>
+      </nav>
+      {view === "decisions" ? <SequenceDecisions /> : null}
+      <div style={{ display: view === "log" ? undefined : "none" }}>
       <style>{`
         .al-pill { font-size: var(--fs-sm); font-weight: 500; padding: 4px 11px; border-radius: 6px;
           border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-ink-3); cursor: pointer; }
@@ -365,6 +388,7 @@ export default function AuditTab() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }

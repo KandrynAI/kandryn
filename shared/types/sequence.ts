@@ -49,6 +49,9 @@ export interface SequenceFinding {
 export interface SequenceCheck {
   checkId: number;
   workItemId: number;
+  /** The tracker key, e.g. "PAY-214" — what the dialog and the record name. */
+  itemKey: string;
+  itemTitle: string;
   verdict: SequenceVerdict;
   findings: SequenceFinding[];
   suggestedFirst: { itemKey: string; itemId: number; reason: string }[];
