@@ -14,7 +14,10 @@
     "moduleResolution": "nodenext",
     "esModuleInterop": true
   },
-  "include": ["src", "../../shared"],
+  // `scripts` is included so the data-layer checks are typechecked too:
+  // they are committed code that imports the services, and an uncovered
+  // script silently rots the moment a signature changes.
+  "include": ["src", "scripts", "../../shared"],
   "references": [
     {
       "path": "../../lib/db"
