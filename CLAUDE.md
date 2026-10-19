@@ -276,6 +276,28 @@ These are the natural next tasks; none are blocking today:
 - **PLM status propagation beyond `done`** (e.g. mark In Progress when a run starts) — deferred; adds write scope.
 - **Legacy vs. new flow** — the single-task flow (`/tasks`, `/workspace`, `taskActions.ts`, OpenAPI codegen) coexists with the project/board/runs flow; eventual consolidation.
 - **Shell consistency** — the sidebar was quieted (Claude-Code style); TabBar and page headers could follow.
+- **Git-provider auth errors surface raw.** A commit against an expired PAT
+  renders GitHub's own string — `Bad credentials - https://docs.github.com/rest`
+  — in the toast (`run-detail.tsx:297`, same shape in `TestStage.tsx:113` and
+  `WorkspacePage.tsx:207`). It names neither the cause nor the remedy, and PATs
+  expire by design, so this recurs for every pilot. A 401 from the git provider
+  should read "Your GitHub token is invalid or expired — update it in Settings",
+  with a link. Confirmed in production once already.
+- **`github-sync` can overwrite a working PAT with a dead token.**
+  `routes/config.ts:105-110` comments "Verify the token is usable", computes
+  `ghRes.ok` on line 109 — and then calls `saveConfigs` on line 110 regardless.
+  `useGitHubSync` runs once per browser session after sign-in, so a stale Clerk
+  OAuth token can silently replace a PAT the user pasted. Only fires when GitHub
+  social login is enabled for that Clerk user, which is why it has not bitten
+  yet. Fix: make the save conditional on `ghRes.ok`, and do not downgrade a
+  credential that already works.
+- **Two Archivo weights are dead payload.** `website/app/layout.tsx:12` loads
+  `['400','500','600','700','800','900']`, but the lighter type scale dropped
+  800 and 900 from use — nothing on the site sets either. They still ship as
+  `@font-face` rules and downloadable files (three subsets each: latin,
+  latin-ext, Vietnamese). Removing the two entries is a real byte win; check
+  for stragglers with `grep -rn "fontWeight: [89]00\|font-weight: [89]00"` in
+  `website/` first.
 - **Domain context at connect (planned, not built — see below).**
 
 ### Domain context at connect — design notes
