@@ -19,6 +19,7 @@ import { fetchFilePaths } from "../adapters/gitService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
 import { isGraphUsable, isGraphifyConfigured, triggerRepoIndex } from "../services/graphifyService.js";
+import { resetProfile } from "../services/uiStyleService.js";
 import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
@@ -342,6 +343,12 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
     if (existing.graphBuiltAt != null) {
       updates.graphStatus = "stale";
       updates.graphError = null;
+    }
+    // The UI style profile describes the OLD repository's styling, which is a
+    // different thing entirely once the URL changes — unlike the graph, which
+    // is merely out of date. Queue a fresh read rather than keep it.
+    if (existing.projectId != null) {
+      await resetProfile(existing.projectId, existing.id);
     }
   }
 

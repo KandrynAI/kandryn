@@ -78,6 +78,10 @@ export const AUDIT_ACTIONS = [
   'knowledge.source_replaced',
   'knowledge.source_deleted',
 
+  // UI style profile (0042) — deterministic extraction, metadata only.
+  'ui_style.extracted',
+  'ui_style.updated',
+
   // Tests
   'tests.generated',
   'tests.committed',

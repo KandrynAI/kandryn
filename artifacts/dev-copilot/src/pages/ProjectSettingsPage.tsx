@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import KnowledgePanel from "@/components/knowledge/KnowledgePanel";
+import UiStylePanel from "@/components/uistyle/UiStylePanel";
 import {
   fetchProject,
   updateProject,
@@ -27,7 +28,10 @@ export default function ProjectSettingsPage() {
   // belongs to the Knowledge tab alone.
   const search = useSearch();
   const query = new URLSearchParams(search);
-  const [tab, setTab] = useState<"general" | "knowledge">(query.get("tab") === "knowledge" ? "knowledge" : "general");
+  const tabParam = query.get("tab");
+  const [tab, setTab] = useState<"general" | "knowledge" | "ui-style">(
+    tabParam === "knowledge" ? "knowledge" : tabParam === "ui-style" ? "ui-style" : "general",
+  );
   const welcome = query.get("welcome") === "1";
 
   const [project, setProject] = useState<Project | null>(null);
@@ -148,13 +152,13 @@ export default function ProjectSettingsPage() {
   // it enforces its own access server-side (owner or team member reads,
   // canAdminister writes), and that rule is unchanged by moving the panel
   // here. Without this, the move would quietly revoke their read access.
-  if (!project && tab !== "knowledge") {
+  if (!project && tab !== "knowledge" && tab !== "ui-style") {
     return <div className="mx-auto max-w-2xl px-6 py-6 text-sm text-destructive">Project not found.</div>;
   }
 
   const currentRepo = repos[0];
 
-  const tabBtn = (key: "general" | "knowledge"): React.CSSProperties => ({
+  const tabBtn = (key: "general" | "knowledge" | "ui-style"): React.CSSProperties => ({
     fontSize: 13,
     fontWeight: tab === key ? 600 : 500,
     padding: "8px 2px",
@@ -166,7 +170,7 @@ export default function ProjectSettingsPage() {
   });
 
   return (
-    <div className={`mx-auto px-6 py-6 ${tab === "knowledge" ? "max-w-3xl" : "max-w-2xl"}`}>
+    <div className={`mx-auto px-6 py-6 ${tab === "general" ? "max-w-2xl" : "max-w-3xl"}`}>
       <h1 className="text-lg font-semibold tracking-tight">Project settings</h1>
       {project && <p className="mt-1 text-xs text-muted-foreground">{project.name}</p>}
 
@@ -177,10 +181,13 @@ export default function ProjectSettingsPage() {
           <button style={tabBtn("general")} onClick={() => setTab("general")}>General</button>
         )}
         <button style={tabBtn("knowledge")} onClick={() => setTab("knowledge")}>Knowledge</button>
+        <button style={tabBtn("ui-style")} onClick={() => setTab("ui-style")}>UI style</button>
       </div>
 
       {tab === "knowledge" ? (
         <KnowledgePanel projectId={projectId} welcome={welcome} />
+      ) : tab === "ui-style" ? (
+        <UiStylePanel projectId={projectId} />
       ) : project ? (
       <>
       {/* General */}

@@ -7,6 +7,7 @@ import { syncProject } from "../services/syncService.js";
 import { getProjectRepository } from "../services/repoResolver.js";
 import { createPlmWorkItem } from "../services/plmWrite.js";
 import * as audit from "../services/auditService.js";
+import { ensureProfileRow } from "../services/uiStyleService.js";
 import { canAdminister } from "../services/resourceAdmin.js";
 import { ensureUserHasTeam } from "../services/teamService.js";
 
@@ -280,6 +281,12 @@ router.post("/projects", async (req, res): Promise<void> => {
         .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)));
     }
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
+    // Queue the UI style extraction (0042). A cheap insert, deliberately not
+    // the extraction itself: work after the response is not guaranteed to run
+    // on Vercel, so the cron dispatcher or the settings page picks this up.
+    // ensureProfileRow swallows its own failures — a project must still be
+    // created when this does not land.
+    await ensureProfileRow(req.userId, proj.id, repositoryId ?? null);
     audit.log({
       userId: req.userId,
       // `team`, not req.teamId: on a user's FIRST project the team was created

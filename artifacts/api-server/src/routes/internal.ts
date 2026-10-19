@@ -3,6 +3,7 @@ import { sql, eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
 import { holdIfOrderChanged } from "../services/sequenceGate.js";
+import { dispatchPendingProfiles } from "../services/uiStyleService.js";
 import { listScansAwaitingCollection, collectBaselineScan } from "../services/baselineScanService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
 import { backfillEncryption } from "../services/configService.js";
@@ -137,6 +138,21 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     logger.info({ pending: pending.length, collected }, "baseline scan collection tick");
   }
 
+  // 5. Extract UI style profiles that are waiting (0042).
+  //
+  // Last and additive on purpose: a project-creation insert or a repository
+  // rebind queues a row, and this is what picks it up when nobody opens the
+  // settings page. It runs AFTER the run dispatch so a slow repository read
+  // can never delay a scheduled run, and dispatchPendingProfiles records its
+  // own failures on the row rather than throwing.
+  let profiles: number[] = [];
+  try {
+    profiles = await dispatchPendingProfiles();
+    if (profiles.length > 0) logger.info({ profiles }, "ui style extraction tick");
+  } catch (err) {
+    logger.warn({ err }, "UI style extraction tick failed");
+  }
+
   res.json({
     swept: sweptCount,
     dispatched: ids.length - held,
@@ -144,6 +160,7 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     baselineSwept: sweptScanCount,
     baselinePending: pending.length,
     baselineCollected: collected,
+    uiStyleExtracted: profiles.length,
   });
 }
 
