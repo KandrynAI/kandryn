@@ -98,10 +98,16 @@ const STATUS_LABEL: Record<RunStatus, string> = {
  * sent to the client.
  */
 function contextCellValue(manifest: Run["contextManifest"]): string {
-  const parents = manifest?.sections.find((s) => s.kind === "parent_chain");
-  if (!parents || parents.included === 0) return "None";
-  const noun = parents.included === 1 ? "parent item" : "parent items";
-  return `${parents.included} ${noun}${parents.truncated ? " · trimmed" : ""}`;
+  const sections = manifest?.sections ?? [];
+  const parents = sections.find((s) => s.kind === "parent_chain")?.included ?? 0;
+  const refs = sections.find((s) => s.kind === "reference_material")?.included ?? 0;
+  if (parents === 0 && refs === 0) return "None";
+
+  const parts: string[] = [];
+  if (parents > 0) parts.push(`${parents} ${parents === 1 ? "parent item" : "parent items"}`);
+  if (refs > 0) parts.push(`${refs} ${refs === 1 ? "document" : "documents"}`);
+  const trimmed = sections.some((s) => s.truncated);
+  return `${parts.join(" · ")}${trimmed ? " · trimmed" : ""}`;
 }
 
 const IN_PROGRESS: RunStatus[] = ["scheduled", "queued", "running"];

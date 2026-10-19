@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import { db, tasksTable } from "@workspace/db";
+import { db, projectsTable, tasksTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { compileContextPack, DEFAULT_PACK_BUDGET_TOKENS, type AncestorItem, type ContextPack } from "./contextPack.js";
+import { retrieveReferences } from "./knowledgeRetrieval.js";
 
 export { DEFAULT_PACK_BUDGET_TOKENS } from "./contextPack.js";
 export type { ContextManifest, ContextPack } from "./contextPack.js";
@@ -73,16 +74,39 @@ export async function loadAncestors(
  * The pack for one run. Best-effort by design: a run that cannot assemble its
  * background still runs with the prompt it had before this feature existed, so
  * every failure here returns an empty pack instead of throwing.
+ *
+ * Scoped to the PROJECT OWNER, not to `run.userId`. On a team project those
+ * differ — a run records whoever triggered it, while `tasks` rows written by
+ * sync and `knowledge_sources` rows written on upload both carry the owner's
+ * id. Scoping by the triggering user would make both halves of the pack
+ * silently come back empty for any run a team admin started.
  */
-export async function buildRunContextPack(
-  userId: string,
-  projectId: number,
-  workItemId: number,
-  budgetTokens: number = DEFAULT_PACK_BUDGET_TOKENS,
-): Promise<ContextPack> {
+export async function buildRunContextPack(input: {
+  projectId: number;
+  workItemId: number;
+  /** Used only if the project row cannot be read. */
+  fallbackUserId: string;
+  /** Omit to skip document retrieval (it needs the item's words). */
+  workItem?: { title: string; acceptanceCriteria?: string[] };
+  budgetTokens?: number;
+}): Promise<ContextPack> {
+  const { projectId, workItemId, fallbackUserId, workItem } = input;
+  const budgetTokens = input.budgetTokens ?? DEFAULT_PACK_BUDGET_TOKENS;
   try {
-    const parentChain = await loadAncestors(userId, projectId, workItemId);
-    return compileContextPack({ parentChain }, budgetTokens);
+    const [project] = await db
+      .select({ userId: projectsTable.userId })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, projectId));
+    const userId = project?.userId ?? fallbackUserId;
+
+    // Independent sources, so fetched together. retrieveReferences already
+    // swallows its own failures and returns [] — the pack simply carries no
+    // reference section.
+    const [parentChain, references] = await Promise.all([
+      loadAncestors(userId, projectId, workItemId),
+      workItem ? retrieveReferences({ userId, projectId, workItem }) : Promise.resolve([]),
+    ]);
+    return compileContextPack({ parentChain, references }, budgetTokens);
   } catch (err) {
     logger.warn({ err, projectId, workItemId }, "Context pack could not be built; running without project context");
     return { text: "", manifest: null };

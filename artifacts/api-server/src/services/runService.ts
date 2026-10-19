@@ -350,7 +350,12 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     // buildRunContextPack returns an empty pack rather than throwing, and the
     // manifest write is guarded, because background is an improvement to a run
     // and never a precondition for one.
-    const contextPack = await buildRunContextPack(userId, run.projectId, workItem.id);
+    const contextPack = await buildRunContextPack({
+      projectId: run.projectId,
+      workItemId: workItem.id,
+      fallbackUserId: userId,
+      workItem: { title: workItem.title, acceptanceCriteria: devTask.acceptanceCriteria },
+    });
     if (contextPack.manifest) {
       await db
         .update(runsTable)
@@ -829,7 +834,12 @@ async function regenerateFromPlan(
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
     // Same background the first generation had — a regeneration against an
     // edited plan must not quietly know less than the run it replaces.
-    const contextPack = await buildRunContextPack(run.userId, run.projectId, workItem.id);
+    const contextPack = await buildRunContextPack({
+      projectId: run.projectId,
+      workItemId: workItem.id,
+      fallbackUserId: run.userId,
+      workItem: { title: workItem.title, acceptanceCriteria: devTask.acceptanceCriteria },
+    });
     const orchestrator = new AIOrchestrator({ anthropicApiKey: creds.ANTHROPIC_API_KEY, openaiApiKey: creds.OPENAI_API_KEY });
     const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
 

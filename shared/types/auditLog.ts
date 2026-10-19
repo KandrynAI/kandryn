@@ -72,6 +72,10 @@ export const AUDIT_ACTIONS = [
   'sequence.override_outcome',
   'sequence.policy_changed',
 
+  // Project knowledge (0041) — metadata only; document text is never logged.
+  'knowledge.source_added',
+  'knowledge.source_deleted',
+
   // Tests
   'tests.generated',
   'tests.committed',
