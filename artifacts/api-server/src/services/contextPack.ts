@@ -73,13 +73,28 @@ export interface ContextManifestSection {
   refs: string[];
 }
 
+/** What the run's UI style guide contributed (0042). Absent when none was injected. */
+export interface ContextManifestUiStyle {
+  profileId: number;
+  revision: number;
+  injected: true;
+  approxTokens: number;
+}
+
 export interface ContextManifest {
-  version: 1;
+  /**
+   * 1 = the parent chain and references only (0040/0041). 2 adds the optional
+   * `uiStyle` field (0042). Rows written before the bump stay version 1, so
+   * every reader must tolerate 1, 2 and null.
+   */
+  version: 1 | 2;
   compiledAt: string;
   budgetTokens: number;
   usedTokens: number;
   truncated: boolean;
   sections: ContextManifestSection[];
+  /** Merged in after generation's pack is compiled, not by compileContextPack. */
+  uiStyle?: ContextManifestUiStyle;
 }
 
 export interface ContextPack {
@@ -233,7 +248,7 @@ export function compileContextPack(
   return {
     text,
     manifest: {
-      version: 1,
+      version: 2,
       compiledAt: new Date().toISOString(),
       budgetTokens,
       usedTokens: estimateTokens(text),

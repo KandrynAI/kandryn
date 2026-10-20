@@ -8,7 +8,11 @@ customer repository is ever executed. This script covers what they cannot.
   profile per project (23505 on a second insert, asserted on `err.cause.code`),
   cross-user isolation, the claim three callers race for (exactly one wins, a
   stale claim is reclaimable, a fresh one is not), PATCH validation and the
-  read/write access split. Expect `18 passed, 0 failed`.
+  read/write access split. PR-B adds what a run reads and what a commit does
+  to it: a profile loaded through the project OWNER rather than the triggering
+  user (the 0040 tenancy trap in a new place), an unreadable profile returning
+  null instead of throwing, and `markStaleIfStyling` firing on
+  `tailwind.config.ts` but not on a backend file. Expect `22 passed, 0 failed`.
 
 Not part of `pnpm test`: it imports `@workspace/db`, which throws without
 `DATABASE_URL`, and it truncates `ui_style_profiles` and `projects`.

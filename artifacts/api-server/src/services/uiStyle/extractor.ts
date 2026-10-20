@@ -11,6 +11,7 @@ import { extractTailwindConfig } from "./tailwind.js";
 import { readComponentsJson, readPackageManifest, readTsconfigAliases } from "./manifest.js";
 import {
   discoverComponents,
+  isPrimitive,
   findUiRoots,
   importCountsFromGraph,
   primaryRoot,
@@ -229,8 +230,15 @@ export async function extractUiStyle(input: ExtractInput): Promise<ExtractResult
   // Read a sample of component files so exported names and cva() are real
   // rather than inferred from file names.
   const sampleTexts = new Map<string, string>();
+  // Primitives first, matching how discoverComponents ranks its output: a
+  // plain path-order sample reads the alphabetically-first directories and
+  // never reaches components/ui, so every primitive — the components a
+  // generator most needs to reuse — would keep its FILE STEM as its name.
+  // For a kebab-case repository that stem is not the exported identifier, and
+  // "button" in a prompt reads as the HTML element.
   const sampleCandidates = tree
     .filter((p) => underRoot(p) && /\.(tsx|jsx)$/.test(p) && !/\.(test|spec|stories|d)\./.test(p))
+    .sort((a, b) => Number(isPrimitive(b)) - Number(isPrimitive(a)))
     .slice(0, Math.max(0, Math.min(budget - 2, 12)));
   for (const path of sampleCandidates) {
     if (now() - started > EXTRACT_BUDGET_MS) break;

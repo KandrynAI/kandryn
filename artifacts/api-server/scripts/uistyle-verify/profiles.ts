@@ -9,7 +9,9 @@ import {
   claimProfile,
   ensureProfileRow,
   getProfile,
+  loadProfileForRun,
   markStale,
+  markStaleIfStyling,
   resetProfile,
 } from "../../src/services/uiStyleService.js";
 import uiStyleRouter from "../../src/routes/uiStyle.js";
@@ -197,6 +199,48 @@ async function main() {
     afterReset?.status === "pending" && afterReset?.stale === false,
     JSON.stringify({ s: afterReset?.status, stale: afterReset?.stale }),
   );
+
+  // --- PR-B: what a run reads, and what a commit does to it ---------------
+
+  // 16. A run triggered by a team ADMIN must still find the profile, which
+  // carries the project OWNER's user id. This is the 0040 tenancy bug in a new
+  // place: scoping by runs.userId would silently return nothing.
+  await db
+    .update(uiStyleProfilesTable)
+    .set({ status: "ready", stale: false, revision: 4 })
+    .where(eq(uiStyleProfilesTable.projectId, teamProject.id));
+  const asAdmin = await loadProfileForRun(teamProject.id, "u1");
+  t(
+    "16. a run started by someone other than the owner still loads the profile",
+    asAdmin?.revision === 4 && asAdmin.userId === "u3",
+    JSON.stringify({ rev: asAdmin?.revision, owner: asAdmin?.userId }),
+  );
+
+  // 17. A project that does not exist is a null, never a throw: a run must not
+  // fail because its style guide could not be read.
+  let threw = false;
+  let missing: unknown = "unset";
+  try {
+    missing = await loadProfileForRun(999_999, "u1");
+  } catch {
+    threw = true;
+  }
+  t("17. an unreadable profile returns null rather than throwing", !threw && missing === null, String(missing));
+
+  // 18/19. Stale marking end to end, through the predicate and the update.
+  await db
+    .update(uiStyleProfilesTable)
+    .set({ status: "ready", stale: false })
+    .where(eq(uiStyleProfilesTable.projectId, mine.id));
+  markStaleIfStyling(mine.id, ["src/services/claims.ts", "src/routes/index.ts"]);
+  await new Promise((r) => setTimeout(r, 120));
+  const afterBackend = await getProfile("u1", mine.id);
+  t("18. a backend-only commit leaves the profile alone", afterBackend?.stale === false, String(afterBackend?.stale));
+
+  markStaleIfStyling(mine.id, ["src/services/claims.ts", "tailwind.config.ts"]);
+  await new Promise((r) => setTimeout(r, 120));
+  const afterStyling = await getProfile("u1", mine.id);
+  t("19. a commit touching tailwind.config.ts marks it out of date", afterStyling?.stale === true, String(afterStyling?.stale));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();

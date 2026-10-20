@@ -1,11 +1,12 @@
 import { and, eq, sql } from "drizzle-orm";
-import { db, repositoriesTable, uiStyleProfilesTable, type UiStyleProfile } from "@workspace/db";
+import { db, projectsTable, repositoriesTable, uiStyleProfilesTable, type UiStyleProfile } from "@workspace/db";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import { GitService } from "./gitService.js";
 import { getProjectRepository } from "./repoResolver.js";
 import { getConfigs } from "./configService.js";
 import { isGraphServable } from "./graphUsability.js";
 import { extractUiStyle } from "./uiStyle/extractor.js";
+import { touchesStyling } from "./uiStyle/styleGuide.js";
 import { logger } from "../lib/logger.js";
 
 /**
@@ -66,6 +67,43 @@ export function markStale(projectId: number): void {
     .set({ stale: true })
     .where(and(eq(uiStyleProfilesTable.projectId, projectId), eq(uiStyleProfilesTable.status, "ready")))
     .catch((err) => logger.warn({ err, projectId }, "Could not mark the UI style profile stale"));
+}
+
+/**
+ * The profile a run may use, or null.
+ *
+ * Resolved through the PROJECT OWNER rather than the run's user, the same way
+ * `buildRunContextPack` does and for the same reason: `runs.userId` is whoever
+ * triggered the run, while the profile row was written at project creation and
+ * carries the owner's id. Scoping by the trigger would silently return nothing
+ * for every run a team admin started.
+ *
+ * Never throws — a run losing its style guide is a worse prompt, not a failure.
+ */
+export async function loadProfileForRun(projectId: number, fallbackUserId: string): Promise<UiStyleProfile | null> {
+  try {
+    const [project] = await db
+      .select({ userId: projectsTable.userId })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, projectId));
+    return await getProfile(project?.userId ?? fallbackUserId, projectId);
+  } catch (err) {
+    logger.warn({ err, projectId }, "UI style profile could not be read; generating without it");
+    return null;
+  }
+}
+
+/**
+ * Mark the profile out of date when Kandryn's own commit changed styling.
+ *
+ * Fire-and-forget, and deliberately NOT a re-extraction: re-reading the
+ * repository on every commit would spend a user's rate limit on a change they
+ * may still revert. The tab shows "Out of date" and a human presses
+ * Re-extract.
+ */
+export function markStaleIfStyling(projectId: number, paths: string[]): void {
+  if (!touchesStyling(paths)) return;
+  markStale(projectId);
 }
 
 export type ClaimOutcome =

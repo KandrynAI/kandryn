@@ -105,13 +105,22 @@ export interface PersistedContextManifestSection {
    */
   refs: string[];
 }
+/** What the UI style profile contributed to the prompt (0042). */
+export interface PersistedContextManifestUiStyle {
+  profileId: number;
+  revision: number;
+  injected: true;
+  approxTokens: number;
+}
 export interface PersistedContextManifest {
-  version: 1;
+  /** 1 = parent chain + references only; 2 adds `uiStyle`. Readers tolerate both. */
+  version: 1 | 2;
   compiledAt: string;
   budgetTokens: number;
   usedTokens: number;
   truncated: boolean;
   sections: PersistedContextManifestSection[];
+  uiStyle?: PersistedContextManifestUiStyle;
 }
 
 /**

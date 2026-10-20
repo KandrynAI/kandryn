@@ -101,11 +101,14 @@ function contextCellValue(manifest: Run["contextManifest"]): string {
   const sections = manifest?.sections ?? [];
   const parents = sections.find((s) => s.kind === "parent_chain")?.included ?? 0;
   const refs = sections.find((s) => s.kind === "reference_material")?.included ?? 0;
-  if (parents === 0 && refs === 0) return "None";
+  // A version-1 manifest has no uiStyle field at all, which reads as absent.
+  const style = manifest?.uiStyle;
+  if (parents === 0 && refs === 0 && !style) return "None";
 
   const parts: string[] = [];
   if (parents > 0) parts.push(`${parents} ${parents === 1 ? "parent item" : "parent items"}`);
   if (refs > 0) parts.push(`${refs} ${refs === 1 ? "document" : "documents"}`);
+  if (style) parts.push(`UI style r${style.revision}`);
   const trimmed = sections.some((s) => s.truncated);
   return `${parts.join(" · ")}${trimmed ? " · trimmed" : ""}`;
 }

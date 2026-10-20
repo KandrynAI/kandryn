@@ -375,7 +375,8 @@ export interface Run {
    * counts only — never the pack text. Null when the run carried none.
    */
   contextManifest?: {
-    version: 1;
+    /** 1 = parent chain + references only; 2 adds `uiStyle` (0042). */
+    version: 1 | 2;
     compiledAt: string;
     budgetTokens: number;
     usedTokens: number;
@@ -387,6 +388,13 @@ export interface Run {
       truncated: boolean;
       refs: string[];
     }>;
+    /** Present only when the run's generation prompt carried the style guide. */
+    uiStyle?: {
+      profileId: number;
+      revision: number;
+      injected: true;
+      approxTokens: number;
+    };
   } | null;
   review?: ReviewResult | null;
   reviewStatus?: 'pending' | 'running' | 'done' | 'failed' | null;
