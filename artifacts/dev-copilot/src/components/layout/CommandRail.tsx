@@ -1,6 +1,13 @@
 import { useLocation } from "wouter";
-import { useUser } from "@clerk/react";
-import { LayoutDashboard, Kanban, Play, GitBranch, History, BarChart2, Settings } from "lucide-react";
+import { useUser, useClerk } from "@clerk/react";
+import { LayoutDashboard, Kanban, Play, GitBranch, History, BarChart2, Settings, LogOut } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { useTeam } from "@/context/TeamContext";
 import { useActiveProject } from "@/context/ActiveProjectContext";
 import { Logo } from "@/components/Logo";
@@ -16,6 +23,7 @@ interface RailIcon {
 export function CommandRail() {
   const [location, navigate] = useLocation();
   const { user } = useUser();
+  const { signOut } = useClerk();
   const { team } = useTeam();
   // Board and Runs are project-scoped, so they must mean "the project I am
   // currently working in". That is exactly what ActiveProjectProvider derives
@@ -69,6 +77,13 @@ export function CommandRail() {
           color: var(--c-ink-2); font-size: 10px; font-weight: 600;
           display: flex; align-items: center; justify-content: center;
           margin-top: 4px; user-select: none;
+          padding: 0; font-family: var(--sans); cursor: pointer;
+          transition: border-color 100ms ease, color 100ms ease;
+        }
+        .cr-avatar:hover { border-color: var(--c-ink-4); color: var(--c-ink); }
+        .cr-acct-email {
+          padding: 6px 8px; font-size: var(--fs-xs); color: var(--c-ink-4);
+          max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
       `}</style>
       <nav className="cr-root" data-testid="command-rail">
@@ -101,7 +116,30 @@ export function CommandRail() {
           <Settings size={16} strokeWidth={1.5} />
         </button>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <div className="cr-avatar" title={email || "Account"}>{initial}</div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="cr-avatar"
+                title={email || "Account"}
+                aria-label="Account menu"
+                data-testid="rail-account"
+              >
+                {initial}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="end">
+              {email && <div className="cr-acct-email" title={email}>{email}</div>}
+              {email && <DropdownMenuSeparator />}
+              <DropdownMenuItem onSelect={() => navigate("/settings")}>
+                <Settings size={13} strokeWidth={1.75} style={{ marginRight: 6 }} />
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => signOut()} data-testid="rail-signout">
+                <LogOut size={13} strokeWidth={1.75} style={{ marginRight: 6 }} />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {team && (
             <div style={{ fontSize: 8, fontWeight: 700, color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>
               {team.plan}
