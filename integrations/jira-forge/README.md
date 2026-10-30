@@ -31,6 +31,11 @@ the Forge CLI needs your Atlassian login.
 
 ### 1. Once, to set up
 
+The CLI pins a Node **patch** floor — currently `^22.23.4 || ^24.22.1 ||
+>=26.12.1`. Node 24.16 is in the right major and still refused, so check
+`node -v` before blaming anything else. Under nvm, global npm packages are
+per-version, so switching Node means reinstalling `@forge/cli`.
+
 ```sh
 # An Atlassian account and a free Jira Cloud developer site:
 #   https://go.atlassian.com/cloud-dev
@@ -49,8 +54,16 @@ npm install
 forge register kandryn
 ```
 
-`forge register` **writes `app.id` into `manifest.yml`** — that is why the file
-is committed without one. Commit the change it makes.
+`forge register` **writes `app.id` into `manifest.yml`**. Commit the change it
+makes.
+
+**`app.runtime` is required too**, even though this app declares no Forge
+functions at all — it is Custom UI plus a remote. The docs mark `runtime` as
+required with no exception for that case, and `forge lint` rejects the manifest
+without it (`app must have required property 'runtime'`). `nodejs24.x` is the
+recommended value and matches the Node 24 the rest of Kandryn runs on. Neither
+requirement surfaces until lint refuses you, which is why both are written down
+here.
 
 Copy the app id it prints into Vercel as `FORGE_APP_ID`, on every environment
 the Kandryn API serves. Redeploy Kandryn so the API picks it up.

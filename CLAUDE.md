@@ -328,7 +328,12 @@ DevOps are later phases.**
   resource. `static/` is **gitignored**: `forge deploy` uploads what is on disk,
   so a deploy without `npm run build` ships a blank panel.
 - `manifest.yml` ships **without `app.id`** — `forge register` writes it, and
-  that change is committed. `permissions.scopes` is **empty** and must stay so.
+  that change is committed (`2c22b02`). **`app.runtime` is required as well**,
+  even with no Forge functions: `forge lint` refuses the manifest without it,
+  and `nodejs24.x` is the recommended value. The Forge CLI also pins a Node
+  **patch** floor (`^24.22.1` at the time of writing), so Node 24.16 is refused
+  despite being the right major. Neither surfaces until lint rejects you.
+  `permissions.scopes` is **empty** and must stay so.
   Uninstall is the `preUninstall` module (there is no
   `avi:forge:uninstalled:app` event), pointing at
   `/api/ext/jira/v1/lifecycle/uninstalled`.
