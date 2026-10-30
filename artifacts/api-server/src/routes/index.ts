@@ -13,6 +13,8 @@ import sequenceRouter from "./sequence.js";
 import baselineRouter from "./baseline.js";
 import workItemsRouter from "./workItems.js";
 import knowledgeRouter from "./knowledge.js";
+import extJiraRouter from "./extJira.js";
+import integrationsJiraRouter from "./integrationsJira.js";
 import uiStyleRouter from "./uiStyle.js";
 import testsRouter from "./tests.js";
 import internalRouter from "./internal.js";
@@ -29,6 +31,10 @@ router.use(waitlistRouter);
 router.use(contactRouter);
 // Cron dispatcher — no Clerk auth; guarded by CRON_SECRET bearer inside.
 router.use(internalRouter);
+// The Jira panel's routes (0043). Mounted here, before requireAuth, because
+// the caller is Atlassian holding a Forge invocation token, not a browser
+// holding a Clerk session — forgeAuth inside the router is their only gate.
+router.use(extJiraRouter);
 
 // All routes below require authentication (including health checks)
 router.use(requireAuth);
@@ -47,6 +53,7 @@ router.use(sequenceRouter);
 router.use(baselineRouter);
 router.use(workItemsRouter);
 router.use(knowledgeRouter);
+router.use(integrationsJiraRouter);
 router.use(uiStyleRouter);
 router.use(testsRouter);
 router.use(tasksRouter);

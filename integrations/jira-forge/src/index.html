@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kandryn</title>
+    <style>
+      /* The panel lives in a narrow issue sidebar, so everything is a single
+         column that wraps. No fixed widths. */
+      :root {
+        --ink: #172b4d;
+        --ink-2: #44546f;
+        --ink-3: #626f86;
+        --line: #dfe1e6;
+        --neutral-bg: #f1f2f4;
+        --blue: #0055cc;
+        --blue-bg: #e9f2ff;
+        --green: #216e4e;
+        --green-bg: #dcfff1;
+        /* Amber is the strongest tone this panel uses. There is deliberately
+           no red: an ordering caution or a missing link is not a failure, and
+           red in someone else's issue view reads as "your tool is broken". */
+        --amber: #a54800;
+        --amber-bg: #fff7d6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: var(--ink);
+        background: transparent;
+      }
+      #root { padding: 2px 0 6px; }
+      .row { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--line); }
+      .row:first-of-type { border-top: 0; }
+      .label { flex: 0 0 84px; color: var(--ink-3); font-size: 12px; }
+      .value { flex: 1 1 auto; min-width: 0; color: var(--ink-2); font-size: 13px; word-wrap: break-word; }
+      .lozenge {
+        display: inline-block; padding: 1px 6px; border-radius: 3px;
+        font-size: 11px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.02em; white-space: nowrap;
+      }
+      .lz-neutral { background: var(--neutral-bg); color: var(--ink-2); }
+      .lz-blue { background: var(--blue-bg); color: var(--blue); }
+      .lz-green { background: var(--green-bg); color: var(--green); }
+      .lz-amber { background: var(--amber-bg); color: var(--amber); }
+      .msg { color: var(--ink-2); font-size: 13px; margin: 2px 0 10px; }
+      .muted { color: var(--ink-3); font-size: 12px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+      button {
+        font: inherit; font-size: 13px; padding: 4px 10px; cursor: pointer;
+        background: var(--neutral-bg); border: 0; border-radius: 3px; color: var(--ink-2);
+      }
+      button:hover { background: #dcdfe4; }
+      a, .linkish {
+        color: var(--blue); background: none; border: 0; padding: 0;
+        font: inherit; font-size: 13px; cursor: pointer; text-decoration: none;
+      }
+      a:hover, .linkish:hover { text-decoration: underline; }
+      .code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 22px; font-weight: 700; letter-spacing: 0.14em;
+        color: var(--ink); background: var(--neutral-bg);
+        padding: 9px 11px; border-radius: 3px; margin: 10px 0 4px;
+        word-break: break-all; user-select: all;
+      }
+      .note { background: var(--amber-bg); color: var(--amber); font-size: 12px; padding: 7px 9px; border-radius: 3px; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

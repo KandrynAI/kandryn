@@ -1,0 +1,19 @@
+{
+  "name": "kandryn-jira-forge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kandryn's Jira Cloud app (Forge) — read-only issue panel",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "forge lint"
+  },
+  "dependencies": {
+    "@forge/bridge": "^5.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3"
+  }
+}

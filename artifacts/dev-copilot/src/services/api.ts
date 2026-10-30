@@ -1967,3 +1967,27 @@ export function updateUiStyle(
     body: JSON.stringify(body),
   });
 }
+
+// --- Jira account linking (0043) -------------------------------------------
+// The code is always typed by the person. Nothing here ever reads one from a
+// URL, and `completeJiraLink` is the only function that sends one.
+
+export interface JiraLinkListResponse {
+  links: Array<{ id: number; siteUrl: string | null; linkedAt: string }>;
+}
+
+export function fetchJiraLinks(): Promise<JiraLinkListResponse> {
+  return request<JiraLinkListResponse>('/api/integrations/jira/links');
+}
+
+export function completeJiraLink(code: string): Promise<{ ok: true; siteUrl: string | null }> {
+  return request<{ ok: true; siteUrl: string | null }>('/api/integrations/jira/link/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function revokeJiraLink(id: number): Promise<void> {
+  return request<void>(`/api/integrations/jira/links/${id}`, { method: 'DELETE' });
+}

@@ -82,6 +82,11 @@ export const AUDIT_ACTIONS = [
   'ui_style.extracted',
   'ui_style.updated',
 
+  // Jira app (Forge, 0043) — identifiers only; never a code, token or issue text.
+  'jira.installation_registered',
+  'jira.account_linked',
+  'jira.account_unlinked',
+
   // Tests
   'tests.generated',
   'tests.committed',
