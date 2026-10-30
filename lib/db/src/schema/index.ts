@@ -17,3 +17,4 @@ export * from "./sequenceChecks";
 export * from "./sequenceOverrides";
 export * from "./knowledge";
 export * from "./uiStyleProfiles";
+export * from "./jiraForge";

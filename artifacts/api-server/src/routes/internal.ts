@@ -4,6 +4,7 @@ import { db, repositoriesTable } from "@workspace/db";
 import { executeRun } from "../services/runService.js";
 import { holdIfOrderChanged } from "../services/sequenceGate.js";
 import { dispatchPendingProfiles } from "../services/uiStyleService.js";
+import { runJiraRetention } from "../services/jiraExt/installations.js";
 import { listScansAwaitingCollection, collectBaselineScan } from "../services/baselineScanService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
 import { backfillEncryption } from "../services/configService.js";
@@ -153,6 +154,17 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     logger.warn({ err }, "UI style extraction tick failed");
   }
 
+  // 6. Jira app retention (0043): an installation disabled longer than the
+  // window loses its account links and unused codes. Additive and last, like
+  // step 5, and its own failure is never the dispatcher's.
+  let jiraRetention = { installations: 0, links: 0, codes: 0 };
+  try {
+    jiraRetention = await runJiraRetention();
+    if (jiraRetention.installations > 0) logger.info({ ...jiraRetention }, "jira retention tick");
+  } catch (err) {
+    logger.warn({ err }, "Jira retention tick failed");
+  }
+
   res.json({
     swept: sweptCount,
     dispatched: ids.length - held,
@@ -161,6 +173,7 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     baselinePending: pending.length,
     baselineCollected: collected,
     uiStyleExtracted: profiles.length,
+    jiraLinksRevoked: jiraRetention.links,
   });
 }
 
