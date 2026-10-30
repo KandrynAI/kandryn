@@ -32,6 +32,7 @@ import SettingsPage from "@/pages/SettingsPage";
 import NewProject from "@/pages/new-project";
 import ProjectSettingsPage from "@/pages/ProjectSettingsPage";
 import GovernancePage from "@/pages/GovernancePage";
+import JiraLinkPage from "@/pages/JiraLinkPage";
 import ProjectBoard from "@/pages/project-board";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
@@ -302,6 +303,10 @@ function ProtectedApp() {
       <TeamProvider>
       <AppShell>
         <Switch>
+          {/* Reached from the Kandryn panel in Jira, not from the app's own
+              navigation: without a code in hand this page is a dead end, so
+              phase 1 deliberately adds no menu entry for it. */}
+          <Route path="/integrations/jira/link" component={JiraLinkPage} />
           <Route path="/projects/new" component={NewProject} />
           <Route path="/projects/:projectId/settings" component={ProjectSettingsPage} />
           <Route path="/p/:projectId/settings" component={ProjectSettingsPage} />
