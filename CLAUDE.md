@@ -55,6 +55,8 @@ artifacts/
   dev-copilot/      React + Vite app (/app)
   kandryn/      Legacy Vite marketing site — not deployed
   mockup-sandbox/   Local component preview — not deployed
+integrations/
+  jira-forge/       Jira Cloud app (Forge) — standalone npm project, NOT in the pnpm workspace
 lib/
   api-spec/  api-client-react/  api-zod/   OpenAPI + Orval codegen (LEGACY task flow only)
   db/               Drizzle ORM schema + Supabase Postgres client
@@ -307,6 +309,43 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 
 ---
 
+## 11b. Jira app (Forge)
+
+`integrations/jira-forge/` — the Jira Cloud app. A **standalone npm project,
+outside the pnpm workspace**, like `website/`: the workspace globs are
+`artifacts/*`, `lib/*`, `lib/integrations/*` and `scripts`, so a root-level
+`integrations/` is not picked up. **It must stay at the repository root** —
+`lib/integrations/*` *is* a glob, so moving it under `lib/` would pull it into
+the workspace and break both installs.
+
+**Phase 1 is read-only. A Run button, writes to Jira, a board view and Azure
+DevOps are later phases.**
+
+- **Custom UI**, not UI Kit: the docs never confirm UI Kit can call
+  `invokeRemote`, and `@forge/bridge` must be bundled, so `build.mjs` (esbuild)
+  writes `static/panel/{index.html,index.js,icon.svg}` — one directory, because
+  the default CSP requires every script and asset to come from the same
+  resource. `static/` is **gitignored**: `forge deploy` uploads what is on disk,
+  so a deploy without `npm run build` ships a blank panel.
+- `manifest.yml` ships **without `app.id`** — `forge register` writes it, and
+  that change is committed. `permissions.scopes` is **empty** and must stay so.
+  Uninstall is the `preUninstall` module (there is no
+  `avi:forge:uninstalled:app` event), pointing at
+  `/api/ext/jira/v1/lifecycle/uninstalled`.
+- The panel reads the issue key from `view.getContext()`, which Atlassian
+  documents as **not valid for authorization**. That is safe here only because
+  the key is a **lookup term**: the site and the calling user come from the
+  signed token, and the server searches only projects the linked user may
+  already see. **Never** start sending the site, account or installation from
+  the panel.
+- Env: `FORGE_APP_ID` (from `forge register`; unset ⇒ every ext route 503),
+  `APP_BASE_URL`, `JIRA_EXT_ENABLED`, `ALLOW_FORGE_DEV_ENV`.
+- **Runbook: `integrations/jira-forge/README.md`** — register, deploy, install,
+  tunnel, private distribution, and the design rules. Commands there need an
+  Atlassian login and were never run from the sandbox.
+
+---
+
 ## 12. Environment variables
 
 | Variable | Critical | Notes |
@@ -381,7 +420,7 @@ These are the natural next tasks; none are blocking today:
 - **Jira backlog rank is not synced**, so the `out_of_rank` finding is Azure-DevOps-only. Jira's rank is a LexoRank string on a per-site custom field, which needs a `/field` discovery request per sync — skipped for the weakest of the eight finding types.
 - **`projects.confidence_threshold` default 0.6 is still uncalibrated**, and there is now one real data point against it: run #36 scored **exactly 0.6** and passed the gate (`score < threshold`), then failed on a hallucinated edit anchor. The signal called the plan marginal and was right. `runs.agent_failures` (0039) accumulates similar evidence — `SELECT agent_failures FROM runs WHERE agent_failures IS NOT NULL` says whether a dropped agent is a one-off or a pattern.
 - **UI style profile: shipped, deterministic only** (0042). The profile is read by static parsing — postcss for CSS variables, `@babel/parser` for Tailwind and theme configs, a file-marker scan for UI roots — and nothing in the customer's repository is executed, imported or evaluated. A value that is not statically readable becomes a warning, not a guess. PR-B injects it into generation only, after planning, and only when the plan touches interface files. Later, if it earns its way: a model-written conventions summary, Figma token import, and a style-check agent that reviews a diff against the profile.
-- **Jira app (Forge): phase 1 backend shipped (0043), panel not yet.** `forgeAuth`, the installation registry, the typed-code linking flow and the read-only issue endpoint are in, with the data-layer checks in `scripts/jiraext-verify/`. The `/integrations/jira/link` page shipped with PR-B. Still to come: the Forge app itself with its manifest and runbook (PR-C), which is also where `FORGE_APP_ID` comes from — until it is set, every ext route answers 503 and the page has nothing to connect to. Deliberately out of phase 1: a Run button, any write to Jira, board or project pages, Azure DevOps, and a Marketplace listing. Two accepted limits, both recorded above: matching is by Jira **key** (a moved issue breaks until re-sync) and declaring a remote **forfeits "Runs on Atlassian"**. Open question for before any Marketplace step: **Atlassian's personal-data-reporting duties could not be verified** — the official API page 404'd during the investigation and only stale community threads were reachable, which disagree on whether an account id alone is personal data.
+- **Jira app (Forge): phase 1 backend shipped (0043), panel not yet.** `forgeAuth`, the installation registry, the typed-code linking flow and the read-only issue endpoint are in, with the data-layer checks in `scripts/jiraext-verify/`. The `/integrations/jira/link` page shipped with PR-B and the Forge app with PR-C (`integrations/jira-forge/`, §11b). **What remains is not code:** `forge register` on a machine with an Atlassian login, `FORGE_APP_ID` into Vercel, then deploy and install on a site. Until that id is set, every ext route answers 503. Nothing in the sandbox could run `forge lint`, `forge deploy` or `forge install` — the CLI needs a login — so the manifest is verified against the current docs and a typecheck, not against a real deploy. Deliberately out of phase 1: a Run button, any write to Jira, board or project pages, Azure DevOps, and a Marketplace listing. Two accepted limits, both recorded above: matching is by Jira **key** (a moved issue breaks until re-sync) and declaring a remote **forfeits "Runs on Atlassian"**. Open question for before any Marketplace step: **Atlassian's personal-data-reporting duties could not be verified** — the official API page 404'd during the investigation and only stale community threads were reachable, which disagree on whether an account id alone is personal data.
 - **Domain context at connect (partly built).** The *plumbing* shipped: ancestor context (0040), uploaded reference documents with retrieval (0041), and the UI style profile (0042). What remains is the part that needs a review gate — extracted glossary, entities and **rules** with evidence, `proposed`/`confirmed` status, and only confirmed rules injected as authoritative. Documents today are reference material, deliberately not authority.
 
 ### Domain context at connect — design notes

@@ -1,0 +1,5 @@
+node_modules/
+# Forge CLI local state — the docs say not to commit it.
+.forge/
+# Build output. `npm run build` regenerates it; `forge deploy` uploads it.
+static/

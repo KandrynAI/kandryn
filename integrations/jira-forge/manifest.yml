@@ -1,0 +1,67 @@
+# Kandryn's Jira Cloud app — phase 1, read-only.
+#
+# `app.id` is deliberately absent: `forge register` writes it, and the runbook
+# in README.md says to commit that change. A placeholder here would either be
+# overwritten or fail validation before register ever ran.
+#
+# NO JIRA SCOPES. `permissions.scopes` is empty and must stay that way for this
+# phase. The issue key comes from the panel's own context and the Jira site
+# comes from the signed invocation token, so the app never calls a Jira API —
+# which is also the shortest path through Atlassian's review.
+
+modules:
+  jira:issuePanel:
+    - key: kandryn-panel
+      title: Kandryn
+      resource: panel
+      icon: resource:panel;icon.svg
+      viewportSize: medium
+      # UI resolver paths are given in each invokeRemote call, so this endpoint
+      # needs no `route` — only the remote it belongs to.
+      resolver:
+        endpoint: kandryn-api
+
+  endpoint:
+    - key: kandryn-api
+      remote: kandryn
+    # A backend module endpoint, so this one DOES need its path.
+    - key: kandryn-uninstall
+      remote: kandryn
+      route:
+        path: /api/ext/jira/v1/lifecycle/uninstalled
+
+  # There is no `avi:forge:uninstalled:app` event — uninstall is this module.
+  # It is non-blocking and may fire more than once, so the endpoint is
+  # idempotent; the 30-day retention sweep is the real cleanup, because a
+  # pre-uninstall hook that fails still lets the uninstall proceed.
+  preUninstall:
+    - key: kandryn-pre-uninstall
+      endpoint: kandryn-uninstall
+
+resources:
+  - key: panel
+    # Build output. `npm run build` puts index.html, index.js and icon.svg here.
+    path: static/panel
+
+remotes:
+  - key: kandryn
+    baseUrl: https://app.kandryn.com
+    operations:
+      # `compute` is what makes invokeRemote work at all.
+      - compute
+      # Kandryn stores the Atlassian account identifier that links a Jira user
+      # to a Kandryn user, so this is declared honestly rather than minimally.
+      - storage
+      # Lets the remote be referenced from permissions.external.fetch.client.
+      - fetch
+    storage:
+      inScopeEUD: true
+
+permissions:
+  scopes: []
+  external:
+    fetch:
+      # Declaring the remote here is what allows the panel to open Kandryn in a
+      # new tab without the external-link warning.
+      client:
+        - remote: kandryn
