@@ -65,3 +65,7 @@ permissions:
       # new tab without the external-link warning.
       client:
         - remote: kandryn
+app:
+  id: ari:cloud:ecosystem::app/f593edde-9bc1-4f0d-8c98-ab8d85494979
+  runtime:
+    name: nodejs24.x
