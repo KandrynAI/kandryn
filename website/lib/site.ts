@@ -27,9 +27,9 @@ export const NAV_ITEMS = [
 export const HOW_SECTIONS = [
   {
     n: '01', phase: 'run', title: 'Context',
-    body: 'Before an agent sees anything, the run assembles the case file: the work item, its acceptance criteria, and the files in the bound repository that the change planner selects as relevant. The detected stack profile rides along, so the agents write Express and Drizzle rather than generic pseudocode.',
+    body: 'Before an agent sees anything, the run assembles the case file. It starts with the work item and its acceptance criteria, then adds the parent story and epic above it, the repository files the change planner selects as relevant, and any passages from documents you uploaded that bear on the same work. The repository index and the detected stack profile are already in place, so the agents write Express and Drizzle rather than generic pseudocode. Background stays background: where a parent item or a document disagrees with the acceptance criteria, the acceptance criteria govern. A plan that scores as weak parks the run for a person to approve, edit or reject before anything is generated.',
     detailLabel: 'WHAT GOES IN',
-    details: ['Work item title, description and acceptance criteria', 'Relevant repository files, chosen by the change planner', 'The directory tree, so the plan targets paths that exist', 'The detected stack profile', 'Your refinement prompt, if you wrote one'],
+    details: ['Work item title, description and acceptance criteria', 'The parent story and epic above it, up to three levels', 'Relevant repository files, chosen by the change planner', 'The directory tree, so the plan targets paths that exist', 'The detected stack profile, and the project styling when the change touches the interface', 'Passages from documents you uploaded, retrieved for this item', 'Your refinement prompt, if you wrote one'],
   },
   {
     n: '02', phase: 'run', title: 'Two answers',
@@ -88,7 +88,7 @@ export const STAGE_PHASES = [
   {
     key: 'ondemand',
     label: 'After the commit, when you ask',
-    note: 'None of these start on their own. Each is a button on the run, and each needs your Anthropic key.',
+    note: 'None of these start on their own. Each is a button on the run, and each needs the model key you saved in Settings.',
   },
 ];
 
@@ -165,8 +165,8 @@ export const MODEL_KEYS = {
   body:
     'Kandryn does not resell model capacity. Every call is made with a key you saved, so usage appears on your own account and the provider terms that apply are the ones you already agreed to.',
   keys: [
-    { name: 'Anthropic', need: 'Required', body: 'Change planning, generation, ranking, review, security scanning and runbooks. Without it, every agent except Fovea refuses to run.' },
-    { name: 'OpenAI', need: 'Required for the second opinion', body: 'The second generation agent. Without it a run still completes, but with one suggestion instead of two competing ones.' },
+    { name: 'Primary model key', need: 'Required', body: 'Change planning, generation, ranking, review, security scanning and runbooks. Without it, every agent except Fovea refuses to run.' },
+    { name: 'Second model key', need: 'Required for the second opinion', body: 'The second generation agent. Without it a run still completes, but with one suggestion instead of two competing ones.' },
   ],
 };
 
@@ -192,8 +192,8 @@ export const CAPABILITY_FOOTNOTE =
   'Runbook push to Confluence and Notion requires separate credentials in Settings.';
 
 export const QUICKSTART = [
-  { n: '01', title: 'Connect your credentials', body: 'An Anthropic key and an OpenAI key for the agents, plus your tracker and repository credentials — all tested as you save them. Optional: Confluence or Notion credentials for runbook push.', time: '5 min' },
-  { n: '02', title: 'Bind your first project', body: 'One tracker project to one repository, validated live.', time: '2 min' },
+  { n: '01', title: 'Connect your credentials', body: 'The two model API keys the agents run on, plus your tracker and repository credentials. All of them are tested as you save them. Optional: Confluence or Notion credentials for runbook push.', time: '5 min' },
+  { n: '02', title: 'Bind your first project', body: 'One tracker project to one repository, validated live. Optional: add architecture or requirements documents right after.', time: '2 min' },
   { n: '03', title: 'Sync and read the board', body: 'The hierarchy arrives; check the parents look right.', time: '1 min' },
   { n: '04', title: 'Run one small item', body: 'Pick something mechanical for the first run, not the payments rewrite.', time: '4 min' },
   { n: '05', title: 'Review the pull request', body: 'Normal review, normal CI. Nothing merges itself.', time: 'Your call' },
@@ -201,6 +201,8 @@ export const QUICKSTART = [
 ];
 
 export const CHANGELOG = [
+  { date: '2026-10-20', title: 'Generated UI follows the project styling', body: 'Kandryn reads the design tokens, component library and conventions already in your repository, by static parsing only, and gives them to the generation agents when a change touches the interface.' },
+  { date: '2026-10-19', title: 'Runs read the project, not just the ticket', body: 'A run now carries the parent story and epic above the work item, plus passages from architecture and requirements documents you upload per project. Each run records which context it used, as identifiers and counts.' },
   { date: '2026-08-07', title: 'Aegis remediation loop — Remediate Now', body: 'Security findings can now be pushed to your tracker or fixed immediately with Remediate Now — one click creates the ticket, syncs the board, and starts a new run.' },
   { date: '2026-08-05', title: 'Narratia runbook generation', body: 'After every committed run, Narratia generates an operational runbook and pushes it to Confluence, Notion, or the PR branch as Markdown.' },
   { date: '2026-08-03', title: 'Aegis security agent with stop gate', body: 'Aegis scans committed code for OWASP Top 10 (2021) vulnerabilities. High findings fail the kandryn/security status check, which blocks the merge wherever your branch rules require that check.' },
@@ -225,6 +227,8 @@ export const FAQS = [
   { q: 'Does Kandryn merge code?', a: 'No. It creates a branch named task/<id>, commits the suggestion you chose, and opens a pull request. Merging stays with your review rules and your CI.' },
   { q: 'How are credentials handled?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored against your user, tested when you save them, and never written to a log line. Each one is encrypted with AES-256-GCM before it is written, under a key held in the environment rather than in the database, so a copy of the database on its own does not yield a usable credential. Model credentials are yours too: Kandryn calls Anthropic and OpenAI with the keys you save, so the usage appears on your own account and no key is shared between users.' },
   { q: 'How much of my repository do the agents see?', a: 'A handful of files — the ones the change planner selects as relevant to the work item — plus the detected stack profile. The planner is also shown the directory listing, so it can target paths that exist, but that is file names only and is capped. No other file contents leave the repository, and nothing outside the repository you bound to the project is read at all.' },
+  { q: 'How does Kandryn know about our business?', a: 'It reads the work item, the parent story and epic above it, and the documents you choose to upload. Retrieval happens per run: Kandryn pulls the passages that mention the same things as the item, and the rest of a document is not sent. Documents are background material, not rules. Where a document and the acceptance criteria disagree, the acceptance criteria govern. Kandryn does not infer rules nobody wrote down, and the ranking agent scores whether a suggestion flagged an ambiguity in the criteria or quietly picked one reading, which is shown on the run.' },
+  { q: 'Can reviewers see what context a run used?', a: 'Yes. Every run records what went into its prompts: how many parent items, how many document passages, and whether the project styling was used, with the tracker keys and passage ids behind each. Identifiers and counts only, never the text itself. The run page shows it as one line, so a reviewer can tell what informed the change without opening anything else.' },
   { q: 'What happens if a scheduled run fails?', a: 'The run row records the error, the item is left untouched, and the owner gets an email. Runs stuck longer than twenty minutes are swept to failed by the dispatcher.' },
   { q: 'Can it write to my tracker?', a: 'Only where you ask it to: new items and test cases you explicitly push, and a status change when an item closes. Nothing else propagates upstream.' },
   { q: 'Which providers work best?', a: 'GitHub is the primary, auto-synced provider. Azure Repos handles branches, commits to existing files, pull requests, stack detection and the security gate; adding a brand-new file can fail there, and the gate needs a pull request to attach to, where GitHub can post against the commit alone.' },
