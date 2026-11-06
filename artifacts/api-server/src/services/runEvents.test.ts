@@ -174,6 +174,37 @@ test("flush on an empty buffer writes nothing", async () => {
   await em.close();
 });
 
+test("RUN_EVENTS_ENABLED=false makes createRunEmitter the identity emitter", async () => {
+  const before = process.env.RUN_EVENTS_ENABLED;
+  process.env.RUN_EVENTS_ENABLED = "false";
+  try {
+    const { batches, writer } = recordingWriter();
+    const em = createRunEmitter(SCOPE, writer);
+    em.emit({ agent: "system", type: "run.started", data: { trigger: "manual" } });
+    await em.flush();
+    await em.close();
+    assert.equal(batches.length, 0, "nothing is buffered, templated or written");
+  } finally {
+    if (before === undefined) delete process.env.RUN_EVENTS_ENABLED;
+    else process.env.RUN_EVENTS_ENABLED = before;
+  }
+});
+
+test("any other value leaves the timeline on", async () => {
+  const before = process.env.RUN_EVENTS_ENABLED;
+  for (const value of [undefined, "true", "1", ""]) {
+    if (value === undefined) delete process.env.RUN_EVENTS_ENABLED;
+    else process.env.RUN_EVENTS_ENABLED = value;
+    const { batches, writer } = recordingWriter();
+    const em = createRunEmitter(SCOPE, writer);
+    em.emit({ agent: "system", type: "run.started", data: { trigger: "manual" } });
+    await em.close();
+    assert.equal(batches.length, 1, `RUN_EVENTS_ENABLED=${String(value)} should stay on`);
+  }
+  if (before === undefined) delete process.env.RUN_EVENTS_ENABLED;
+  else process.env.RUN_EVENTS_ENABLED = before;
+});
+
 test("NULL_EMITTER accepts everything and stores nothing", async () => {
   assert.doesNotThrow(() => NULL_EMITTER.emit({ agent: "system", type: "run.started" }));
   await NULL_EMITTER.flush();

@@ -100,7 +100,19 @@ export const dbWriter: RunEventWriter = {
  * makes `seq` order equal to the order the agents emitted in, not just to
  * commit order.
  */
+/**
+ * The kill switch. Read per call rather than cached at module load, so a test
+ * can flip it and so a redeploy is not needed to reason about it.
+ */
+export function timelineEnabled(): boolean {
+  return process.env.RUN_EVENTS_ENABLED !== "false";
+}
+
 export function createRunEmitter(scope: RunEventScope, writer: RunEventWriter = dbWriter): RunEventEmitter {
+  // Disabled: hand back the identity emitter. Every call site stays identical,
+  // and nothing is buffered, templated or written.
+  if (!timelineEnabled()) return NULL_EMITTER;
+
   let buffer: PreparedEvent[] = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
   let chain: Promise<void> = Promise.resolve();

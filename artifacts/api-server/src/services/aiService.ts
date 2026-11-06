@@ -12,6 +12,15 @@ import type { CodeSuggestion, SuggestionFile } from "../../../../shared/types/co
 import type { ChangePlan } from "../../../../shared/types/changePlan.js";
 import type { CoherenceResult } from "../../../../shared/types/coherence.js";
 import type { StackProfile } from "../stack/detector.js";
+import { timelineAgent, type EmitInput } from "./runEventCore.js";
+
+/**
+ * Timeline hook (0044). Injected rather than imported so this module keeps
+ * knowing nothing about `runId` or the database — `runEventCore` is pure, and a
+ * caller with no interest in the timeline passes nothing. Observe-only: a hook
+ * that throws would be a caller's bug, and one that is absent changes nothing.
+ */
+export type EmitEvent = (event: EmitInput) => void;
 
 /**
  * Reads a source file (content + blob SHA) so the orchestrator can apply edit
@@ -371,6 +380,7 @@ export class AIOrchestrator {
     planInput?: { plan: ChangePlan; context: string },
     contextPack?: string | null,
     styleGuide?: string | null,
+    onEvent?: EmitEvent,
   ): Promise<{ suggestions: CodeSuggestion[]; failures: AgentFailure[] }> {
     const taskFields = {
       title: task.title,
@@ -399,15 +409,35 @@ export class AIOrchestrator {
       jobs.push([Promise.resolve(mockCopilot(stack)), "copilot"]);
     }
 
-    const results = await Promise.allSettled(jobs.map(([p]) => p));
+    // Both agents are already in flight, so "started" is emitted for both here
+    // rather than per result — by the time `allSettled` resolves, the parallel
+    // phase is over and a start event would be a lie about when it began.
+    const modelOf = (agent: CodeSuggestion["agent"]): string | undefined =>
+      agent === "claude" ? this.claudeModel : agent === "openai" ? this.openaiModel : undefined;
+    for (const [, agent] of jobs) {
+      onEvent?.({
+        agent: timelineAgent(agent),
+        type: "stage.started",
+        data: { stage: "generate", model: modelOf(agent) },
+      });
+    }
+
+    // Per-agent elapsed time. `.finally` preserves the value and the rejection,
+    // so this only stamps a clock: without it both durations would read as the
+    // slowest agent's, because every result is handled after allSettled.
+    const startedAt = Date.now();
+    const elapsed: number[] = [];
+    const results = await Promise.allSettled(
+      jobs.map(([p], i) => p.finally(() => { elapsed[i] = Date.now() - startedAt; })),
+    );
     const suggestions: CodeSuggestion[] = [];
     const failures: AgentFailure[] = [];
 
-    const mapped: Array<[(typeof results)[number], CodeSuggestion["agent"]]> = results.map(
-      (result, i) => [result, jobs[i][1]],
+    const mapped: Array<[(typeof results)[number], CodeSuggestion["agent"], number]> = results.map(
+      (result, i) => [result, jobs[i][1], elapsed[i] ?? 0],
     );
 
-    for (const [result, agent] of mapped) {
+    for (const [result, agent, durationMs] of mapped) {
       if (result.status === "fulfilled") {
         const output = result.value;
         // Resolve the model's operations into a change set: create files carry
@@ -430,10 +460,42 @@ export class AIOrchestrator {
           language: detectLanguage(primaryPath),
           model,
         });
+
+        // One event per file in the change set, then the stage. Paths, ops and
+        // line counts only — never `content`, `hunks` or `diff`.
+        for (const f of files) {
+          onEvent?.({
+            agent: timelineAgent(agent),
+            type: "file.write",
+            status: f.applyStatus === "failed" ? "warn" : "ok",
+            data: {
+              path: f.filePath,
+              action: f.op === "create" ? "create" : f.op === "delete" ? "delete" : "modify",
+              linesAdded: f.linesAdded,
+              linesRemoved: f.linesRemoved,
+              applyStatus: f.applyStatus,
+            },
+          });
+        }
+        onEvent?.({
+          agent: timelineAgent(agent),
+          type: valid ? "stage.completed" : "stage.failed",
+          data: valid
+            ? { stage: "generate", model: model ?? undefined }
+            : { stage: "generate", reason: "changes_not_applicable" },
+          durationMs,
+        });
       } else {
         const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
         logger.error({ agent, err: result.reason }, `${agent} produced no suggestion`);
         failures.push({ agent, message: message.slice(0, 500) });
+        // A code, never `message`: a provider error can quote the prompt back.
+        onEvent?.({
+          agent: timelineAgent(agent),
+          type: "stage.failed",
+          data: { stage: "generate", reason: "model_error" },
+          durationMs,
+        });
       }
     }
 
@@ -636,6 +698,30 @@ export function assignRecommendation(sorted: CodeSuggestion[]): void {
   }
 }
 
+/**
+ * Emit one `score.dimension` event per scored dimension, attributed to the
+ * suggestion's own agent (0044).
+ *
+ * Exported for its test, like `validateFindingPaths` in veriaService: the
+ * filtering is the part worth proving. `scoreBreakdown` also carries
+ * `overallNarrative` and `recommendation`, both model prose, and each dimension
+ * carries `verdict` and `reason`, also model prose. Only `score` and `weight`
+ * leave this function.
+ */
+export function emitScoreDimensions(suggestions: CodeSuggestion[], onEvent: EmitEvent): void {
+  for (const s of suggestions) {
+    for (const [dimension, dim] of Object.entries(s.scoreBreakdown ?? {})) {
+      if (!dim || typeof dim !== "object" || !("score" in dim)) continue;
+      const d = dim as { score: number; weight?: number };
+      onEvent({
+        agent: timelineAgent(s.agent),
+        type: "score.dimension",
+        data: { dimension, value: d.score, weight: d.weight },
+      });
+    }
+  }
+}
+
 export class SynthesisEngine {
   private readonly anthropicApiKey: string | undefined;
 
@@ -647,6 +733,7 @@ export class SynthesisEngine {
     suggestions: CodeSuggestion[],
     stack: StackProfile,
     context?: SynthesisContext,
+    onEvent?: EmitEvent,
   ): Promise<CodeSuggestion[]> {
     if (suggestions.length === 0) return [];
 
@@ -682,6 +769,7 @@ export class SynthesisEngine {
 
         result.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
         assignRecommendation(result);
+        if (onEvent) emitScoreDimensions(result, onEvent);
         return result;
       } catch (err) {
         logger.warn({ err }, "SynthesisEngine: breakdown scoring failed — falling back to simple scoring");

@@ -36,6 +36,7 @@ import {
   type RunEventAgent,
   type RunEventStatus,
   type RunEventType,
+  type RunFailureReason,
   type RunStage,
   type RunbookSectionCode,
 } from "../../../../shared/types/runEvent.js";
@@ -268,6 +269,29 @@ export function runbookSectionCode(heading: unknown): RunbookSectionCode {
     references: "references",
   };
   return map[key] ?? "other";
+}
+
+/**
+ * Classify a run failure into one of the closed reason codes.
+ *
+ * Matches on OUR OWN thrown message prefixes — every string below is written in
+ * runService.ts or commitResolver.ts, not by a model — and returns a code. The
+ * message itself never reaches an event: `runs.error` already holds it, and it
+ * concatenates `suggestion_files.apply_error`, which embeds the model's own
+ * failed search text. One GitHub string is matched too ("Bad credentials"),
+ * because an expired PAT is the most common real failure and naming it as
+ * `git_auth` is worth more than `unknown`.
+ */
+export function failureReason(err: unknown): RunFailureReason {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (msg.startsWith("Work item not found")) return "work_item_missing";
+  if (msg.startsWith("No repository is connected")) return "no_repository";
+  if (msg.startsWith("Repository needs reconfiguration")) return "repo_unconfigured";
+  if (msg.startsWith("No agent produced a suggestion")) return "no_agent_output";
+  if (msg.startsWith("No suggestion could be applied")) return "no_applicable_suggestion";
+  if (msg.startsWith("The branch changed while this run was in progress")) return "stale_branch";
+  if (/bad credentials|401 unauthorized|authentication failed/i.test(msg)) return "git_auth";
+  return "unknown";
 }
 
 /**

@@ -29,6 +29,8 @@ import * as audit from "../services/auditService.js";
 import { evaluateGate, recordOverrideOutcome, type SequenceBlock } from "../services/sequenceGate.js";
 import { sequenceOverridesTable } from "@workspace/db";
 import { OVERRIDE_REASON_CATEGORIES } from "../../../../shared/types/sequence.js";
+import { createRunEmitter } from "../services/runEvents.js";
+import { runbookSectionCode } from "../services/runEventCore.js";
 
 const router: IRouter = Router();
 
@@ -735,6 +737,10 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     op: f.op,
     code: f.content,
   }));
+  // Timeline (0044). Observe-only and best-effort; `close()` is the last flush.
+  const emitter = createRunEmitter({ runId, userId: run.userId, projectId: run.projectId });
+  const reviewStart = Date.now();
+  emitter.emit({ agent: "veria", type: "stage.started", data: { stage: "review" } });
   try {
     const review = await runVeriaReview(
       {
@@ -748,11 +754,36 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     );
 
     await db.update(runsTable).set({ review, reviewStatus: "done" }).where(eq(runsTable.id, runId));
+    // One event per finding: its TYPE, its severity and its file path — the
+    // path already validated against the real change set by
+    // `validateFindingPaths`. Never `title` or `detail`, both model prose.
+    for (const f of review.findings) {
+      emitter.emit({
+        agent: "veria",
+        type: "check.result",
+        status: f.type === "strength" ? "ok" : f.severity === "high" ? "warn" : "info",
+        data: { check: "veria", category: f.type, outcome: f.severity, path: f.filePath },
+      });
+    }
+    emitter.emit({
+      agent: "veria",
+      type: "stage.completed",
+      data: { stage: "review" },
+      durationMs: Date.now() - reviewStart,
+    });
+    await emitter.close();
     req.log.info({ runId }, "Veria review completed");
     res.status(200).json({ review });
   } catch (err) {
     req.log.error({ err }, "Veria review failed");
     await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    emitter.emit({
+      agent: "veria",
+      type: "stage.failed",
+      data: { stage: "review", reason: "agent_failed" },
+      durationMs: Date.now() - reviewStart,
+    });
+    await emitter.close();
     const status = err instanceof VeriaError ? err.status : 502;
     const message = err instanceof VeriaError ? err.message : "Veria could not complete the review. Try again.";
     res.status(status).json({ error: message });
@@ -890,6 +921,10 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
   const scanFiles = (await loadSuggestionFiles(suggestion.id))
     .filter((f) => f.op !== "delete" && f.content)
     .map((f) => ({ filePath: f.filePath, code: f.content }));
+
+  const aegisEmitter = createRunEmitter({ runId, userId: run.userId, projectId: run.projectId });
+  const aegisStart = Date.now();
+  aegisEmitter.emit({ agent: "aegis", type: "stage.started", data: { stage: "security" } });
   try {
     const scan = await runAegisScan(
       {
@@ -935,6 +970,46 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
       .update(runsTable)
       .set({ securityScan: scan, securityScanStatus: "done", securityGate: scan.gateDecision })
       .where(eq(runsTable.id, runId));
+
+    // Timeline (0044). One event per finding — the OWASP category's ID only,
+    // because the full label carries a space and the timeline's `token` kind
+    // (deliberately) refuses anything with whitespace. Never `title`, `detail`,
+    // `remediation` or `lineRef`.
+    for (const f of scan.findings) {
+      aegisEmitter.emit({
+        agent: "aegis",
+        type: "check.result",
+        status: f.severity === "critical" || f.severity === "high" ? "warn" : "info",
+        data: { check: "aegis", path: f.filePath, category: f.owasp.split(":")[0], outcome: f.severity },
+      });
+    }
+    // A file that could not be scanned is why the gate fails closed, so it is
+    // on the timeline as loudly as a finding.
+    for (const path of scan.unscannedFiles) {
+      aegisEmitter.emit({
+        agent: "aegis",
+        type: "check.result",
+        status: "warn",
+        data: { check: "aegis", path, outcome: "unscanned" },
+      });
+    }
+    aegisEmitter.emit({
+      agent: "aegis",
+      type: "gate.result",
+      status: scan.gateDecision === "blocked" ? "warn" : "ok",
+      data: {
+        gate: "security",
+        outcome: scan.gateDecision,
+        blocking: scan.criticalCount + scan.highCount + scan.unscannedFiles.length,
+      },
+    });
+    aegisEmitter.emit({
+      agent: "aegis",
+      type: "stage.completed",
+      data: { stage: "security", model: scan.model },
+      durationMs: Date.now() - aegisStart,
+    });
+    await aegisEmitter.close();
 
     // Post the GitHub commit status check (the stop-gate signal). An unscanned
     // file blocks and its paths go in the check output — never a silent pass.
@@ -997,6 +1072,15 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     if (err instanceof AegisModelUnavailableError) {
       req.log.warn({ runId }, "Aegis unavailable: models are retention-gated for this organisation");
       await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+      // No gate event: the scan never started, so there is no decision to
+      // record. Same reasoning as the deliberate absence of a status check.
+      aegisEmitter.emit({
+        agent: "aegis",
+        type: "stage.failed",
+        data: { stage: "security", reason: "model_unavailable" },
+        durationMs: Date.now() - aegisStart,
+      });
+      await aegisEmitter.close();
       res.status(424).json({
         error:
           "Aegis could not run: your Anthropic organisation's data-retention setting puts both the default and " +
@@ -1007,6 +1091,13 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     }
     req.log.error({ err }, "Aegis scan failed");
     await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+    aegisEmitter.emit({
+      agent: "aegis",
+      type: "stage.failed",
+      data: { stage: "security", reason: "agent_failed" },
+      durationMs: Date.now() - aegisStart,
+    });
+    await aegisEmitter.close();
     res.status(502).json({ error: "Aegis could not complete the scan. Try again." });
   }
 });
@@ -1114,6 +1205,10 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
     op: f.op,
     code: f.content,
   }));
+
+  const narratiaEmitter = createRunEmitter({ runId, userId: run.userId, projectId: run.projectId });
+  const narratiaStart = Date.now();
+  narratiaEmitter.emit({ agent: "narratia", type: "stage.started", data: { stage: "runbook" } });
   try {
     const result = await runNarratia(
       {
@@ -1158,6 +1253,24 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
       .set({ runbook: result.markdown, runbookStatus: "done", runbookTarget: target, runbookUrl: pushedUrl })
       .where(eq(runsTable.id, runId));
 
+    // A section "name" is the model's own `## ` heading, so it is MATCHED
+    // against the eight known sections rather than passed through;
+    // anything else becomes `other`, which says the model drifted.
+    result.sections.forEach((s, i) => {
+      narratiaEmitter.emit({
+        agent: "narratia",
+        type: "runbook.section",
+        data: { section: runbookSectionCode(s.title), index: i + 1 },
+      });
+    });
+    narratiaEmitter.emit({
+      agent: "narratia",
+      type: "stage.completed",
+      data: { stage: "runbook" },
+      durationMs: Date.now() - narratiaStart,
+    });
+    await narratiaEmitter.close();
+
     req.log.info({ runId, target, pushed: pushedUrl != null }, "Narratia runbook generated");
     audit.log({
       userId: req.userId,
@@ -1173,6 +1286,13 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
   } catch (err) {
     req.log.error({ err }, "Narratia generation failed");
     await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    narratiaEmitter.emit({
+      agent: "narratia",
+      type: "stage.failed",
+      data: { stage: "runbook", reason: "agent_failed" },
+      durationMs: Date.now() - narratiaStart,
+    });
+    await narratiaEmitter.close();
     res.status(502).json({ error: "Narratia could not generate the runbook. Try again." });
   }
 });

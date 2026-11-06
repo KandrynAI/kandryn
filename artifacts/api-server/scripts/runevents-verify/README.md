@@ -6,12 +6,27 @@ field kinds, the summary templates, the structural leak guard) and
 `src/services/runEvents.test.ts` (buffering, flush ordering, failure isolation,
 the seq block arithmetic).
 
-`seq.ts` covers the one thing they cannot fake: whether Postgres actually
-serializes two emitters on the same run, and therefore whether a `since_seq`
-cursor can lose an event.
+`src/services/runEventsInstrumentation.test.ts` (PR2) drives the **real**
+`AIOrchestrator` with only the two provider calls stubbed, so the per-agent
+event sequence, the leak guard against a real prompt, and the on/off
+equivalence are all covered without a database.
 
-It is not part of `pnpm test`, deliberately. It imports `@workspace/db`, which
-throws without `DATABASE_URL`, and it truncates the tables it uses.
+Two scripts cover what none of that can fake:
+
+- **`seq.ts`** — whether Postgres actually serializes two emitters on the same
+  run, and therefore whether a `since_seq` cursor can lose an event.
+- **`pipeline.ts`** — a whole run's timeline (33 events, two generation agents
+  interleaved, Synthesia's dimensions, a commit) stored and read back the way
+  PR3's endpoint will, including a cursor read in halves.
+
+Neither is part of `pnpm test`, deliberately. Both import `@workspace/db`,
+which throws without `DATABASE_URL`, and they truncate the tables they use.
+
+A real end-to-end `executeRun` is not possible here at all: it needs Anthropic,
+OpenAI and GitHub credentials, and the sandbox has none (CLAUDE.md §2). So
+`pipeline.ts` replays the sequence `executeRun` emits rather than causing it.
+The sequence it replays is kept in step with `runService.ts` by hand — if you
+add or move an emit site there, update it here.
 
 ## Running it
 
@@ -28,7 +43,7 @@ PGHOST=$PGROOT PGPORT=55433 $PGBIN/createdb -U postgres evt
 export DATABASE_URL="postgres://postgres@localhost:55433/evt?host=$PGROOT"
 
 (cd ../../../../lib/db && pnpm run push-force)        # tables, indexes, CHECKs
-cd ../.. && pnpm exec tsx scripts/runevents-verify/seq.ts
+cd ../.. && for s in seq pipeline; do pnpm exec tsx scripts/runevents-verify/$s.ts; done
 ```
 
 `0044` installs **no trigger**, so unlike `0038` this one does not have to be
@@ -39,7 +54,21 @@ applied by hand for the checks to mean anything. Verified on 2026-11-06: a
 `docs/db/0044_run_events.sql` over that database is a clean no-op. Checks 4–4c
 exist to catch a database where that stopped being true.
 
-## What it covers
+## What `pipeline.ts` covers
+
+| # | Check |
+|---|---|
+| 0 | The timeline is not empty. Without it every check below passes vacuously on an empty table — which is what `RUN_EVENTS_ENABLED=false` produces, and is how this guard came to be written |
+| 1–1b | Every event stored, `seq` contiguous from 1, insertion order preserved |
+| 2–2b | Every agent the pipeline uses (`system`, `raptia`, `fovea`, `synthesia`) has a start and an outcome, and completion events carry durations |
+| 3 | No stored row carries ticket, document, diff or prompt text, in any column |
+| 4 | A cursor read in halves sees every event exactly once — PR3's resume path |
+| 5–5e | The stored summaries read as prose a person can scan, and all fit the column |
+
+Run it with `RUN_EVENTS_ENABLED=false` as the kill switch's own negative
+control: check 0 fails and `select count(*) from run_events` is 0.
+
+## What `seq.ts` covers
 
 | # | Check |
 |---|---|

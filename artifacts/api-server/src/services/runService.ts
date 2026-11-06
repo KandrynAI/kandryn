@@ -44,6 +44,8 @@ import type { ContextManifest } from "./contextPack.js";
 import { buildStyleGuideBlock, decideInjection, mergeUiStyleManifest } from "./uiStyle/styleGuide.js";
 import { loadProfileForRun, markStaleIfStyling } from "./uiStyleService.js";
 import type { StackProfile } from "../stack/detector.js";
+import { createRunEmitter, NULL_EMITTER, type RunEventEmitter } from "./runEvents.js";
+import { failureReason } from "./runEventCore.js";
 import { logger } from "../lib/logger.js";
 
 export class RunError extends Error {
@@ -214,6 +216,8 @@ async function generateAndPersistSuggestions(params: {
   contextPack?: string | null;
   styleGuide?: string | null;
   coherenceGit?: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader };
+  /** Timeline emitter (0044). Defaults to the identity emitter. */
+  emitter?: RunEventEmitter;
 }): Promise<{
   raw: CodeSuggestion[];
   ranked: CodeSuggestion[];
@@ -223,6 +227,8 @@ async function generateAndPersistSuggestions(params: {
 }> {
   const { runId, orchestrator, synth, devTask, codeContext, stack, fileReader, planInput, contextPack, styleGuide, coherenceGit } =
     params;
+  const emitter = params.emitter ?? NULL_EMITTER;
+  const emit = emitter.emit.bind(emitter);
 
   const { suggestions: raw, failures } = await orchestrator.generateSuggestions(
     devTask,
@@ -232,6 +238,7 @@ async function generateAndPersistSuggestions(params: {
     planInput,
     contextPack,
     styleGuide,
+    emit,
   );
 
   // Only valid (cleanly-applied) suggestions reach Synthesia (1.4).
@@ -241,16 +248,49 @@ async function generateAndPersistSuggestions(params: {
   // Recommended. Best-effort: a checker/read failure leaves coherence unset,
   // which the scorer treats as neutral.
   if (coherenceGit) {
+    const coherenceStart = Date.now();
+    emit({ agent: "system", type: "stage.started", data: { stage: "coherence" } });
     try {
       await attachCoherence(validRaw, coherenceGit);
+      for (const s of validRaw) {
+        if (!s.coherence) continue;
+        emit({
+          agent: "system",
+          type: "check.result",
+          status: s.coherence.status === "failed" ? "warn" : "ok",
+          data: { check: "coherence", outcome: s.coherence.status, findings: s.coherence.findings?.length },
+        });
+      }
+      emit({
+        agent: "system",
+        type: "stage.completed",
+        data: { stage: "coherence" },
+        durationMs: Date.now() - coherenceStart,
+      });
     } catch (err) {
       logger.warn({ runId, err }, "Coherence check failed — proceeding without it");
+      emit({
+        agent: "system",
+        type: "stage.failed",
+        data: { stage: "coherence", reason: "check_failed" },
+        durationMs: Date.now() - coherenceStart,
+      });
     }
   }
+  const rankStart = Date.now();
+  if (validRaw.length > 0) emit({ agent: "synthesia", type: "stage.started", data: { stage: "rank" } });
   const ranked =
     validRaw.length > 0
-      ? await synth.synthesize(validRaw, stack, { title: devTask.title, acceptanceCriteria: devTask.acceptanceCriteria })
+      ? await synth.synthesize(validRaw, stack, { title: devTask.title, acceptanceCriteria: devTask.acceptanceCriteria }, emit)
       : [];
+  if (validRaw.length > 0) {
+    emit({
+      agent: "synthesia",
+      type: "stage.completed",
+      data: { stage: "rank" },
+      durationMs: Date.now() - rankStart,
+    });
+  }
 
   // Persist ALL suggestions, merging scores back onto the ranked/valid ones by
   // agent. Rows are index-aligned with `raw`.
@@ -339,6 +379,22 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
   const confidenceThreshold = proj?.confidenceThreshold != null ? Number(proj.confidenceThreshold) : 0.6;
   await db.update(runsTable).set({ status: "running", startedAt: new Date() }).where(eq(runsTable.id, runId));
 
+  // Timeline (0044). Observe-only and best-effort: `emit` is synchronous and
+  // swallows its own errors, so nothing below can fail or slow down because of
+  // it. `close()` in the finally is the last flush.
+  const emitter = createRunEmitter({ runId, userId, projectId: run.projectId });
+  const emit = emitter.emit.bind(emitter);
+  const runStart = Date.now();
+  emit({
+    agent: "system",
+    type: "run.started",
+    data: {
+      trigger: run.trigger,
+      triggerContext: run.triggerContext ?? undefined,
+      autoCommit: run.autoCommit,
+    },
+  });
+
   try {
     const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
     if (!workItem) throw new Error("Work item not found");
@@ -355,6 +411,10 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     const stackDesc = describeStack(stack);
     logger.info({ runId, workItemId: workItem.id, stackDesc }, "Running agents with stack-aware prompt");
     await db.update(runsTable).set({ stackDesc }).where(eq(runsTable.id, runId));
+
+    const contextStart = Date.now();
+    emit({ agent: "system", type: "stage.started", data: { stage: "context" } });
+    if (stackDesc) emit({ agent: "system", type: "context.read", data: { kind: "stack_profile" } });
 
     const creds = await getConfigs(userId, [
       "ANTHROPIC_API_KEY",
@@ -386,8 +446,19 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       const ctx = await git.fetchFileContextWithGraph(String(workItem.id), keywords, stack, graph);
       codeContext = ctx.context;
       usedGraphContext = ctx.usedGraph;
+      emit({
+        agent: "system",
+        type: "context.read",
+        data: { kind: "repo_graph", retrievalMode: ctx.usedGraph ? "graph" : "keyword" },
+      });
     } catch (e) {
       logger.warn({ runId, err: e }, "Run: git file context unavailable — proceeding without it");
+      emit({
+        agent: "system",
+        type: "context.read",
+        status: "warn",
+        data: { kind: "repo_graph", retrievalMode: "unavailable" },
+      });
     }
 
     // Reader so the orchestrator can apply edit hunks against current source
@@ -436,6 +507,28 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         .where(eq(runsTable.id, runId))
         .catch((err) => logger.warn({ runId, err }, "Recording the context manifest failed"));
     }
+    // The manifest is already identifiers and counts only (0040), so the
+    // timeline reads straight off it rather than re-deriving anything.
+    for (const section of contextPack.manifest?.sections ?? []) {
+      emit({
+        agent: "system",
+        type: "context.read",
+        status: section.truncated ? "warn" : "info",
+        data: {
+          kind: section.kind === "parent_chain" ? "parent" : "document",
+          included: section.included,
+          available: section.available,
+          truncated: section.truncated,
+          refs: section.refs,
+        },
+      });
+    }
+    emit({
+      agent: "system",
+      type: "stage.completed",
+      data: { stage: "context" },
+      durationMs: Date.now() - contextStart,
+    });
 
     // Change plan (Phase 2): plan which files the change touches before
     // generation, then feed the plan + per-file context to BOTH agents so they
@@ -463,6 +556,11 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         await db.update(changePlansTable).set({ status: "ready" }).where(eq(changePlansTable.id, planRow.id));
       }
     } else if (creds.ANTHROPIC_API_KEY) {
+      const planStart = Date.now();
+      // The change planner is orchestration, not one of the six agents, so its
+      // stage is attributed to `system` rather than to Raptia — even though the
+      // call underneath is a Claude one.
+      emit({ agent: "system", type: "stage.started", data: { stage: "plan" } });
       try {
         const gitPlan = await GitService.forRepo(repo.id, {
           githubToken: creds.GITHUB_TOKEN,
@@ -495,6 +593,26 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         });
         logger.info({ runId, ...planSummary, plan: undefined }, "Change plan produced");
 
+        // One event per planned file: the index, the op and the path. Never
+        // `rationale`, which is the model's own prose about why.
+        const planned = planSummary.plan?.files ?? [];
+        planned.forEach((f, i) => {
+          emit({
+            agent: "system",
+            type: "plan.step",
+            data: { index: i + 1, total: planned.length, op: f.op, path: f.path },
+          });
+        });
+        emit({
+          agent: "system",
+          type: planSummary.status === "ready" ? "stage.completed" : "stage.failed",
+          data:
+            planSummary.status === "ready"
+              ? { stage: "plan", model: undefined }
+              : { stage: "plan", reason: planSummary.status },
+          durationMs: Date.now() - planStart,
+        });
+
         // Assemble the per-file generation context (full content for edits, a
         // convention sibling for creates) and hand the plan to both agents.
         if (planSummary.status === "ready" && planSummary.plan && planSummary.plan.files.length > 0 && fileReader) {
@@ -508,6 +626,12 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         }
       } catch (e) {
         logger.warn({ runId, err: e }, "Run: change planning failed — proceeding without a plan");
+        emit({
+          agent: "system",
+          type: "stage.failed",
+          data: { stage: "plan", reason: "planning_failed" },
+          durationMs: Date.now() - planStart,
+        });
       }
     }
 
@@ -535,6 +659,20 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         { runId, confidence: planSummary.confidenceScore, threshold: confidenceThreshold, weakest: planSummary.confidenceSignals?.weakestSignal },
         "Run parked awaiting review — confidence below threshold",
       );
+      // The timeline ends here, with no terminal run event: the run has not
+      // completed, it is waiting for a person. The score itself is deliberately
+      // not emitted — the weights and the 0.6 default are uncalibrated, so a
+      // number on a feed would read as more precise than it is.
+      emit({
+        agent: "system",
+        type: "gate.result",
+        status: "warn",
+        data: {
+          gate: "confidence",
+          outcome: "parked",
+          reason: planSummary.confidenceSignals?.weakestSignal,
+        },
+      });
       // A scheduled run is unattended, so notify the owner it parked (Phase 4
       // PR3). No auto-approval/retry — it waits for a human. Interactive runs
       // need no email: the user is already on the run page seeing the banner.
@@ -564,6 +702,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       workItemText: [workItem.title, effectiveDescription, devTask.acceptanceCriteria.join(" ")].filter(Boolean).join(" "),
       baseManifest: contextPack.manifest,
     });
+    if (styleGuide) emit({ agent: "system", type: "context.read", data: { kind: "ui_style" } });
 
     const { raw, ranked, validRaw, inserted, failures } = await generateAndPersistSuggestions({
       runId,
@@ -577,6 +716,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       contextPack: contextPack.text || null,
       styleGuide,
       coherenceGit,
+      emitter,
     });
 
     // Which agents dropped out (0039). Recorded even on a run that went on to
@@ -620,6 +760,8 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       // `inserted` is aligned with `raw`; find the persisted row for the chosen agent.
       const insertedIdx = top ? raw.findIndex((s) => s.agent === top.agent) : -1;
       if (top && top.coherence?.status !== "failed") {
+        const commitStart = Date.now();
+        emit({ agent: "system", type: "stage.started", data: { stage: "commit" } });
         const git = await GitService.forRepo(repo.id, {
           githubToken: creds.GITHUB_TOKEN,
           azureReposToken: creds.AZURE_REPOS_TOKEN,
@@ -653,6 +795,12 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         // longer describes the repository (0042). Fire-and-forget, and never a
         // re-extraction: the tab offers Re-extract and a human decides.
         markStaleIfStyling(run.projectId, resolved.files.map((f) => f.path));
+        emit({
+          agent: "system",
+          type: "stage.completed",
+          data: { stage: "commit" },
+          durationMs: Date.now() - commitStart,
+        });
       }
     }
 
@@ -660,6 +808,19 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       .update(runsTable)
       .set({ status: "succeeded", finishedAt: new Date(), prUrl, commitHash, committedSuggestionId, usedGraphContext })
       .where(eq(runsTable.id, runId));
+
+    emit({
+      agent: "system",
+      type: "run.completed",
+      data: {
+        suggestions: ranked.length,
+        topScore: ranked[0]?.score ?? undefined,
+        committed: committedSuggestionId != null,
+        prUrl: prUrl ?? undefined,
+        commitHash: commitHash ?? undefined,
+      },
+      durationMs: Date.now() - runStart,
+    });
 
     // If this run was authorised past a run-order warning, record how it went.
     // A no-op for the overwhelming majority of runs, which nobody overrode.
@@ -687,6 +848,16 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     const msg = `${base}${cause}`.slice(0, 1000);
     logger.error({ runId, err }, "Run failed");
     await db.update(runsTable).set({ status: "failed", finishedAt: new Date(), error: msg }).where(eq(runsTable.id, runId));
+    // A reason CODE, never `msg`: that string concatenates
+    // `suggestion_files.apply_error`, which embeds the model's own failed
+    // search text. The full message stays on the run row, where the error
+    // panel already renders it under identical authorization.
+    emit({
+      agent: "system",
+      type: "run.failed",
+      data: { reason: failureReason(err) },
+      durationMs: Date.now() - runStart,
+    });
     recordOverrideOutcome(runId, "failed");
     if (run.trigger === "scheduled") {
       const [wi] = await db.select({ title: tasksTable.title }).from(tasksTable).where(eq(tasksTable.id, run.workItemId));
@@ -697,6 +868,11 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         );
       }
     }
+  } finally {
+    // The last flush, on every exit: success, failure, and the park that
+    // returns from inside the try. `close()` resolves even when the write
+    // failed, so this cannot turn a finished run into a rejected promise.
+    await emitter.close();
   }
 }
 
@@ -898,6 +1074,13 @@ async function regenerateFromPlan(
   planId: number,
 ): Promise<void> {
   const runId = run.id;
+  // The second generation path gets the same timeline as the first (0044). It
+  // continues the existing run's sequence rather than starting a new one, so a
+  // revised run reads as one story: planned, parked, revised, generated again.
+  const emitter = createRunEmitter({ runId, userId: run.userId, projectId: run.projectId });
+  const emit = emitter.emit.bind(emitter);
+  const runStart = Date.now();
+  emit({ agent: "system", type: "run.started", data: { trigger: run.trigger, triggerContext: "revision" } });
   try {
     const [workItem] = await db.select().from(tasksTable).where(eq(tasksTable.id, run.workItemId));
     if (!workItem) throw new Error("Work item not found");
@@ -958,6 +1141,7 @@ async function regenerateFromPlan(
       contextPack: contextPack.text || null,
       styleGuide,
       coherenceGit: { fetchFilePaths: () => git.fetchFilePaths(), fetchFileWithSha: (p) => git.fetchFileWithSha(p) },
+      emitter,
     });
 
     if (raw.length > 0 && validRaw.length === 0) {
@@ -969,15 +1153,35 @@ async function regenerateFromPlan(
         .update(runsTable)
         .set({ status: "failed", finishedAt: new Date(), error: `No suggestion could be applied to the repository.\n\n${reasons}` })
         .where(eq(runsTable.id, runId));
+      emit({
+        agent: "system",
+        type: "run.failed",
+        data: { reason: "no_applicable_suggestion" },
+        durationMs: Date.now() - runStart,
+      });
       return;
     }
     await db.update(runsTable).set({ status: "succeeded", finishedAt: new Date() }).where(eq(runsTable.id, runId));
+    emit({
+      agent: "system",
+      type: "run.completed",
+      data: { suggestions: raw.length, committed: false },
+      durationMs: Date.now() - runStart,
+    });
   } catch (err) {
     logger.error({ runId, err }, "Plan regeneration failed");
     await db
       .update(runsTable)
       .set({ status: "failed", finishedAt: new Date(), error: err instanceof Error ? err.message : "Regeneration failed" })
       .where(eq(runsTable.id, runId));
+    emit({
+      agent: "system",
+      type: "run.failed",
+      data: { reason: failureReason(err) },
+      durationMs: Date.now() - runStart,
+    });
+  } finally {
+    await emitter.close();
   }
 }
 
