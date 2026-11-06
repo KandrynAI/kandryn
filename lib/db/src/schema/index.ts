@@ -2,6 +2,7 @@ export * from "./repositories";
 export * from "./projects";
 export * from "./tasks";
 export * from "./runs";
+export * from "./runEvents";
 export * from "./suggestions";
 export * from "./suggestionFiles";
 export * from "./changePlans";
