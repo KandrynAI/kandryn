@@ -1,0 +1,99 @@
+{
+  "$comment": "Lines where an AI vendor or model name is kept ON PURPOSE. These are legal and trust disclosures: removing a named processor from them would make the page misleading. Marketing copy names no vendor. Matching is by file plus a substring of the line, not by line number, so an edit above does not silently disarm the guard.",
+  "keep": [
+    {
+      "file": "app/terms/page.tsx",
+      "line": "other connected services is subject to their",
+      "reason": "Terms of service: the third-party terms clause has to name the connected services it refers to."
+    },
+    {
+      "file": "app/privacy/page.tsx",
+      "line": "API tokens for connected services",
+      "reason": "Privacy policy: the inventory of which services' tokens are stored."
+    },
+    {
+      "file": "app/privacy/page.tsx",
+      "line": "enterprise APIs, which prohibit training",
+      "reason": "Privacy policy: names the inference providers and the contractual basis for the no-training statement."
+    },
+    {
+      "file": "app/privacy/page.tsx",
+      "line": "'Anthropic: AI inference",
+      "reason": "Privacy policy: named sub-processor with data category and region."
+    },
+    {
+      "file": "app/privacy/page.tsx",
+      "line": "'OpenAI: AI inference",
+      "reason": "Privacy policy: named sub-processor with data category and region."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['Raptia',",
+      "reason": "Trust page MODEL_ROWS: the per-agent model disclosure a vendor assessment asks for."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['Fovea',",
+      "reason": "Trust page MODEL_ROWS: the per-agent model disclosure a vendor assessment asks for."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['Synthesia',",
+      "reason": "Trust page MODEL_ROWS: the per-agent model disclosure a vendor assessment asks for."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['Veria',",
+      "reason": "Trust page MODEL_ROWS: the per-agent model disclosure a vendor assessment asks for."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['Aegis',",
+      "reason": "Trust page MODEL_ROWS: the per-agent model disclosure, including the zero-data-retention fallback."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['AI inference (primary)'",
+      "reason": "Trust page INFRA_ROWS: infrastructure and processing disclosure."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['AI inference (secondary)'",
+      "reason": "Trust page INFRA_ROWS: infrastructure and processing disclosure."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['Anthropic', 'AI inference'",
+      "reason": "Trust page SUBPROC_ROWS: named sub-processor. Removing it would breach the sub-processor commitment."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "['OpenAI', 'AI inference'",
+      "reason": "Trust page SUBPROC_ROWS: named sub-processor. Removing it would breach the sub-processor commitment."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "holds no model-provider contract on your behalf",
+      "reason": "Trust page: the no-training statement and the retention consequence, both tied to the named accounts."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "Every API call is made using the customer",
+      "reason": "Trust page: where usage and cost actually sit, which only means something with the accounts named."
+    },
+    {
+      "file": "app/trust/page.tsx",
+      "line": "or any other sub-processor.",
+      "reason": "Trust page: the statement that credentials are never sent to the named sub-processors."
+    },
+    {
+      "file": "lib/site.ts",
+      "line": "How are credentials handled?",
+      "reason": "FAQ answer describing credential handling. Classified as disclosure rather than marketing: it states which providers are called with the customer's own keys, and it feeds the FAQPage JSON-LD."
+    }
+  ],
+  "$emDashComment": "A ceiling, not a ban. The pre-existing em dashes in site.ts are left alone by instruction, so the guard fails only when the count RISES. Lower the baseline when you remove some.",
+  "emDashBaseline": {
+    "lib/site.ts": 72
+  }
+}

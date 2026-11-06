@@ -84,6 +84,41 @@ export const USE_CASES_HEADING = 'Where Kandryn fits';
 export const USE_CASES_LEAD =
   'Scoped work from a backlog you already keep — the tickets that are clear enough to do and never quite urgent enough to start.';
 
+/**
+ * Section 4. What Kandryn knows about the project before it writes.
+ *
+ * Every line here maps to a shipped feature in docs/marketing-claims.md: the
+ * ancestor chain (0040), uploaded documents with per-run retrieval (0041), the
+ * repository index and stack detection (Graphify + stack profile), the UI style
+ * profile (0042), the per-run context manifest (0040) and run-order checking
+ * (0038). Nothing here describes a domain model, and nothing is trained: the
+ * documents are background, retrieved per run, and the acceptance criteria win.
+ */
+export const CONTEXT = {
+  heading: 'Kandryn reads your project before it writes a line.',
+  lead:
+    'Kandryn indexes the repository when you connect it, and keeps that index current as commits land. You can add the architecture notes and requirements your team already wrote. Each run pulls only the parts that bear on the item in front of it.',
+  points: [
+    {
+      title: 'Work item hierarchy',
+      body: 'A story is read with the parent story and epic above it, not on its own.',
+    },
+    {
+      title: 'Repository map',
+      body: 'Structure, stack and existing styling are mapped when you connect the repository and mapped again after each commit, so generated code looks like it belongs.',
+    },
+    {
+      title: 'Your documents',
+      body: 'Upload what your team already wrote. Each run finds the passages that relate to the item. Documents are background. The acceptance criteria on the work item always win.',
+    },
+    {
+      title: 'A record of what it used',
+      body: 'Every run lists the context behind it, so a reviewer can see what informed the change.',
+    },
+  ],
+  closing: 'Kandryn also checks run order, and records the reason when someone overrides it.',
+};
+
 export const STAGES = [
   {
     n: '01',
