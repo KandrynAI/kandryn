@@ -17,10 +17,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Play, CalendarClock, Loader2 } from "lucide-react";
 import {
   createRun,
+  executeRunNow,
   checkSequence,
   sequenceRefusal,
   ApiError,
-  type RunDetail,
   type SequenceCheck,
 } from "@/services/api";
 import { SequenceDialog, type SequenceConfirmation } from "@/components/sequence/SequenceDialog";
@@ -135,9 +135,17 @@ export function RunPanel({
         onScheduled?.();
         return;
       }
-      const runId = (result as RunDetail).run?.id;
+      // The creating request answers 202 with the run row, so the id is in hand
+      // immediately. Starting it is a separate request that is deliberately NOT
+      // awaited: it stays open for the whole run, and the point is that the
+      // reader reaches the timeline while it is still in flight rather than
+      // when there is nothing left to watch.
+      const runId = "run" in result ? result.run.id : result.id;
       close();
-      if (runId) navigate(`/runs/${runId}`);
+      if (runId) {
+        void executeRunNow(runId).catch(() => {});
+        navigate(`/runs/${runId}`);
+      }
     } catch (err) {
       setBusy(null);
       const refusal = sequenceRefusal(err);

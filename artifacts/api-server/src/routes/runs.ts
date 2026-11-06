@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { db, runsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { db, runsTable, runEventsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { executeRun, commitFromSuggestion, reviseAndRegenerate, approvePlan, rejectPlan, RunError } from "../services/runService.js";
 import { loadRunPlanDTO } from "../services/planningService.js";
@@ -29,6 +29,8 @@ import * as audit from "../services/auditService.js";
 import { evaluateGate, recordOverrideOutcome, type SequenceBlock } from "../services/sequenceGate.js";
 import { sequenceOverridesTable } from "@workspace/db";
 import { OVERRIDE_REASON_CATEGORIES } from "../../../../shared/types/sequence.js";
+import { createRunEmitter } from "../services/runEvents.js";
+import { runbookSectionCode } from "../services/runEventCore.js";
 
 const router: IRouter = Router();
 
@@ -84,6 +86,13 @@ const ListRunsQuery = z.object({
   trigger: z.string().optional(), // filters runs.trigger_context (e.g. "remediation")
   parentRunId: z.coerce.number().int().positive().optional(),
 });
+
+/** Timeline cursor (0044). `since_seq` is exclusive; 0 means "from the start". */
+const RunEventsQuery = z.object({
+  since_seq: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+const RUN_EVENTS_DEFAULT_LIMIT = 200;
 
 // ---------------------------------------------------------------------------
 // POST /work-items/:id/runs — create a run (inline or scheduled)
@@ -269,24 +278,18 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
     });
   }
 
-  if (scheduled) {
-    res.status(202).json(run);
-    return;
-  }
-
-  await executeRun(run.id);
-
-  const [finished] = await db.select().from(runsTable).where(eq(runsTable.id, run.id));
-  const suggestions = await db
-    .select()
-    .from(suggestionsTable)
-    .where(eq(suggestionsTable.runId, run.id))
-    .orderBy(desc(suggestionsTable.score));
-  const inlineFiles = await loadFilesForSuggestions(suggestions.map((s) => s.id));
-  res.status(201).json({
-    run: finished,
-    suggestions: suggestions.map((s) => ({ ...s, files: inlineFiles[s.id] ?? [] })),
-  });
+  // Both paths answer 202 with the run row. A scheduled run waits for the
+  // dispatcher; a manual one waits for the client's own POST /runs/:id/execute,
+  // which it fires without awaiting so it can open the timeline at once.
+  //
+  // This used to `await executeRun(run.id)` here and answer 201 with the
+  // finished run and its suggestions. The response was therefore held for the
+  // length of the whole run, and the client — which only learns the run id from
+  // this body — could not reach the run page until there was nothing left to
+  // watch. Every validation, the Sequence Guard gate, the pending-run cap and
+  // the transaction still happen before this response, so the dialog surfaces
+  // the same refusals it always did.
+  res.status(202).json(run);
 });
 
 // ---------------------------------------------------------------------------
@@ -364,6 +367,148 @@ router.get("/runs/:id", async (req, res): Promise<void> => {
     suggestions: suggestions.map((s) => ({ ...s, files: detailFiles[s.id] ?? [] })),
     workItem: workItem ?? null,
     plan,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /runs/:id/events — the live run timeline (0044)
+//
+// Polled with `?since_seq=N` while a run is active, and read once with
+// since_seq=0 to replay a finished one. Authorized exactly like GET /runs/:id:
+// owner, or a team member of a team project, else 403. `run_events` carries
+// its own `user_id`, but the run's rule is the one that decides — a second
+// source of truth here could disagree with it.
+// ---------------------------------------------------------------------------
+router.get("/runs/:id/events", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const query = RunEventsQuery.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.issues[0]?.message ?? "Invalid query" });
+    return;
+  }
+
+  const [run] = await db
+    .select({
+      id: runsTable.id,
+      userId: runsTable.userId,
+      projectId: runsTable.projectId,
+      status: runsTable.status,
+      startedAt: runsTable.startedAt,
+      finishedAt: runsTable.finishedAt,
+    })
+    .from(runsTable)
+    .where(eq(runsTable.id, params.data.id));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (run.userId !== req.userId) {
+    const [project] = await db
+      .select({ teamId: projectsTable.teamId })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, run.projectId));
+    const isTeamProject = req.teamId != null && project?.teamId === req.teamId;
+    if (!isTeamProject) {
+      res.status(403).json({ error: "Access denied." });
+      return;
+    }
+  }
+
+  const sinceSeq = query.data.since_seq ?? 0;
+  const limit = query.data.limit ?? RUN_EVENTS_DEFAULT_LIMIT;
+  const rows = await db
+    .select()
+    .from(runEventsTable)
+    .where(and(eq(runEventsTable.runId, run.id), gt(runEventsTable.seq, sinceSeq)))
+    // One more than asked for, so `hasMore` is answered without a count query.
+    .limit(limit + 1)
+    .orderBy(asc(runEventsTable.seq));
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  res.json({
+    events: page.map((r) => ({
+      id: r.id,
+      seq: Number(r.seq),
+      agent: r.agent,
+      type: r.type,
+      status: r.status,
+      summary: r.summary,
+      data: r.data,
+      createdAt: r.createdAt,
+      durationMs: r.durationMs,
+    })),
+    // The cursor to send next. Unchanged from `since_seq` on an empty page, so
+    // a poll that finds nothing does not move it.
+    nextSeq: page.length > 0 ? Number(page[page.length - 1].seq) : sinceSeq,
+    hasMore,
+    // The run's state travels with the page so a poller can stop without a
+    // second request.
+    runStatus: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/execute — execute a queued run
+//
+// A manual run used to be awaited inside POST /work-items/:id/runs, which held
+// the response for the whole run (minutes) and meant the client only reached
+// the run page once there was nothing left to watch. The creating request now
+// answers 202 with the run row and the client calls this without awaiting it,
+// so it can navigate to the timeline immediately.
+//
+// The claim is a conditional UPDATE: a double-click, a retry or two tabs
+// produce one execution and one 202, not two runs over the same work item.
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/execute", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const runId = params.data.id;
+
+  // Owner-only, deliberately narrower than the read rule: starting work is not
+  // something a team member should do on someone else's run.
+  const [run] = await db
+    .select({ id: runsTable.id, status: runsTable.status })
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+
+  const claimed = await db
+    .update(runsTable)
+    .set({ status: "running", startedAt: new Date() })
+    .where(and(eq(runsTable.id, runId), eq(runsTable.status, "queued")))
+    .returning({ id: runsTable.id });
+  if (claimed.length === 0) {
+    // Already running, already finished, scheduled, parked or canceled. Not an
+    // error: the caller wanted it executed and it is being, or has been.
+    res.status(202).json({ status: run.status });
+    return;
+  }
+
+  await executeRun(runId);
+
+  const [finished] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
+  const suggestions = await db
+    .select()
+    .from(suggestionsTable)
+    .where(and(eq(suggestionsTable.runId, runId), eq(suggestionsTable.superseded, false)))
+    .orderBy(desc(suggestionsTable.score));
+  const files = await loadFilesForSuggestions(suggestions.map((s) => s.id));
+  res.status(200).json({
+    run: finished,
+    suggestions: suggestions.map((s) => ({ ...s, files: files[s.id] ?? [] })),
   });
 });
 
@@ -735,6 +880,10 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     op: f.op,
     code: f.content,
   }));
+  // Timeline (0044). Observe-only and best-effort; `close()` is the last flush.
+  const emitter = createRunEmitter({ runId, userId: run.userId, projectId: run.projectId });
+  const reviewStart = Date.now();
+  emitter.emit({ agent: "veria", type: "stage.started", data: { stage: "review" } });
   try {
     const review = await runVeriaReview(
       {
@@ -748,11 +897,36 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     );
 
     await db.update(runsTable).set({ review, reviewStatus: "done" }).where(eq(runsTable.id, runId));
+    // One event per finding: its TYPE, its severity and its file path — the
+    // path already validated against the real change set by
+    // `validateFindingPaths`. Never `title` or `detail`, both model prose.
+    for (const f of review.findings) {
+      emitter.emit({
+        agent: "veria",
+        type: "check.result",
+        status: f.type === "strength" ? "ok" : f.severity === "high" ? "warn" : "info",
+        data: { check: "veria", category: f.type, outcome: f.severity, path: f.filePath },
+      });
+    }
+    emitter.emit({
+      agent: "veria",
+      type: "stage.completed",
+      data: { stage: "review" },
+      durationMs: Date.now() - reviewStart,
+    });
+    await emitter.close();
     req.log.info({ runId }, "Veria review completed");
     res.status(200).json({ review });
   } catch (err) {
     req.log.error({ err }, "Veria review failed");
     await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
+    emitter.emit({
+      agent: "veria",
+      type: "stage.failed",
+      data: { stage: "review", reason: "agent_failed" },
+      durationMs: Date.now() - reviewStart,
+    });
+    await emitter.close();
     const status = err instanceof VeriaError ? err.status : 502;
     const message = err instanceof VeriaError ? err.message : "Veria could not complete the review. Try again.";
     res.status(status).json({ error: message });
@@ -890,6 +1064,10 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
   const scanFiles = (await loadSuggestionFiles(suggestion.id))
     .filter((f) => f.op !== "delete" && f.content)
     .map((f) => ({ filePath: f.filePath, code: f.content }));
+
+  const aegisEmitter = createRunEmitter({ runId, userId: run.userId, projectId: run.projectId });
+  const aegisStart = Date.now();
+  aegisEmitter.emit({ agent: "aegis", type: "stage.started", data: { stage: "security" } });
   try {
     const scan = await runAegisScan(
       {
@@ -935,6 +1113,46 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
       .update(runsTable)
       .set({ securityScan: scan, securityScanStatus: "done", securityGate: scan.gateDecision })
       .where(eq(runsTable.id, runId));
+
+    // Timeline (0044). One event per finding — the OWASP category's ID only,
+    // because the full label carries a space and the timeline's `token` kind
+    // (deliberately) refuses anything with whitespace. Never `title`, `detail`,
+    // `remediation` or `lineRef`.
+    for (const f of scan.findings) {
+      aegisEmitter.emit({
+        agent: "aegis",
+        type: "check.result",
+        status: f.severity === "critical" || f.severity === "high" ? "warn" : "info",
+        data: { check: "aegis", path: f.filePath, category: f.owasp.split(":")[0], outcome: f.severity },
+      });
+    }
+    // A file that could not be scanned is why the gate fails closed, so it is
+    // on the timeline as loudly as a finding.
+    for (const path of scan.unscannedFiles) {
+      aegisEmitter.emit({
+        agent: "aegis",
+        type: "check.result",
+        status: "warn",
+        data: { check: "aegis", path, outcome: "unscanned" },
+      });
+    }
+    aegisEmitter.emit({
+      agent: "aegis",
+      type: "gate.result",
+      status: scan.gateDecision === "blocked" ? "warn" : "ok",
+      data: {
+        gate: "security",
+        outcome: scan.gateDecision,
+        blocking: scan.criticalCount + scan.highCount + scan.unscannedFiles.length,
+      },
+    });
+    aegisEmitter.emit({
+      agent: "aegis",
+      type: "stage.completed",
+      data: { stage: "security", model: scan.model },
+      durationMs: Date.now() - aegisStart,
+    });
+    await aegisEmitter.close();
 
     // Post the GitHub commit status check (the stop-gate signal). An unscanned
     // file blocks and its paths go in the check output — never a silent pass.
@@ -997,6 +1215,15 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     if (err instanceof AegisModelUnavailableError) {
       req.log.warn({ runId }, "Aegis unavailable: models are retention-gated for this organisation");
       await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+      // No gate event: the scan never started, so there is no decision to
+      // record. Same reasoning as the deliberate absence of a status check.
+      aegisEmitter.emit({
+        agent: "aegis",
+        type: "stage.failed",
+        data: { stage: "security", reason: "model_unavailable" },
+        durationMs: Date.now() - aegisStart,
+      });
+      await aegisEmitter.close();
       res.status(424).json({
         error:
           "Aegis could not run: your Anthropic organisation's data-retention setting puts both the default and " +
@@ -1007,6 +1234,13 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
     }
     req.log.error({ err }, "Aegis scan failed");
     await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
+    aegisEmitter.emit({
+      agent: "aegis",
+      type: "stage.failed",
+      data: { stage: "security", reason: "agent_failed" },
+      durationMs: Date.now() - aegisStart,
+    });
+    await aegisEmitter.close();
     res.status(502).json({ error: "Aegis could not complete the scan. Try again." });
   }
 });
@@ -1114,6 +1348,10 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
     op: f.op,
     code: f.content,
   }));
+
+  const narratiaEmitter = createRunEmitter({ runId, userId: run.userId, projectId: run.projectId });
+  const narratiaStart = Date.now();
+  narratiaEmitter.emit({ agent: "narratia", type: "stage.started", data: { stage: "runbook" } });
   try {
     const result = await runNarratia(
       {
@@ -1158,6 +1396,24 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
       .set({ runbook: result.markdown, runbookStatus: "done", runbookTarget: target, runbookUrl: pushedUrl })
       .where(eq(runsTable.id, runId));
 
+    // A section "name" is the model's own `## ` heading, so it is MATCHED
+    // against the eight known sections rather than passed through;
+    // anything else becomes `other`, which says the model drifted.
+    result.sections.forEach((s, i) => {
+      narratiaEmitter.emit({
+        agent: "narratia",
+        type: "runbook.section",
+        data: { section: runbookSectionCode(s.title), index: i + 1 },
+      });
+    });
+    narratiaEmitter.emit({
+      agent: "narratia",
+      type: "stage.completed",
+      data: { stage: "runbook" },
+      durationMs: Date.now() - narratiaStart,
+    });
+    await narratiaEmitter.close();
+
     req.log.info({ runId, target, pushed: pushedUrl != null }, "Narratia runbook generated");
     audit.log({
       userId: req.userId,
@@ -1173,6 +1429,13 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
   } catch (err) {
     req.log.error({ err }, "Narratia generation failed");
     await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
+    narratiaEmitter.emit({
+      agent: "narratia",
+      type: "stage.failed",
+      data: { stage: "runbook", reason: "agent_failed" },
+      durationMs: Date.now() - narratiaStart,
+    });
+    await narratiaEmitter.close();
     res.status(502).json({ error: "Narratia could not generate the runbook. Try again." });
   }
 });

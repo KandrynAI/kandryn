@@ -20,6 +20,13 @@ const DISPATCH_BATCH = 2;
 // died before it could record success/failure) and is swept to failed.
 const STUCK_MINUTES = 20;
 /**
+ * How long a MANUAL run may sit `queued` before it is presumed abandoned. The
+ * client creates it and then fires POST /runs/:id/execute without awaiting, so
+ * the only way to stay queued this long is for that second request never to
+ * have arrived.
+ */
+const STRANDED_MANUAL_MINUTES = 10;
+/**
  * How long a baseline scan may sit in `queued` before it is presumed dead.
  * Starting one is capped at the function's own 300s ceiling, so ten minutes is
  * comfortably past any legitimate start.
@@ -70,6 +77,28 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
   );
   const sweptCount = swept.rows.length;
 
+  // 1b. Stranded manual runs (0044 PR3). A manual run is now created `queued`
+  // and executed by a separate request the client fires without awaiting, so a
+  // tab closed in the gap between the two leaves a row nobody will ever
+  // execute — and the sweep above only looks at `running`. A manual run is
+  // created and executed within seconds, so `created_at` is a safe clock here.
+  //
+  // Deliberately scoped to `trigger = 'manual'`: a scheduled run also passes
+  // through `queued` (this dispatcher claims it, then runs it in the same
+  // invocation), but its `created_at` can be thirty days old, so the same
+  // predicate would reap one that was claimed a second ago. A scheduled run
+  // stranded by an invocation that died mid-claim is a separate, pre-existing
+  // gap, recorded in CLAUDE.md §14 rather than papered over here.
+  const strandedManual = await db.execute(
+    sql`UPDATE runs SET status = 'failed', finished_at = now(),
+          error = 'Run was never started (the browser closed before execution began). Run it again.'
+        WHERE status = 'queued'
+          AND trigger = 'manual'
+          AND created_at < now() - interval '${sql.raw(String(STRANDED_MANUAL_MINUTES))} minutes'
+        RETURNING id`,
+  );
+  const strandedCount = strandedManual.rows.length;
+
   // 2. Atomically claim due scheduled runs.
   const claimed = await db.execute(
     sql`UPDATE runs SET status = 'queued'
@@ -84,8 +113,8 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
   );
   const ids = claimed.rows.map((r) => Number((r as { id: number }).id));
 
-  if (sweptCount > 0 || ids.length > 0) {
-    logger.info({ swept: sweptCount, claimed: ids }, "dispatch-runs tick");
+  if (sweptCount > 0 || strandedCount > 0 || ids.length > 0) {
+    logger.info({ swept: sweptCount, stranded: strandedCount, claimed: ids }, "dispatch-runs tick");
   }
 
   // Execute claimed runs sequentially — each executeRun never throws (it records

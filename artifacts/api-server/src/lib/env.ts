@@ -33,6 +33,10 @@ const OPTIONAL_ENV: EnvSpec[] = [
   { name: "SUPABASE_URL",             critical: false, description: "Supabase project URL, for the private project-knowledge storage bucket (document upload is unavailable without it)" },
   { name: "SUPABASE_SERVICE_ROLE_KEY",critical: false, description: "Supabase service-role key used to sign knowledge upload URLs (never logged; document upload is unavailable without it)" },
   { name: "KNOWLEDGE_BUCKET",         critical: false, description: "Private Supabase storage bucket holding uploaded project documents (default 'project-knowledge')" },
+  // Live run timeline (0044). Default ON; set to 'false' to stop recording run
+  // events entirely. Emission is best-effort either way, so turning it off
+  // changes nothing about how a run executes or what it produces.
+  { name: "RUN_EVENTS_ENABLED",       critical: false, description: "When 'false', the live run timeline records nothing (default on; run behaviour is identical either way)" },
 ];
 
 /**

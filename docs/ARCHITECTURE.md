@@ -254,6 +254,8 @@ authed:   health, repositories, tasks, taskActions, stats, config
 
 All tables in `lib/db/src/schema/`. **Every app query is scoped to `userId`** (Clerk user ID) — no shared/global data. `waitlist` is the one public, unscoped table.
 
+> **This section is out of date and the table below is a small subset.** It predates projects, runs, suggestions, change plans, teams, the audit log, Sequence Guard, project knowledge, UI style profiles, the Jira app and the run timeline. **CLAUDE.md §6 is the current schema reference**; it is reconciled against the code and lists every table and every migration. The same caveat applies to much of this document (it still describes a single Vercel project and an `/app` base path). A reconciliation pass is scheduled separately rather than folded into feature work — see `docs/investigations/live-run-timeline.md` §9.
+
 | Table | Key columns |
 |---|---|
 | **repositories** | id, `user_id`, name, provider (`github`/`azure-repos`), url, default_branch (`main`), stack_profile (jsonb), created_at. Index on user_id. |

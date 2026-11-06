@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, bigint, boolean, timestamp, index, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
@@ -213,6 +213,21 @@ export const runsTable = pgTable(
     // segregation-of-duties auditing and the explanation report.
     approvedByUserId: text("approved_by_user_id"),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /**
+     * High-water mark for this run's timeline events (0044). An emitter claims a
+     * block of `seq` values with `UPDATE … SET event_seq = event_seq + n
+     * RETURNING event_seq` **inside the insert's own transaction**, so the row
+     * lock is held to commit and `seq` order equals commit order.
+     *
+     * Not an ornament: a global sequence (or `run_events.id`) is allocated
+     * outside the transaction, so two concurrent emitters can take 1 and 2, the
+     * holder of 2 can commit first, and a poll landing between the commits
+     * advances its cursor past 1 — which is then never delivered. Measured in
+     * docs/investigations/live-run-timeline.md §8.1. Concurrent emitters on one
+     * run are rare (a user firing Veria and Aegis together), so the
+     * serialization this causes costs nothing in practice.
+     */
+    eventSeq: bigint("event_seq", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
