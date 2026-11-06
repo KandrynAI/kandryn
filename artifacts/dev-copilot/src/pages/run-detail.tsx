@@ -8,6 +8,7 @@ import { formatDistanceToNow } from "date-fns";
 import { TestStage } from "@/components/tests/TestStage";
 import { DiffViewer } from "@/components/diff/DiffViewer";
 import { GeneratingProgress } from "@/components/runs/GeneratingProgress";
+import RunTimeline from "@/components/runs/RunTimeline";
 import { PlanPanel } from "@/components/plan/PlanPanel";
 import { EditPlanDialog } from "@/components/plan/EditPlanDialog";
 import { SecurityOverrideDialog } from "@/components/runs/SecurityOverrideDialog";
@@ -666,6 +667,28 @@ export default function RunDetailPage() {
             >
               {repoLabel(run.prUrl)}{prNumber(run.prUrl) ? ` #${prNumber(run.prUrl)}` : ""} →
             </a>
+          </div>
+        )}
+
+        {/* The live timeline (0044). Shown for every run that has actually
+            started — a scheduled one has nothing to show yet — and in the same
+            place whether it is running or finished, because a replay of a
+            finished run is the same feed read from stored events. */}
+        {run.status !== "scheduled" && (
+          <div style={{ marginBottom: 16 }}>
+            <div
+              style={{
+                fontSize: "var(--fs-xs)",
+                color: "var(--c-ink-4)",
+                textTransform: "uppercase",
+                letterSpacing: "0.07em",
+                fontWeight: 600,
+                marginBottom: 6,
+              }}
+            >
+              Activity
+            </div>
+            <RunTimeline runId={run.id} initialStatus={run.status} />
           </div>
         )}
 

@@ -11,16 +11,23 @@ the seq block arithmetic).
 event sequence, the leak guard against a real prompt, and the on/off
 equivalence are all covered without a database.
 
-Two scripts cover what none of that can fake:
+`src/lib/runTimeline.test.ts` in dev-copilot (PR3) covers the display logic:
+the merge and its de-duplication, the grouping, the collapse rules, the polling
+cadence and the formatting.
+
+Three scripts cover what none of that can fake:
 
 - **`seq.ts`** — whether Postgres actually serializes two emitters on the same
   run, and therefore whether a `since_seq` cursor can lose an event.
 - **`pipeline.ts`** — a whole run's timeline (33 events, two generation agents
   interleaved, Synthesia's dimensions, a commit) stored and read back the way
-  PR3's endpoint will, including a cursor read in halves.
+  the endpoint does, including a cursor read in halves.
+- **`api.ts`** (PR3) — `GET /runs/:id/events` and `POST /runs/:id/execute` over
+  real HTTP with auth stubbed: the cursor, the page cap, the owner/team/refused
+  rule, and the execute claim under two concurrent calls.
 
-Neither is part of `pnpm test`, deliberately. Both import `@workspace/db`,
-which throws without `DATABASE_URL`, and they truncate the tables they use.
+None is part of `pnpm test`, deliberately. All import `@workspace/db`, which
+throws without `DATABASE_URL`, and they truncate the tables they use.
 
 A real end-to-end `executeRun` is not possible here at all: it needs Anthropic,
 OpenAI and GitHub credentials, and the sandbox has none (CLAUDE.md §2). So
@@ -43,8 +50,14 @@ PGHOST=$PGROOT PGPORT=55433 $PGBIN/createdb -U postgres evt
 export DATABASE_URL="postgres://postgres@localhost:55433/evt?host=$PGROOT"
 
 (cd ../../../../lib/db && pnpm run push-force)        # tables, indexes, CHECKs
-cd ../.. && for s in seq pipeline; do pnpm exec tsx scripts/runevents-verify/$s.ts; done
+cd ../.. && for s in seq pipeline api; do
+  CLERK_SECRET_KEY=sk_test_x pnpm exec tsx scripts/runevents-verify/$s.ts
+done
 ```
+
+`api.ts` is noisy on purpose: its last check lets a real `executeRun` run with
+no model credentials, so the provider errors in the output are the thing
+working. What matters is the tally at the end.
 
 `0044` installs **no trigger**, so unlike `0038` this one does not have to be
 applied by hand for the checks to mean anything. Verified on 2026-11-06: a
@@ -67,6 +80,14 @@ exist to catch a database where that stopped being true.
 
 Run it with `RUN_EVENTS_ENABLED=false` as the kill switch's own negative
 control: check 0 fails and `select count(*) from run_events` is 0.
+
+## What `api.ts` covers
+
+| # | Check |
+|---|---|
+| 1–3d | The cursor: seq order, an exclusive `since_seq`, an empty page that does not move the cursor, `limit` + `hasMore`, paging that sees every event exactly once, and refusals for an oversized limit and a negative cursor. Plus that the DTO carries exactly the nine fields the contract names |
+| 4–4e | Authorization, mirroring `GET /runs/:id`: owner reads, a member of the run's team project reads, another tenant gets **403 with no events**, a user with no team is refused, and a run that does not exist is 404 rather than 403 |
+| 5–5d | The execute claim: executing a run that is not `queued` is a 202 no-op, two concurrent calls produce exactly one execution and one 202, the claimed run reaches a terminal state, and execute is **owner-only** — a team member who can read a run cannot start it |
 
 ## What `seq.ts` covers
 

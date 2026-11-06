@@ -1,4 +1,12 @@
 import type { StackProfile } from '@/components/dc';
+import type { RunEventDTO } from '../../../../shared/types/runEvent';
+
+/**
+ * A timeline event (0044). Imported from shared/types rather than redeclared:
+ * the taxonomy lives there precisely so the server that writes it and the UI
+ * that renders it cannot drift.
+ */
+export type RunEvent = RunEventDTO;
 
 export interface DevCopilotTask {
   id: number;
@@ -720,20 +728,63 @@ export function createRun(
   });
 }
 
+/**
+ * Execute a queued run (0044 PR3).
+ *
+ * Deliberately NOT awaited by callers: the request stays open for the whole run
+ * (minutes), and the point of splitting it out of creation is that the client
+ * can open the run page and watch the timeline while it is in flight. The run
+ * row is the source of truth, so a response nobody reads loses nothing — and a
+ * second call is answered 202 rather than executing twice.
+ */
+export function executeRunNow(runId: number): Promise<unknown> {
+  return request<unknown>(`/api/runs/${runId}/execute`, { method: 'POST' });
+}
+
+/**
+ * Create a run and start it, without waiting for it to finish.
+ *
+ * The one place the create-then-execute pair lives, so no caller can create a
+ * run and forget to start it — which would leave it `queued` until the
+ * dispatcher reaps it. `createRun` on its own is for scheduling, where there is
+ * nothing to execute yet.
+ */
+export async function startRunNow(
+  workItemId: number,
+  opts: Parameters<typeof createRun>[1] = {},
+): Promise<{ id: number }> {
+  const res = await createRun(workItemId, { ...opts, scheduledAt: undefined });
+  const id = 'run' in res ? res.run.id : res.id;
+  // Fire and forget. A rejection here is not the caller's to handle: the run
+  // either reaches a terminal state on its own row, or the dispatcher reaps it.
+  void executeRunNow(id).catch(() => {});
+  return { id };
+}
+
 /** Model-assisted: draft an editable refinement prompt from a run's Veria review. */
 export function fetchRemediationDraft(runId: number): Promise<{ draft: string }> {
   return request<{ draft: string }>(`/api/runs/${runId}/remediation-draft`, { method: 'POST' });
 }
 
-/**
- * Re-run a work item inline. Thin wrapper over `createRun` (which posts to
- * `/api/work-items/:id/runs`) that normalises the `RunDetail | Run` response
- * down to the new run's id.
- */
+/** Re-run a work item: create it, start it, and hand back the new run's id. */
 export async function reRunItem(workItemId: number): Promise<{ id: number }> {
-  const res = await createRun(workItemId);
-  const id = "run" in res ? res.run.id : res.id;
-  return { id };
+  return startRunNow(workItemId);
+}
+
+/** One page of a run's timeline (0044). `sinceSeq` is exclusive. */
+export interface RunEventsPage {
+  events: RunEvent[];
+  nextSeq: number;
+  hasMore: boolean;
+  runStatus: RunStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export function fetchRunEvents(runId: number, sinceSeq = 0, limit?: number): Promise<RunEventsPage> {
+  const q = new URLSearchParams({ since_seq: String(sinceSeq) });
+  if (limit) q.set('limit', String(limit));
+  return request<RunEventsPage>(`/api/runs/${runId}/events?${q.toString()}`);
 }
 
 /** Recent runs for a single work item (server caps this at 10). */
