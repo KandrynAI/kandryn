@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db, runsTable, runEventsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
 import { z } from "zod/v4";
-import { executeRun, commitFromSuggestion, reviseAndRegenerate, approvePlan, rejectPlan, RunError } from "../services/runService.js";
+import { executeRun, commitFromSuggestion, reviseAndRegenerate, regenerateCurrentPlan, approvePlan, rejectPlan, RunError } from "../services/runService.js";
 import { loadRunPlanDTO } from "../services/planningService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
@@ -477,7 +477,7 @@ router.post("/runs/:id/execute", async (req, res): Promise<void> => {
   // Owner-only, deliberately narrower than the read rule: starting work is not
   // something a team member should do on someone else's run.
   const [run] = await db
-    .select({ id: runsTable.id, status: runsTable.status })
+    .select({ id: runsTable.id, status: runsTable.status, approvedByUserId: runsTable.approvedByUserId })
     .from(runsTable)
     .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
   if (!run) {
@@ -497,7 +497,11 @@ router.post("/runs/:id/execute", async (req, res): Promise<void> => {
     return;
   }
 
-  await executeRun(runId);
+  // An approved run resumes its parked plan: generate against exactly what the
+  // human approved, without re-planning and without re-entering the gate it just
+  // came out of. `approvedByUserId` is set only by approvePlan, and nothing
+  // returns a run to `queued` afterwards, so it cannot mis-fire on a fresh run.
+  await executeRun(runId, { reusePlan: run.approvedByUserId != null });
 
   const [finished] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
   const suggestions = await db
@@ -582,6 +586,62 @@ router.post("/runs/:id/plan/revise", async (req, res): Promise<void> => {
     }
     throw err;
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /runs/:id/plan/regenerate — run the regeneration /plan/revise queued
+//
+// Split out of /plan/revise for the same reason /execute is split out of run
+// creation: generation started after a response has been sent does not survive
+// on serverless. The client fires this without awaiting it, and the claim is
+// conditional, so a double-click regenerates once.
+// ---------------------------------------------------------------------------
+router.post("/runs/:id/plan/regenerate", async (req, res): Promise<void> => {
+  const params = IdParam.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+  const runId = params.data.id;
+
+  // Owner-only, matching /execute: starting work is not a team action.
+  const [run] = await db
+    .select({ id: runsTable.id, status: runsTable.status })
+    .from(runsTable)
+    .where(and(eq(runsTable.id, runId), eq(runsTable.userId, req.userId)));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+
+  const claimed = await db
+    .update(runsTable)
+    .set({ status: "running", startedAt: new Date() })
+    .where(and(eq(runsTable.id, runId), eq(runsTable.status, "queued")))
+    .returning({ id: runsTable.id });
+  if (claimed.length === 0) {
+    res.status(202).json({ status: run.status });
+    return;
+  }
+
+  try {
+    await regenerateCurrentPlan(runId);
+  } catch (err) {
+    if (err instanceof RunError) {
+      // The claim already moved the row to `running`; put it back so the run
+      // does not sit there until the stuck sweep reaps it.
+      await db
+        .update(runsTable)
+        .set({ status: "failed", finishedAt: new Date(), error: err.message })
+        .where(eq(runsTable.id, runId));
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
+  const [finished] = await db.select({ status: runsTable.status }).from(runsTable).where(eq(runsTable.id, runId));
+  res.status(200).json({ status: finished.status });
 });
 
 // ---------------------------------------------------------------------------

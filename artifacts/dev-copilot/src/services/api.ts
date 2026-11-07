@@ -814,18 +814,41 @@ export function fetchRunTree(runId: number): Promise<{ paths: string[] }> {
   return request<{ paths: string[] }>(`/api/runs/${runId}/tree`);
 }
 
-/** Apply plan edits → new revision → background regeneration (Phase 2 PR3). */
-export function reviseRunPlan(runId: number, files: RevisionFileInput[]): Promise<{ planId: number; revision: number }> {
-  return request<{ planId: number; revision: number }>(`/api/runs/${runId}/plan/revise`, {
+/** Start the regeneration that `reviseRunPlan` queued. */
+function regeneratePlanNow(runId: number): Promise<unknown> {
+  return request<unknown>(`/api/runs/${runId}/plan/regenerate`, { method: 'POST' });
+}
+
+/**
+ * Apply plan edits → new revision → start the regeneration (Phase 2 PR3).
+ *
+ * The start is a second call for the same reason `startRunNow` makes one: the
+ * server cannot keep generating after it has answered. Paired here so no caller
+ * can revise a plan and leave it queued, and fired without awaiting — the run
+ * row is the source of truth, so a response nobody reads loses nothing.
+ */
+export async function reviseRunPlan(runId: number, files: RevisionFileInput[]): Promise<{ planId: number; revision: number }> {
+  const res = await request<{ planId: number; revision: number }>(`/api/runs/${runId}/plan/revise`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ files }),
   });
+  void regeneratePlanNow(runId).catch(() => {});
+  return res;
 }
 
-/** Approve a parked (awaiting_review) plan → generate as-is (Phase 4). */
-export function approveRunPlan(runId: number): Promise<{ status: string }> {
-  return request<{ status: string }>(`/api/runs/${runId}/plan/approve`, { method: 'POST' });
+/**
+ * Approve a parked (awaiting_review) plan → generate as-is (Phase 4).
+ *
+ * Approval and the start it triggers are paired here for the same reason
+ * `reviseRunPlan` pairs its own. The run is left `queued` by the approve call,
+ * which the run page already renders as in progress, so the parked banner
+ * clears on the refetch whether or not the start has been claimed yet.
+ */
+export async function approveRunPlan(runId: number): Promise<{ status: string }> {
+  const res = await request<{ status: string }>(`/api/runs/${runId}/plan/approve`, { method: 'POST' });
+  void executeRunNow(runId).catch(() => {});
+  return res;
 }
 
 /** Reject a parked plan → the run ends canceled, no suggestions (Phase 4). */

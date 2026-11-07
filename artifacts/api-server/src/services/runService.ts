@@ -941,17 +941,22 @@ export async function approvePlan(runId: number, actor: ReviewActor): Promise<Ap
     }
   }
 
-  // Seed `queued` in the same UPDATE that records the approver. executeRun sets
-  // `running` itself, but only once it has loaded the run and resolved the repo —
-  // so without this the run is still `awaiting_review` when the client refetches
-  // after the 202, and the page has nothing to transition to. `queued` is already
-  // the dispatcher's "claimed, not yet started" status and executeRun accepts it
-  // (it only short-circuits on canceled/succeeded).
+  // Record the approver and leave the run `queued` for POST /runs/:id/execute,
+  // which the client fires without awaiting it. `queued` is already the
+  // dispatcher's "claimed, not yet started" status and the run page counts it
+  // as in progress, so the parked banner clears on the next refetch.
+  //
+  // Generation is deliberately NOT started here. This was a fire-and-forget
+  // `void executeRun(...)` after the response, which does not survive on
+  // serverless: the invocation ends when the route answers, the container is
+  // frozen, and generation died mid-model-call — leaving the run `running`
+  // until the dispatcher's 20-minute sweep failed it with a timeout message
+  // that described neither the cause nor the remedy. The remediation path
+  // already records the same reasoning (routes/runs.ts, STEP C).
   await db
     .update(runsTable)
     .set({ status: "queued", approvedByUserId: actor.userId, approvedAt: new Date() })
     .where(eq(runsTable.id, runId));
-  void executeRun(runId, { reusePlan: true }).catch((err) => logger.error({ runId, err }, "Approve-generation crashed"));
   return { triggeredBy, approvedBy: actor.userId, secondApproverRequired: requireSecond };
 }
 
@@ -1186,10 +1191,29 @@ async function regenerateFromPlan(
 }
 
 /**
+ * Regenerate against the run's current plan revision. The execution half of
+ * `reviseAndRegenerate`, split out so the work happens inside a request the
+ * server awaits rather than after one it has already answered. Throws RunError
+ * for the route; past that, regenerateFromPlan records failure on the run row.
+ */
+export async function regenerateCurrentPlan(runId: number): Promise<void> {
+  const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId));
+  if (!run) throw new RunError("Run not found", 404);
+  const planRow = await loadCurrentPlanRow(runId);
+  if (!planRow) throw new RunError("This run has no plan to regenerate.", 409);
+  const planFiles = await loadPlanFiles(planRow.id);
+  const plan: ChangePlan = {
+    files: planFiles.map((f) => ({ op: f.op, path: f.filePath, rationale: f.rationale, symbols: f.symbols ?? undefined })),
+    notes: planRow.notes ?? undefined,
+  };
+  await regenerateFromPlan(run, plan, planRow.id);
+}
+
+/**
  * Apply a user's plan edits (§3.2): write a new plan revision, supersede the
- * prior revision's suggestions (retained, not deleted), and regenerate in the
- * background. Returns immediately with the new revision. Owner-only; refuses a
- * run that has already been committed.
+ * prior revision's suggestions (retained, not deleted), and queue the
+ * regeneration. Returns immediately with the new revision. Owner-only; refuses
+ * a run that has already been committed.
  */
 export async function reviseAndRegenerate(
   runId: number,
@@ -1208,7 +1232,7 @@ export async function reviseAndRegenerate(
   if (!prior) throw new RunError("This run has no plan to edit.", 409);
   const priorFiles = await loadPlanFiles(prior.id);
 
-  const { planId, revision, plan } = await createPlanRevision(prior, files);
+  const { planId, revision } = await createPlanRevision(prior, files);
 
   // Supersede the current suggestions (retained for the prior revision).
   await db
@@ -1216,9 +1240,12 @@ export async function reviseAndRegenerate(
     .set({ superseded: true })
     .where(and(eq(suggestionsTable.runId, runId), eq(suggestionsTable.superseded, false)));
 
-  // Show the regeneration in the UI, then run it in the background.
-  await db.update(runsTable).set({ status: "running", error: null, startedAt: new Date() }).where(eq(runsTable.id, runId));
-  void regenerateFromPlan(run, plan, planId).catch((err) => logger.error({ runId, err }, "Plan regeneration crashed"));
+  // Queue the regeneration for POST /runs/:id/plan/regenerate, which the client
+  // fires without awaiting it. Not started here, for the reason approvePlan
+  // records: work begun after the response is sent does not survive on
+  // serverless. `startedAt` is left alone — the regenerate route stamps it when
+  // it claims the row.
+  await db.update(runsTable).set({ status: "queued", error: null }).where(eq(runsTable.id, runId));
 
   // Audit the edit as the diff between revisions (§4.1). Fire-and-forget.
   // in_candidates distinguishes a retrieval miss (false) from a planner miss

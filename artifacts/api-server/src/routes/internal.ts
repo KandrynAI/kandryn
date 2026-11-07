@@ -89,11 +89,21 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
   // predicate would reap one that was claimed a second ago. A scheduled run
   // stranded by an invocation that died mid-claim is a separate, pre-existing
   // gap, recorded in CLAUDE.md §14 rather than papered over here.
+  //
+  // `started_at IS NULL` is what makes `created_at` a safe clock, and it is the
+  // whole case this sweep is for: a run that was never executed at all. The two
+  // human-in-the-loop exits (approve a parked plan, regenerate a revised one)
+  // also park the row in `queued` for a client-fired start, but their
+  // `created_at` is as old as the run — without this clause the predicate is
+  // already true the instant they queue, and a cron tick landing in the second
+  // before the client's call would fail a run that is about to start. Those
+  // rows have run before, so `started_at` is set and they are excluded.
   const strandedManual = await db.execute(
     sql`UPDATE runs SET status = 'failed', finished_at = now(),
           error = 'Run was never started (the browser closed before execution began). Run it again.'
         WHERE status = 'queued'
           AND trigger = 'manual'
+          AND started_at IS NULL
           AND created_at < now() - interval '${sql.raw(String(STRANDED_MANUAL_MINUTES))} minutes'
         RETURNING id`,
   );
