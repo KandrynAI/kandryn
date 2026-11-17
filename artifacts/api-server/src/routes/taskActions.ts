@@ -7,6 +7,7 @@ import { AIOrchestrator, SynthesisEngine } from "../services/aiService.js";
 import { PLMService } from "../services/plmService.js";
 import { getConfigs } from "../services/configService.js";
 import { resolveModelKeys } from "../services/modelKey.js";
+import { resolveGitCreds } from "../services/gitToken.js";
 import type { StackProfile } from "../stack/detector.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { PR_TITLE_PREFIX } from "../../../../shared/types/branding.js";
@@ -137,7 +138,7 @@ router.post("/tasks/:taskId/suggestions", async (req, res): Promise<void> => {
   }
 
   // Fetch user's AI credentials from DB
-  const userCreds = await resolveModelKeys(userId, null);
+  const userCreds = await resolveModelKeys(userId);
 
   const stack = repo.stackProfile as StackProfile;
   const refinePrompt = body.data.refinePrompt;
@@ -148,14 +149,14 @@ router.post("/tasks/:taskId/suggestions", async (req, res): Promise<void> => {
 
   req.log.info({ taskId: task.id, repoId: repo.id, keywords, refine: !!refinePrompt }, "Generating AI suggestions");
 
-  const gitCreds = await getConfigs(userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const gitCreds = await resolveGitCreds(userId);
 
   let codeContext = "";
   let fileReader: ((path: string) => Promise<{ content: string; sha: string } | null>) | undefined;
   try {
     const gitService = await GitService.forRepo(repo.id, {
-      githubToken: gitCreds.GITHUB_TOKEN,
-      azureReposToken: gitCreds.AZURE_REPOS_TOKEN,
+      githubToken: gitCreds.githubToken,
+      azureReposToken: gitCreds.azureReposToken,
     });
     codeContext = await gitService.fetchFileContext(String(task.id), keywords, stack);
     // Reader so edit hunks resolve against current source (Phase 1).
@@ -230,10 +231,10 @@ router.post("/tasks/:taskId/commit", async (req, res): Promise<void> => {
     return;
   }
 
-  const gitCredsCommit = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const gitCredsCommit = await resolveGitCreds(req.userId);
   const gitService = await GitService.forRepo(task.repositoryId, {
-    githubToken: gitCredsCommit.GITHUB_TOKEN,
-    azureReposToken: gitCredsCommit.AZURE_REPOS_TOKEN,
+    githubToken: gitCredsCommit.githubToken,
+    azureReposToken: gitCredsCommit.azureReposToken,
   });
   const branchName = `task/${task.id}`;
 

@@ -91,6 +91,23 @@ export async function getConfig(
 }
 
 /**
+ * One team-level value, with no personal fallback.
+ *
+ * `getConfig(userId, key, teamId)` resolves team-FIRST then personal, which is
+ * the right rule for a shared credential. The workspace-ownership resolvers
+ * need the two scopes separately, because their rule is the other way round:
+ * a personal credential is an OVERRIDE the workspace permits, not a fallback
+ * the workspace shadows. Hence this.
+ */
+export async function getTeamConfig(teamId: number, key: ConfigKey): Promise<string> {
+  const [row] = await db
+    .select()
+    .from(teamIntegrationsTable)
+    .where(and(eq(teamIntegrationsTable.teamId, teamId), eq(teamIntegrationsTable.key, key)));
+  return row?.value ? decryptSecret(row.value) : "";
+}
+
+/**
  * Get multiple config values for a user as a key→value map. When `teamId` is
  * provided, each key resolves team-first then personal (0017). Omitting `teamId`
  * preserves the original personal-only behaviour.

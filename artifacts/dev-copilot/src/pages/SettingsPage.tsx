@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useConfig, type ConfigMap } from "@/context/ConfigContext";
 import { useTeam } from "@/context/TeamContext";
 import TeamTab from "@/components/settings/TeamTab";
@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
 import { StatusPill, SecretInput, isSecret } from "@/components/settings/credentials";
-import { AgentSourceSection } from "@/components/settings/AgentSourceSection";
-import type { AgentSource } from "@/lib/agentSource";
+import { WorkspaceAgentsSection } from "@/components/settings/WorkspaceAgentsSection";
+import { personalCredentialsHiddenNote } from "@/lib/agentSource";
+import { fetchAgentPreference, type AgentPreferenceState } from "@/services/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -419,6 +420,53 @@ function ProgressBar({ configured, total }: { configured: number; total: number 
 
 // Trackers (Jira/ADO) and Documentation (Confluence/Notion) moved to the Team
 // tab — they're shared at the team level. Personal keeps repo + agent creds.
+/**
+ * The tabs, split by WHO OWNS THE DECISION rather than who types the value.
+ * "workspace" and "account" replace "team" and "personal"; the old names still
+ * resolve, see initialTab.
+ */
+type TabKey = "workspace" | "account" | "audit";
+
+/** The small-caps group heading the Personal groups already use. */
+const GROUP_LABEL: React.CSSProperties = {
+  fontSize: "var(--fs-xs)",
+  color: "var(--c-ink-4)",
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  fontWeight: 600,
+  marginBottom: 10,
+};
+
+/**
+ * Who you are and where you are, at the top of My account.
+ *
+ * The page can otherwise render as one section, or none at all when the
+ * workspace forbids personal credentials. A page that can be empty should at
+ * least say something true.
+ */
+function IdentityBlock({ teamName, role }: { teamName: string | null; role: string | null }) {
+  return (
+    <div
+      className="mb-5 rounded-md border px-3.5 py-3"
+      style={{ background: "var(--c-surface)", borderColor: "var(--c-border)" }}
+    >
+      <div style={{ fontSize: 13, color: "var(--c-ink)" }}>
+        {teamName ?? "No workspace yet"}
+        {role && (
+          <span style={{ marginLeft: 8, fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
+            {role}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", marginTop: 2, lineHeight: 1.5 }}>
+        {teamName
+          ? "Credentials your workspace manages are on the Workspace tab."
+          : "Everything here is yours alone. Create a workspace to share credentials with a team."}
+      </div>
+    </div>
+  );
+}
+
 const PERSONAL_GROUPS: { label: string; ids: string[] }[] = [
   { label: "Repositories", ids: ["github", "azurerepos"] },
   { label: "Agents", ids: ["anthropic", "openai"] },
@@ -428,12 +476,27 @@ export default function SettingsPage() {
   const { configMap, loading, error, refreshConfig } = useConfig();
   const { team, isAdmin } = useTeam();
   const tabParam = new URLSearchParams(window.location.search).get("tab");
-  const initialTab: "personal" | "team" | "audit" =
-    tabParam === "team" ? "team" : tabParam === "audit" ? "audit" : "personal";
-  const [tab, setTab] = useState<"personal" | "team" | "audit">(initialTab);
+  // ?tab=team and ?tab=personal are the names this page used before the split
+  // by ownership. They still work: a bookmark, an old email or a link in the
+  // help guide should land where it meant to, not on a default tab.
+  const initialTab: TabKey =
+    tabParam === "workspace" || tabParam === "team"
+      ? "workspace"
+      : tabParam === "audit"
+        ? "audit"
+        : "account";
+  const [tab, setTab] = useState<TabKey>(initialTab);
   // Whose credentials the agents run on. Held here because it decides whether
   // the two Agents cards are shown at all.
-  const [agentSource, setAgentSource] = useState<AgentSource>("own");
+  // What the workspace permits. Decides whether My account shows the personal
+  // credential cards at all.
+  const [agentPref, setAgentPref] = useState<AgentPreferenceState | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchAgentPreference().then((s) => { if (live) setAgentPref(s); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const hiddenNote = personalCredentialsHiddenNote(agentPref);
 
   const personalIntegrations = INTEGRATIONS.filter((i) =>
     PERSONAL_GROUPS.some((g) => g.ids.includes(i.id)),
@@ -441,7 +504,7 @@ export default function SettingsPage() {
   const configuredCount = personalIntegrations.filter((integ) => integ.fields.every((f) => configMap[f.key]?.set)).length;
   const byId = new Map(INTEGRATIONS.map((i) => [i.id, i]));
 
-  const tabBtn = (key: "personal" | "team" | "audit", label: string): React.CSSProperties => ({
+  const tabBtn = (key: TabKey, label: string): React.CSSProperties => ({
     fontSize: 13,
     fontWeight: tab === key ? 600 : 500,
     padding: "8px 2px",
@@ -460,10 +523,10 @@ export default function SettingsPage() {
 
       {/* Tab switcher */}
       <div style={{ display: "flex", gap: 16, borderBottom: "1px solid var(--c-border)", marginBottom: 20 }}>
-        <button style={tabBtn("personal", "Personal")} onClick={() => setTab("personal")}>Personal</button>
         {team && (
-          <button style={tabBtn("team", "Team")} onClick={() => setTab("team")}>Team</button>
+          <button style={tabBtn("workspace", "Workspace")} onClick={() => setTab("workspace")}>Workspace</button>
         )}
+        <button style={tabBtn("account", "My account")} onClick={() => setTab("account")}>My account</button>
         {team && isAdmin && (
           <button style={tabBtn("audit", "Audit log")} onClick={() => setTab("audit")}>Audit log</button>
         )}
@@ -471,9 +534,13 @@ export default function SettingsPage() {
 
       {tab === "audit" && team && isAdmin ? (
         <AuditTab />
-      ) : tab === "team" && team ? (
+      ) : tab === "workspace" && team ? (
         <>
-          {/* Admin-only, like the rest of the team settings on this tab. */}
+          {/* Section 2 of the Workspace tab: whose credentials the agents run
+              on, and whether members may override. Above TeamTab, which carries
+              the workspace itself and the shared integrations. */}
+          <div style={GROUP_LABEL}>Agents</div>
+          <WorkspaceAgentsSection teamId={team.id} />
           {isAdmin ? <SequencePolicySection /> : null}
           <TeamTab />
         </>
@@ -487,11 +554,12 @@ export default function SettingsPage() {
         <div className="rounded-md border px-4 py-3 text-[13px]" style={tone(RED)}>{error}</div>
       ) : (
         <>
+          <IdentityBlock teamName={team?.name ?? null} role={isAdmin ? "Admin" : team ? "Member" : null} />
           <ProgressBar configured={configuredCount} total={personalIntegrations.length} />
           {team && (
             <div className="mb-5 rounded-md border px-3.5 py-2.5 text-[13px] text-muted-foreground">
-              Tracker credentials (Jira, Azure DevOps) and documentation targets (Confluence, Notion) are managed at the
-              team level. Open the <button onClick={() => setTab("team")} className="font-medium text-[var(--c-blue)]">Team</button> tab to configure them.
+              Repository access, agent credentials, trackers and documentation targets are managed by your workspace.
+              Open the <button onClick={() => setTab("workspace")} className="font-medium text-[var(--c-blue)]">Workspace</button> tab to see them.
             </div>
           )}
           {PERSONAL_GROUPS.map((group) => (
@@ -508,11 +576,13 @@ export default function SettingsPage() {
               >
                 {group.label}
               </div>
-              {group.label === "Agents" && <AgentSourceSection onChanged={setAgentSource} />}
-              {/* On Kandryn Agents the cards collapse away rather than sitting
-                  there inert. The section above says the saved keys are kept,
-                  and switching back brings the cards straight back. */}
-              {group.label === "Agents" && agentSource === "kandryn" ? null : (
+              {/* Hidden rather than disabled when the workspace forbids personal
+                  credentials: a disabled field for a credential that would never
+                  be read invites someone to fill it in and wonder why nothing
+                  changed. */}
+              {hiddenNote ? (
+                <div style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", lineHeight: 1.5 }}>{hiddenNote}</div>
+              ) : (
                 <div className="flex flex-col gap-2.5">
                   {group.ids
                     .map((id) => byId.get(id))

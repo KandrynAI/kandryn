@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { getConfigs } from "./configService.js";
 import { resolveModelKey } from "./modelKey.js";
+import { resolveGitCreds } from "./gitToken.js";
 import { getProjectRepository } from "./repoResolver.js";
 import { fetchPullRequestState, type PullRequestState } from "./pullRequestState.js";
 import { SequenceError, type SequenceActor } from "./sequenceService.js";
@@ -65,9 +66,7 @@ export async function buildImpact(checkId: number, actor: SequenceActor): Promis
 
   try {
     facts = await assembleFacts({ item, project, findings, actor });
-    // The one call site that resolved team-first, and it still does: the
-    // resolver takes the same teamId the getConfigs call did.
-    const agentKey = await resolveModelKey(actor.userId, project.teamId, "anthropic");
+    const agentKey = await resolveModelKey(actor.userId, "anthropic");
     if (agentKey.key) {
       const narrative = await narrate(facts, itemKey, findings, agentKey.key);
       if (narrative) impact = narrative;
@@ -125,13 +124,13 @@ async function assembleFacts(args: {
 
   // The live PR lookup — the one network call here, and the reason the check
   // itself stays conservative. Budgeted and parallel; any failure is `unknown`.
-  const creds = await getConfigs(actor.userId, ["GITHUB_TOKEN"], project.teamId);
+  const creds = await resolveGitCreds(actor.userId);
   const prStates = new Map<number, PullRequestState>();
   await Promise.all(
     blockerTasks.map(async (t) => {
       const run = latestRuns.get(t.id);
       if (!run?.prUrl) return;
-      prStates.set(t.id, await fetchPullRequestState(run.prUrl, creds.GITHUB_TOKEN));
+      prStates.set(t.id, await fetchPullRequestState(run.prUrl, creds.githubToken));
     }),
   );
 

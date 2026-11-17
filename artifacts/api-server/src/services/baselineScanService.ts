@@ -12,7 +12,8 @@ import {
 } from "@workspace/db";
 import { GitService } from "./gitService.js";
 import { getConfigs } from "./configService.js";
-import { resolveModelKey, NO_MODEL_KEY_MESSAGE } from "./modelKey.js";
+import { resolveModelKey, noModelKeyMessage } from "./modelKey.js";
+import { resolveGitCreds } from "./gitToken.js";
 import { AEGIS_MODEL, AEGIS_ZDR_MODEL, baselineFilePrompt, isRetentionError, parseFileScan } from "./aegisService.js";
 import { canAdminister } from "./resourceAdmin.js";
 import { RunError } from "./runService.js";
@@ -139,8 +140,8 @@ export async function estimateForRepository(repositoryId: number, userId: string
   const graph = repo.graphStatus === "succeeded" ? (repo.graphJson as GraphifyGraph | null) : null;
   let treePaths: string[] = [];
   if (!graph) {
-    const creds = await getConfigs(userId, ["GITHUB_TOKEN"]);
-    const git = await GitService.forRepo(repo.id, { githubToken: creds.GITHUB_TOKEN });
+    const creds = await resolveGitCreds(userId);
+    const git = await GitService.forRepo(repo.id, { githubToken: creds.githubToken });
     treePaths = await git.fetchFilePaths();
   }
   const { paths, source } = discoverFiles(graph, treePaths);
@@ -184,15 +185,15 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
     );
   if (active) throw new RunError("A baseline scan is already running for this repository.", 409);
 
-  const creds = await getConfigs(actor.userId, ["GITHUB_TOKEN"]);
-  const agentKey = await resolveModelKey(actor.userId, null, "anthropic");
+  const creds = await resolveGitCreds(actor.userId);
+  const agentKey = await resolveModelKey(actor.userId, "anthropic");
   if (!agentKey.key) {
-    throw new RunError(NO_MODEL_KEY_MESSAGE, 424);
+    throw new RunError(noModelKeyMessage(actor.teamRole === "admin"), 424);
   }
 
   const repo = target.repo;
   const graph = repo.graphStatus === "succeeded" ? (repo.graphJson as GraphifyGraph | null) : null;
-  const git = await GitService.forRepo(repo.id, { githubToken: creds.GITHUB_TOKEN });
+  const git = await GitService.forRepo(repo.id, { githubToken: creds.githubToken });
   const treePaths = graph ? [] : await git.fetchFilePaths();
   const { paths } = discoverFiles(graph, treePaths);
 
@@ -341,7 +342,7 @@ export async function collectBaselineScan(scan: BaselineScan): Promise<boolean> 
   try {
     // Collection runs long after the start, so the key is resolved again
     // through the user who triggered it, not cached across invocations.
-    const collectKey = await resolveModelKey(scan.triggeredBy, null, "anthropic");
+    const collectKey = await resolveModelKey(scan.triggeredBy, "anthropic");
     if (!collectKey.key) {
       await failScan(scan.id, "The credentials that started this scan are no longer available.");
       return true;

@@ -14,7 +14,8 @@ import { getProjectRepository } from "../services/repoResolver.js";
 import { loadSuggestionFiles } from "../services/suggestionFiles.js";
 import { GitService } from "../services/gitService.js";
 import { generateTests, AIFormatError } from "../services/aiService.js";
-import { resolveModelKey, NO_MODEL_KEY_MESSAGE } from "../services/modelKey.js";
+import { resolveModelKey, noModelKeyMessage } from "../services/modelKey.js";
+import { resolveGitCreds } from "../services/gitToken.js";
 import { createPlmTestCase } from "../services/plmWrite.js";
 import { PlmError } from "../services/plmProjects.js";
 import type { StackProfile } from "../stack/detector.js";
@@ -114,9 +115,9 @@ router.post("/work-items/:id/tests/generate", async (req, res): Promise<void> =>
     return;
   }
 
-  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  const agentKey = await resolveModelKey(req.userId, "anthropic");
   if (!agentKey.key) {
-    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
+    res.status(424).json({ error: noModelKeyMessage(req.teamRole === "admin") });
     return;
   }
 
@@ -205,10 +206,10 @@ router.post("/work-items/:id/tests/commit-script", async (req, res): Promise<voi
     return;
   }
 
-  const gitCreds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const gitCreds = await resolveGitCreds(req.userId);
   const git = await GitService.forRepo(repo.id, {
-    githubToken: gitCreds.GITHUB_TOKEN,
-    azureReposToken: gitCreds.AZURE_REPOS_TOKEN,
+    githubToken: gitCreds.githubToken,
+    azureReposToken: gitCreds.azureReposToken,
   });
   const branchName = `task/${workItem.id}`;
 

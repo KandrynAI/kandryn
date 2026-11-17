@@ -1,8 +1,14 @@
-import { pgTable, serial, text, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, index, unique } from "drizzle-orm/pg-core";
 
 export type TeamPlan = "free" | "pro" | "max" | "enterprise";
 export type TeamRole = "admin" | "member";
 export type SequencePolicy = "off" | "warn" | "admin_override_only";
+/**
+ * Mirrors shared/types/agentKey.ts (kept local because lib/db is a composite
+ * project rooted at src/ and cannot import from ../../../../shared), the same
+ * way runs.ts keeps its persisted result shapes.
+ */
+export type WorkspaceAgentSource = "kandryn" | "workspace_keys";
 
 export const teamsTable = pgTable(
   "teams",
@@ -20,6 +26,26 @@ export const teamsTable = pgTable(
     // rather than defaulted so a user with no team row gets the same default
     // through one code path, matching auditRetentionDays above.
     sequencePolicy: text("sequence_policy").$type<SequencePolicy | null>(),
+    /**
+     * Whose credentials this workspace's agents run on (0046):
+     * "workspace_keys" (the credentials the workspace saved) or "kandryn" (the
+     * platform's). Null = the application default, "workspace_keys", following
+     * the same nullable-not-defaulted shape as the two settings above.
+     */
+    agentKeySource: text("agent_key_source").$type<WorkspaceAgentSource | null>(),
+    /**
+     * Whether a member may override the workspace with their own saved
+     * credentials (0046).
+     *
+     * NOT nullable-with-a-default like its neighbours, and the exception is
+     * deliberate: the answer differs by age. Workspaces that existed before
+     * this shipped are backfilled `true`, because their members were already
+     * running on personal credentials and turning that off under them would
+     * break every run. New workspaces get `false` from the column default, so
+     * an enterprise starts closed and opens up by choice. A single nullable
+     * default cannot say both things.
+     */
+    allowPersonalCredentials: boolean("allow_personal_credentials").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("teams_owner_idx").on(t.ownerUserId)],

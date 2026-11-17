@@ -252,7 +252,7 @@ export function ContextPanel() {
             <div style={{ fontSize: "var(--fs-xs)", color: "var(--c-ink-4)", marginTop: 2 }}>
               <span style={{ textTransform: "capitalize" }}>{team.plan}</span> plan
               {isAdmin && (
-                <span style={{ color: "var(--c-blue)", cursor: "pointer", marginLeft: 8 }} onClick={() => navigate("/settings?tab=team")}>
+                <span style={{ color: "var(--c-blue)", cursor: "pointer", marginLeft: 8 }} onClick={() => navigate("/settings?tab=workspace")}>
                   Manage →
                 </span>
               )}

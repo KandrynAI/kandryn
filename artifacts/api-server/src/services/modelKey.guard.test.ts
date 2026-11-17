@@ -25,11 +25,13 @@ import { fileURLToPath } from "node:url";
 
 const SRC = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
-/** The two key names, and why each file outside the resolver may still say them. */
+/** The credential names, and why each file outside the resolvers may still say them. */
 const KEY_NAME_ALLOWED: Record<string, string> = {
-  "services/modelKey.ts": "The resolver itself. This is the one place that maps a provider to a config key.",
+  "services/modelKey.ts": "The model resolver. The one place that maps a provider to a config key.",
+  "services/gitToken.ts": "The git resolver. Same rule, same reason.",
   "services/configService.ts": "CONFIG_KEYS declares the names; it stores values and knows nothing about choosing one.",
   "lib/env.ts": "Startup env validation lists the names for logging. It reads nothing at call time.",
+  "routes/teams.ts": "TEAM_CONFIG_KEYS declares which credentials a workspace may own (0046). A declaration of what MAY be stored, never a choice of which to use.",
   "routes/config.ts":
     "Test connection must test the key the user typed or saved, never the platform's. " +
     "Routing it through the resolver would report the platform's health as the user's, " +
@@ -117,5 +119,43 @@ test("every provider client is constructed with an explicit apiKey", () => {
     offenders,
     [],
     "A provider client with no apiKey argument reads it from the environment:\n" + offenders.join("\n"),
+  );
+});
+
+/**
+ * The same rule for git credentials.
+ *
+ * Twenty-one reads became one helper in 0046. The failure this prevents is
+ * quieter than the model-key one: a straggler reading GITHUB_TOKEN directly
+ * still works for anyone with a personal token, and only breaks for the
+ * members a workspace credential was introduced to serve. It would pass every
+ * manual test run by the person who wrote it.
+ */
+const GIT_NAME_ALLOWED: Record<string, string> = {
+  "services/gitToken.ts": "The resolver itself.",
+  "services/configService.ts": "CONFIG_KEYS declares the names; it stores values and chooses nothing.",
+  "lib/env.ts": "Startup env validation lists the names for logging.",
+  "routes/teams.ts": "TEAM_CONFIG_KEYS declares which credentials a workspace may own.",
+  "routes/config.ts":
+    "Two cases. github-sync upserts the PERSONAL token from Clerk, which is a write, not a " +
+    "resolution. Test connection must test the credential the user typed or saved, never the " +
+    "workspace's, or it would report someone else's health as theirs.",
+};
+
+test("the git credential names appear only where they are allowed", () => {
+  const offenders: string[] = [];
+  for (const { rel, code } of files) {
+    if (rel in GIT_NAME_ALLOWED) continue;
+    code.split("\n").forEach((line, i) => {
+      if (/\bGITHUB_TOKEN\b|\bAZURE_REPOS_TOKEN\b|\bAZURE_REPOS_ORG\b/.test(line)) {
+        offenders.push(`${rel}:${i + 1}  ${line.trim()}`);
+      }
+    });
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "Resolve git credentials through services/gitToken.ts instead of reading the config store here.\n" +
+      offenders.join("\n"),
   );
 });

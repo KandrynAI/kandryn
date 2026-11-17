@@ -21,6 +21,8 @@ import * as audit from "../services/auditService.js";
 import { db, teamsTable, type Team } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { AUDIT_RETENTION_DAYS } from "../../../../shared/types/auditLog.js";
+import { getWorkspaceSettings, setWorkspaceSettings } from "../services/workspaceSettings.js";
+import { platformAvailable } from "../services/modelKey.js";
 
 const router: IRouter = Router();
 
@@ -29,9 +31,20 @@ function effectiveRetentionDays(team: Team): number {
   return team.auditRetentionDays ?? AUDIT_RETENTION_DAYS[team.plan] ?? 30;
 }
 
-// Credentials that may be shared at the team level. GITHUB_TOKEN (commit
-// attribution) and the agent keys are intentionally excluded — they stay personal.
+// Credentials a workspace may own.
+//
+// This list used to exclude GITHUB_TOKEN and the agent keys on the grounds
+// that they were personal. 0046 reverses that: a personal GitHub token dies
+// with the person who made it, and agent credentials decide spend, which
+// provider sees the code, and rotation. Those are organization decisions.
+// A member may still override with their own, when the workspace allows it
+// (teams.allow_personal_credentials); see services/gitToken.ts for the order.
 const TEAM_CONFIG_KEYS = [
+  "GITHUB_TOKEN",
+  "AZURE_REPOS_ORG",
+  "AZURE_REPOS_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
   "JIRA_DOMAIN",
   "JIRA_EMAIL",
   "JIRA_API_TOKEN",
@@ -325,6 +338,81 @@ router.patch("/teams/:teamId/members/:userId", requireAdmin, async (req, res): P
     userAgent: req.headers["user-agent"],
   });
   res.json({ userId: targetUserId, role: body.data.role });
+});
+
+// ---------------------------------------------------------------------------
+// GET /teams/:teamId/settings — the two settings an admin owns
+//
+// Readable by any member, because the Workspace tab shows every member what
+// the workspace has decided; only the writes are admin-gated. Carries no
+// credential and no environment variable name.
+// ---------------------------------------------------------------------------
+router.get("/teams/:teamId/settings", async (req, res): Promise<void> => {
+  const params = TeamIdParam.safeParse(req.params);
+  if (!params.success || req.teamId !== params.data.teamId) {
+    res.status(403).json({ error: "Not a member of this team." });
+    return;
+  }
+  const settings = await getWorkspaceSettings(params.data.teamId);
+  res.json({
+    ...settings,
+    platformAvailable: platformAvailable(),
+    canEdit: req.teamRole === "admin",
+  });
+});
+
+const WorkspaceSettingsBody = z.object({
+  agentKeySource: z.enum(["kandryn", "workspace_keys"]).optional(),
+  allowPersonalCredentials: z.boolean().optional(),
+});
+
+// PUT /teams/:teamId/settings — admin only, enforced here and not in the UI.
+router.put("/teams/:teamId/settings", requireAdmin, async (req, res): Promise<void> => {
+  const params = TeamIdParam.safeParse(req.params);
+  const body = WorkspaceSettingsBody.safeParse(req.body);
+  if (!params.success || req.teamId !== params.data.teamId) {
+    res.status(403).json({ error: "Not a member of this team." });
+    return;
+  }
+  if (!body.success) {
+    res.status(400).json({ error: "Invalid workspace settings" });
+    return;
+  }
+  const teamId = params.data.teamId;
+
+  // The server refuses what the screen disables, so a forged request cannot
+  // park a workspace in a mode this deployment cannot serve.
+  if (body.data.agentKeySource === "kandryn" && !platformAvailable()) {
+    res.status(409).json({ error: "Kandryn Agents is not available in this environment." });
+    return;
+  }
+
+  const before = await getWorkspaceSettings(teamId);
+  await setWorkspaceSettings(teamId, body.data);
+
+  // One entry per field that actually moved. Both values are safe to record:
+  // neither is a credential.
+  if (body.data.agentKeySource !== undefined && body.data.agentKeySource !== before.agentKeySource) {
+    audit.log({
+      userId: req.userId, teamId,
+      action: "workspace_agent_source.changed",
+      metadata: { from: before.agentKeySource, to: body.data.agentKeySource },
+      ipAddress: audit.getIp(req), userAgent: req.headers["user-agent"],
+    });
+  }
+  if (
+    body.data.allowPersonalCredentials !== undefined &&
+    body.data.allowPersonalCredentials !== before.allowPersonalCredentials
+  ) {
+    audit.log({
+      userId: req.userId, teamId,
+      action: "workspace_personal_credentials.changed",
+      metadata: { from: before.allowPersonalCredentials, to: body.data.allowPersonalCredentials },
+      ipAddress: audit.getIp(req), userAgent: req.headers["user-agent"],
+    });
+  }
+
+  res.json(await getWorkspaceSettings(teamId));
 });
 
 // GET /teams/:teamId/integrations — team credentials (keys only, values masked).

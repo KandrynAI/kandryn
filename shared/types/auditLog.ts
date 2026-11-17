@@ -21,6 +21,10 @@ export const AUDIT_ACTIONS = [
   // Whose model credentials this user's runs spend. Unlike a credential,
   // the value is safe to record on both sides of the change.
   'agent_key_source.changed',
+  // The two workspace settings an admin owns (0046). Both values are safe to
+  // record on each side: neither is a credential.
+  'workspace_agent_source.changed',
+  'workspace_personal_credentials.changed',
 
   // Projects
   'project.created',

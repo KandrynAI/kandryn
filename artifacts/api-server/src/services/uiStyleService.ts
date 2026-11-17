@@ -4,6 +4,7 @@ import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 import { GitService } from "./gitService.js";
 import { getProjectRepository } from "./repoResolver.js";
 import { getConfigs } from "./configService.js";
+import { resolveGitCreds } from "./gitToken.js";
 import { isGraphServable } from "./graphUsability.js";
 import { extractUiStyle } from "./uiStyle/extractor.js";
 import { touchesStyling } from "./uiStyle/styleGuide.js";
@@ -157,10 +158,10 @@ export async function runExtraction(row: UiStyleProfile): Promise<UiStyleProfile
       });
     }
 
-    const creds = await getConfigs(row.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+    const creds = await resolveGitCreds(row.userId);
     const git = await GitService.forRepo(repo.id, {
-      githubToken: creds.GITHUB_TOKEN,
-      azureReposToken: creds.AZURE_REPOS_TOKEN,
+      githubToken: creds.githubToken,
+      azureReposToken: creds.azureReposToken,
     });
 
     // Captured BEFORE the reads, so the profile names the commit it describes

@@ -852,26 +852,53 @@ export async function approveRunPlan(runId: number): Promise<{ status: string }>
 }
 
 /**
- * Whose credentials this user's runs spend, and whether the platform can serve
- * the alternative. Carries no key material and no environment variable name.
+ * The person's own agent preference, and what the workspace permits.
+ *
+ * Carries no key material and no environment variable name, in either
+ * direction. `allowPersonalCredentials` and `workspaceSource` are the
+ * workspace's, read-only here: My account needs them to know whether to show
+ * the personal credential sections at all.
  */
-export interface AgentKeySourceState {
-  source: 'own' | 'kandryn';
-  /** Whether this deployment has the platform credentials for BOTH agents. */
+export interface AgentPreferenceState {
+  preference: 'own' | 'workspace';
+  allowPersonalCredentials: boolean;
+  workspaceSource: 'kandryn' | 'workspace_keys';
   platformAvailable: boolean;
-  /** Whether this account may choose them. */
-  entitled: boolean;
+  hasWorkspace: boolean;
 }
 
-export function fetchAgentKeySource(): Promise<AgentKeySourceState> {
-  return request<AgentKeySourceState>('/api/config/agents');
+export function fetchAgentPreference(): Promise<AgentPreferenceState> {
+  return request<AgentPreferenceState>('/api/config/agents');
 }
 
-export function saveAgentKeySource(source: 'own' | 'kandryn'): Promise<{ source: string }> {
-  return request<{ source: string }>('/api/config/agents', {
+export function saveAgentPreference(preference: 'own' | 'workspace'): Promise<{ preference: string }> {
+  return request<{ preference: string }>('/api/config/agents', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source }),
+    body: JSON.stringify({ preference }),
+  });
+}
+
+/** The two settings a workspace admin owns. `canEdit` is the server's word, not a guess. */
+export interface WorkspaceSettingsState {
+  agentKeySource: 'kandryn' | 'workspace_keys';
+  allowPersonalCredentials: boolean;
+  platformAvailable: boolean;
+  canEdit: boolean;
+}
+
+export function fetchWorkspaceSettings(teamId: number): Promise<WorkspaceSettingsState> {
+  return request<WorkspaceSettingsState>(`/api/teams/${teamId}/settings`);
+}
+
+export function saveWorkspaceSettings(
+  teamId: number,
+  patch: Partial<Pick<WorkspaceSettingsState, 'agentKeySource' | 'allowPersonalCredentials'>>,
+): Promise<WorkspaceSettingsState> {
+  return request<WorkspaceSettingsState>(`/api/teams/${teamId}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
   });
 }
 

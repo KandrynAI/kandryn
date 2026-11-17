@@ -179,14 +179,23 @@ export const runsTable = pgTable(
      */
     contextManifest: jsonb("context_manifest").$type<PersistedContextManifest | null>().default(null),
     /**
-     * Whose model credentials this run spent: "own" (the user's keys) or
-     * "kandryn" (the platform's). Stamped at creation from the run OWNER's
+     * Whose model credentials this run spent: "personal" (the user's own keys),
+     * "workspace" (the ones an admin saved) or "kandryn" (the platform's).
+     * 0045 shipped this with "own" where "personal" now stands; 0046 renames
+     * the stored value. Stamped at creation from the run OWNER's
      * preference, so a team admin approving someone else's parked plan cannot
      * move the cost. Null for runs created before the column existed.
      *
      * The source only. A key, or any fragment of one, never reaches this table.
      */
-    agentKeySource: text("agent_key_source").$type<"own" | "kandryn" | null>().default(null),
+    agentKeySource: text("agent_key_source").$type<"personal" | "workspace" | "kandryn" | null>().default(null),
+    /**
+     * Which git token this run used: "personal" (the triggering user's) or
+     * "workspace" (the one an admin saved). Stamped at creation beside
+     * agentKeySource, for the same reason and with the same rule: the source
+     * only, never a token.
+     */
+    githubSource: text("github_source").$type<"personal" | "workspace" | null>().default(null),
     // Human-readable stack this run targeted, e.g. "react · nodejs · postgresql"
     // (0013_run_stack.sql). Null for runs created before the column existed.
     stackDesc: text("stack_desc"),

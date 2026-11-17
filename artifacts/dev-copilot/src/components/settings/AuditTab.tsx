@@ -29,6 +29,8 @@ const ACTION_LABELS: Record<string, string> = {
   "team_credential.set": "Team credential saved",
   "team_credential.deleted": "Team credential deleted",
   "agent_key_source.changed": "Agent credentials source changed",
+  "workspace_agent_source.changed": "Workspace agent source changed",
+  "workspace_personal_credentials.changed": "Personal credentials policy changed",
   "project.created": "Project created",
   "project.updated": "Project settings changed",
   "project.deleted": "Project deleted",

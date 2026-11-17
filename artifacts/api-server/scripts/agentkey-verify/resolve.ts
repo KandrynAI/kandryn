@@ -1,25 +1,27 @@
 /**
- * Data-layer checks for "Use Kandryn Agents".
+ * Data-layer checks for workspace-owned credentials (0046).
  *
- * Needs DATABASE_URL and TRUNCATES the tables it uses. Not part of `pnpm test`.
- * See ../sequence-verify/README.md for the throwaway-Postgres recipe.
+ * Needs DATABASE_URL. Writes and deletes rows for synthetic users and one
+ * synthetic workspace; truncates nothing. See ../sequence-verify/README.md for
+ * the throwaway-Postgres recipe.
  *
  *   DATABASE_URL=postgres://... npx tsx scripts/agentkey-verify/resolve.ts
  *
- * What it proves, against a real database rather than a mock:
- *   1. With no stored preference a user resolves to their own keys.
- *   2. Choosing kandryn resolves to the PLATFORM keys, not the user's.
- *   3. The user's own keys survive the switch and come back on switching away.
- *   4. With the platform keys absent, kandryn downgrades to own rather than
- *      resolving to undefined.
- *   5. resolveModelKeys reports the source it actually used.
+ * What it proves against a real database rather than a mock: every branch of
+ * the resolution order for both credential kinds, that a policy change moves
+ * the source without touching anyone's saved credentials, and that the two
+ * run-stamp values follow what was actually resolved.
  */
-import { sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { eq, sql } from "drizzle-orm";
+import { db, teamsTable, teamMembersTable } from "@workspace/db";
 import { saveConfigs, getConfig } from "../../src/services/configService.js";
-import { resolveModelKey, resolveModelKeys, getKeySource } from "../../src/services/modelKey.js";
+import { setTeamIntegration } from "../../src/services/teamService.js";
+import { setWorkspaceSettings } from "../../src/services/workspaceSettings.js";
+import { resolveModelKeys } from "../../src/services/modelKey.js";
+import { resolveGitCreds } from "../../src/services/gitToken.js";
 
-const USER = "agentkey-verify-user";
+const ADMIN = "ak-verify-admin";
+const MEMBER = "ak-verify-member";
 let failures = 0;
 
 function check(name: string, ok: boolean, detail = "") {
@@ -27,51 +29,89 @@ function check(name: string, ok: boolean, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
 }
 
+async function cleanup(teamId?: number) {
+  await db.execute(sql`DELETE FROM integration_configs WHERE user_id IN (${ADMIN}, ${MEMBER})`);
+  if (teamId != null) await db.delete(teamsTable).where(eq(teamsTable.id, teamId));
+}
+
 async function main() {
-  await db.execute(sql`DELETE FROM integration_configs WHERE user_id = ${USER}`);
+  await cleanup();
+  await db.execute(sql`DELETE FROM teams WHERE name = 'ak-verify-workspace'`);
 
-  process.env.KANDRYN_ANTHROPIC_API_KEY = "platform-anthropic";
-  process.env.KANDRYN_OPENAI_API_KEY = "platform-openai";
+  const [team] = await db
+    .insert(teamsTable)
+    .values({ name: "ak-verify-workspace", ownerUserId: ADMIN, allowPersonalCredentials: true })
+    .returning();
+  await db.insert(teamMembersTable).values([
+    { teamId: team.id, userId: ADMIN, role: "admin" },
+    { teamId: team.id, userId: MEMBER, role: "member" },
+  ]);
 
-  await saveConfigs(USER, { ANTHROPIC_API_KEY: "user-anthropic", OPENAI_API_KEY: "user-openai" });
+  process.env.KANDRYN_ANTHROPIC_API_KEY = "platform-a";
+  process.env.KANDRYN_OPENAI_API_KEY = "platform-o";
 
-  // 1 — the default.
-  check("no preference means own", (await getKeySource(USER)) === "own");
-  let a = await resolveModelKey(USER, null, "anthropic");
-  check("own resolves the user's key", a.key === "user-anthropic" && a.source === "own", `${a.source}/${a.key}`);
+  // The workspace's own credentials, set by its admin.
+  await setTeamIntegration(team.id, "ANTHROPIC_API_KEY", "workspace-a", ADMIN);
+  await setTeamIntegration(team.id, "OPENAI_API_KEY", "workspace-o", ADMIN);
+  await setTeamIntegration(team.id, "GITHUB_TOKEN", "workspace-gh", ADMIN);
 
-  // 2 — the switch.
-  await saveConfigs(USER, { AGENT_KEY_SOURCE: "kandryn" });
-  a = await resolveModelKey(USER, null, "anthropic");
-  const o = await resolveModelKey(USER, null, "openai");
-  check("kandryn resolves the platform key for both providers",
-    a.key === "platform-anthropic" && o.key === "platform-openai" && a.source === "kandryn",
-    `${a.key} / ${o.key}`);
+  // 1 — a member with nothing of their own gets the workspace's.
+  let keys = await resolveModelKeys(MEMBER);
+  check("member with no keys uses the workspace", keys.source === "workspace" && keys.anthropic === "workspace-a",
+    `${keys.source}/${keys.anthropic}`);
+  let git = await resolveGitCreds(MEMBER);
+  check("member with no token uses the workspace token",
+    git.source === "workspace" && git.githubToken === "workspace-gh", `${git.source}/${git.githubToken}`);
 
-  // 3 — the user's keys are untouched by the switch (B2).
-  check("the user's own keys still exist while kandryn is selected",
-    (await getConfig(USER, "ANTHROPIC_API_KEY")) === "user-anthropic");
-  await saveConfigs(USER, { AGENT_KEY_SOURCE: "own" });
-  a = await resolveModelKey(USER, null, "anthropic");
-  check("switching back uses the untouched key", a.key === "user-anthropic" && a.source === "own");
+  // 2 — the same member saves their own; policy is on, so they override.
+  await saveConfigs(MEMBER, { ANTHROPIC_API_KEY: "mine-a", GITHUB_TOKEN: "mine-gh" });
+  keys = await resolveModelKeys(MEMBER);
+  check("a personal key overrides while the policy allows it",
+    keys.source === "personal" && keys.anthropic === "mine-a", `${keys.source}/${keys.anthropic}`);
+  git = await resolveGitCreds(MEMBER);
+  check("a personal token keeps commit attribution on the person",
+    git.source === "personal" && git.githubToken === "mine-gh", `${git.source}/${git.githubToken}`);
 
-  // 4 — the environment loses its platform keys.
-  await saveConfigs(USER, { AGENT_KEY_SOURCE: "kandryn" });
+  // 3 — the admin turns the policy off. Nothing is deleted.
+  await setWorkspaceSettings(team.id, { allowPersonalCredentials: false });
+  keys = await resolveModelKeys(MEMBER);
+  git = await resolveGitCreds(MEMBER);
+  check("policy off moves the member onto the workspace source",
+    keys.source === "workspace" && git.source === "workspace", `${keys.source}/${git.source}`);
+  check("their saved credentials are untouched, just unused",
+    (await getConfig(MEMBER, "ANTHROPIC_API_KEY")) === "mine-a" &&
+      (await getConfig(MEMBER, "GITHUB_TOKEN")) === "mine-gh");
+
+  // 4 — the workspace switches to Kandryn Agents.
+  await setWorkspaceSettings(team.id, { agentKeySource: "kandryn" });
+  keys = await resolveModelKeys(MEMBER);
+  check("workspace on Kandryn Agents funds the member", keys.source === "kandryn" && keys.anthropic === "platform-a",
+    `${keys.source}/${keys.anthropic}`);
+  git = await resolveGitCreds(MEMBER);
+  check("the git token is unaffected by the agent source", git.source === "workspace");
+
+  // 5 — the policy comes back on; a personal key outranks Kandryn.
+  await setWorkspaceSettings(team.id, { allowPersonalCredentials: true });
+  keys = await resolveModelKeys(MEMBER);
+  check("a personal override outranks a workspace that chose Kandryn",
+    keys.source === "personal" && keys.anthropic === "mine-a", keys.source);
+
+  // 6 — the environment loses its platform credentials.
+  await saveConfigs(MEMBER, { AGENT_KEY_SOURCE: "workspace" });
   delete process.env.KANDRYN_ANTHROPIC_API_KEY;
   delete process.env.KANDRYN_OPENAI_API_KEY;
-  a = await resolveModelKey(USER, null, "anthropic");
-  check("no platform keys downgrades to own rather than returning nothing",
-    a.key === "user-anthropic" && a.source === "own", `${a.source}/${a.key}`);
+  keys = await resolveModelKeys(MEMBER);
+  check("no platform keys falls back to the workspace rather than failing",
+    keys.source === "workspace" && keys.anthropic === "workspace-a", `${keys.source}/${keys.anthropic}`);
 
-  // 5 — both at once, and the source it reports.
-  process.env.KANDRYN_ANTHROPIC_API_KEY = "platform-anthropic";
-  process.env.KANDRYN_OPENAI_API_KEY = "platform-openai";
-  const both = await resolveModelKeys(USER, null);
-  check("resolveModelKeys reports the source it used",
-    both.source === "kandryn" && both.anthropic === "platform-anthropic" && both.openai === "platform-openai",
-    both.source);
+  // 7 — a user with no workspace at all is unchanged by any of this.
+  await saveConfigs(ADMIN, { ANTHROPIC_API_KEY: "solo-a" });
+  await db.delete(teamMembersTable).where(eq(teamMembersTable.userId, ADMIN));
+  keys = await resolveModelKeys(ADMIN);
+  check("a user with no workspace still runs on their own keys",
+    keys.source === "personal" && keys.anthropic === "solo-a", `${keys.source}/${keys.anthropic}`);
 
-  await db.execute(sql`DELETE FROM integration_configs WHERE user_id = ${USER}`);
+  await cleanup(team.id);
   console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 }

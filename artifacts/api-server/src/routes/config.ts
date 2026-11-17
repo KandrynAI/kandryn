@@ -10,7 +10,8 @@ import {
   type ConfigKey,
 } from "../services/configService.js";
 import { getUserRole } from "../services/teamService.js";
-import { getKeySource, platformAvailable, canUseKandrynAgents } from "../services/modelKey.js";
+import { getPersonalPreference, platformAvailable } from "../services/modelKey.js";
+import { getWorkspaceSettings } from "../services/workspaceSettings.js";
 import { logger } from "../lib/logger.js";
 import * as audit from "../services/auditService.js";
 
@@ -23,67 +24,62 @@ router.get("/config", async (req, res): Promise<void> => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/config/agents — whose credentials this user's runs spend
+// GET /api/config/agents — the person's own preference, and what it is worth
 //
-// Its own pair of endpoints rather than a key on /api/config, because this one
-// setting needs validation, an availability check, a refusal and its own audit
-// action. Folding that into the generic credential saver would put all four
-// behind an `if (key === ...)` in a handler whose job is to store whatever it
-// is given.
+// Personal, so no admin check: this is the one agent decision a member owns.
+// What they may DO with it is a workspace matter, so the response carries the
+// workspace's two settings alongside, letting My account render the right
+// thing without a second request and without guessing.
 //
-// The response carries no key material and no environment variable name: only
-// whether the platform CAN serve this deployment.
+// No key material and no environment variable name, in either direction.
 // ---------------------------------------------------------------------------
 router.get("/config/agents", async (req, res): Promise<void> => {
-  const [source, entitled] = await Promise.all([
-    getKeySource(req.userId),
-    canUseKandrynAgents(req.userId),
+  const [preference, settings] = await Promise.all([
+    getPersonalPreference(req.userId),
+    getWorkspaceSettings(req.teamId ?? null),
   ]);
   res.json({
-    source,
+    preference,
+    allowPersonalCredentials: settings.allowPersonalCredentials,
+    workspaceSource: settings.agentKeySource,
     platformAvailable: platformAvailable(),
-    entitled,
+    hasWorkspace: req.teamId != null,
   });
 });
 
 // PUT /api/config/agents — change it
-const AgentSourceBody = z.object({ source: z.enum(["own", "kandryn"]) });
+const AgentPreferenceBody = z.object({ preference: z.enum(["own", "workspace"]) });
 
 router.put("/config/agents", async (req, res): Promise<void> => {
-  const parsed = AgentSourceBody.safeParse(req.body);
+  const parsed = AgentPreferenceBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "source must be own or kandryn" });
+    res.status(400).json({ error: "preference must be own or workspace" });
     return;
   }
-  const next = parsed.data.source;
+  const next = parsed.data.preference;
 
-  // The server refuses what the UI disables. A client that ignores
-  // platformAvailable must not be able to park a user in a mode this
-  // deployment cannot serve.
-  if (next === "kandryn") {
-    if (!platformAvailable()) {
-      res.status(409).json({ error: "Kandryn Agents is not available in this environment." });
-      return;
-    }
-    if (!(await canUseKandrynAgents(req.userId))) {
-      res.status(403).json({ error: "Kandryn Agents is not available on this account." });
+  // The server refuses what the screen hides. A member whose workspace forbids
+  // personal credentials cannot store a preference that would be ignored
+  // anyway: letting them would show a choice that does nothing.
+  if (next === "own") {
+    const settings = await getWorkspaceSettings(req.teamId ?? null);
+    if (!settings.allowPersonalCredentials) {
+      res.status(409).json({ error: "Your workspace does not allow personal credentials." });
       return;
     }
   }
 
-  const previous = await getKeySource(req.userId);
+  const previous = await getPersonalPreference(req.userId);
   await saveConfigs(req.userId, { AGENT_KEY_SOURCE: next });
-  // Its own action, not credential.set: nothing was set, and unlike a
-  // credential this value is safe to record on both sides of the change.
   audit.log({
     userId: req.userId,
     teamId: req.teamId ?? null,
     action: "agent_key_source.changed",
-    metadata: { from: previous, to: next },
+    metadata: { from: previous, to: next, scope: "personal" },
     ipAddress: audit.getIp(req),
     userAgent: req.headers["user-agent"],
   });
-  res.json({ source: next });
+  res.json({ preference: next });
 });
 
 // PUT /api/config — save one or more key→value pairs

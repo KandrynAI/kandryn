@@ -22,6 +22,37 @@ import {
 } from "@/services/api";
 
 const CRED_GROUPS: { label: string; note: string; testKey: string; fields: { key: string; label: string }[] }[] = [
+  // The two groups 0046 moved up from Personal. Agent credentials decide spend,
+  // which provider sees the code, and rotation; a repository credential that
+  // belongs to one person dies when they leave. Both are organization
+  // decisions, so both live here, admin-write and status-only for members.
+  {
+    label: "Agent A credentials",
+    note: "Used by Raptia. Only when the workspace runs on its own credentials",
+    testKey: "anthropic",
+    fields: [{ key: "ANTHROPIC_API_KEY", label: "API key" }],
+  },
+  {
+    label: "Agent B credentials",
+    note: "Used by Fovea. Only when the workspace runs on its own credentials",
+    testKey: "openai",
+    fields: [{ key: "OPENAI_API_KEY", label: "API key" }],
+  },
+  {
+    label: "Repository access",
+    note: "Commits and pull requests use this unless a member overrides it",
+    testKey: "github",
+    fields: [{ key: "GITHUB_TOKEN", label: "Personal Access Token" }],
+  },
+  {
+    label: "Repository access (Azure Repos)",
+    note: "For workspaces whose code lives in Azure Repos",
+    testKey: "azurerepos",
+    fields: [
+      { key: "AZURE_REPOS_ORG", label: "Organisation" },
+      { key: "AZURE_REPOS_TOKEN", label: "Personal Access Token" },
+    ],
+  },
   {
     label: "Jira",
     note: "Shared across all team members",

@@ -93,19 +93,18 @@ export const HELP_SECTIONS: HelpSection[] = [
     title: "Settings: credentials",
     where: { label: "Settings", href: "/settings" },
     intro:
-      "Kandryn runs on credentials you supply. Nothing in the pipeline works until these are saved.",
+      "Settings has two tabs, split by who owns the decision rather than who types the value. \"Workspace\" holds what your organization decides. \"My account\" holds only what is about you.",
     steps: [
-      "The \"Personal\" tab holds your own credentials, grouped into \"Repositories\" and \"Agents\".",
-      "Under Repositories, save a GitHub \"Personal Access Token\". It needs the repo scope. Azure Repos is the alternative if your code lives there.",
-      "Under Agents, choose who supplies the credentials Raptia and Fovea run on. \"Use my own credentials\" is the default and shows the two cards below it. \"Use Kandryn Agents\" means Kandryn supplies them and there is nothing to set up.",
-      "With \"Use my own credentials\", save \"Agent A credentials\" (used by Raptia) and \"Agent B credentials\" (used by Fovea). Each card has numbered steps and a link to the page where you create the key.",
-      "Switching to Kandryn Agents hides those two cards but does not delete anything. Your saved credentials come back, untouched, the moment you switch back.",
-      "Every card shows a pill: \"Not set\" before you save, \"Configured\" after. The bar at the top of the tab counts how many of your integrations are ready.",
-      "Use \"Test connection\" before \"Save\" where the card offers it. It tells you the credential works rather than only that it was stored.",
-      "Tracker credentials (Jira, Azure DevOps) and documentation targets (Confluence, Notion) are on the \"Team\" tab, because they are shared by everyone in the team. An admin sets those.",
+      "\"Workspace\" is where repository access, agent credentials, trackers and documentation live. Every member can read it; only an admin can change it, and a member sees the controls disabled under one amber line.",
+      "Under \"Agents\", an admin picks \"Use Kandryn Agents\" (Kandryn supplies the credentials, nothing to set up) or \"Use our own credentials\" and saves them below.",
+      "Under \"Repository access\", an admin saves the credential Kandryn commits and opens pull requests with.",
+      "\"Allow members to use their own credentials\" decides whether you may override any of that with your own. Turning it off deletes nothing: saved credentials stay, they simply stop being used.",
+      "\"My account\" shows your workspace and role, and, when the policy allows it, your own credentials. Save a personal repository token there if you want commits attributed to you rather than to the workspace.",
+      "Every card shows a pill: \"Not set\" before you save, \"Configured\" after. Use \"Test connection\" where a card offers it.",
+      "With no workspace, everything is yours: My account is the whole of Settings and behaves as it always has.",
     ],
     watchFor:
-      "Your GitHub token is the identity Kandryn commits and opens pull requests as. Whoever owns the token is the author on the branch.",
+      "A change of credential source applies to the next run. Runs already in flight finish on the credentials they started with.",
   },
   {
     id: "create-project",
@@ -279,14 +278,14 @@ export const HELP_SECTIONS: HelpSection[] = [
   {
     id: "team",
     title: "Team and roles",
-    where: { label: "Settings, Team", href: "/settings?tab=team" },
+    where: { label: "Settings, Workspace", href: "/settings?tab=workspace" },
     intro: "Two roles: member and admin.",
     steps: [
       "A member can do all the delivery work: sync a board, run agents, review, commit, scan, generate runbooks, and read the main Reports screen.",
       "An admin can additionally manage members, set the shared tracker and documentation credentials, read the audit log, and open the admin and executive reports.",
       "\"Team members\" lists everyone with their role. An admin can change a role or remove a member.",
       "\"Invite members\" sends an invite by email. A pending invite can be canceled.",
-      "Shared credentials live on this tab rather than on Personal, because they belong to the team: the tracker connection and the documentation targets for runbooks.",
+      "Shared credentials live on this tab because they belong to the organization: repository access, agent credentials, the tracker connection and the documentation targets for runbooks.",
       "An admin also sets how security findings are filed into the tracker, and how long the audit log is kept.",
     ],
   },
@@ -304,12 +303,12 @@ export const HELP_SECTIONS: HelpSection[] = [
       {
         message: "\"Add your Agent A credentials in Settings to run Veria.\" (also Aegis, Narratia)",
         meaning: "Those three agents run on the credentials saved in the Agents group.",
-        fix: "Open Settings, Personal tab, Agents group, and save \"Agent A credentials\".",
+        fix: "Open Settings, Workspace, Agents, or save your own under My account when the policy allows it.",
       },
       {
-        message: "\"Add your Raptia and Fovea credentials in Settings, or choose Use Kandryn Agents.\"",
-        meaning: "A run was refused because there is no credential to make it with, in either mode.",
-        fix: "Open Settings, Personal tab, Agents group, and either save your own credentials or select \"Use Kandryn Agents\".",
+        message: "A run refused because your workspace has no agent credentials set up",
+        meaning: "Nothing could be resolved: no personal credential, and none on the workspace either.",
+        fix: "An admin opens Settings, Workspace, Agents. A member asks an admin, since the controls are theirs.",
       },
       {
         message: "\"Kandryn Agents is not available in this environment.\"",
@@ -325,7 +324,7 @@ export const HELP_SECTIONS: HelpSection[] = [
         message: "A message that Jira or Azure DevOps is not connected",
         meaning:
           "The shared tracker credentials are missing. The app's wording points at \"Integrations\", which is now the Team tab in Settings.",
-        fix: "Ask a team admin to fill in the tracker credentials on Settings, Team tab.",
+        fix: "Ask a workspace admin to fill in the tracker credentials on Settings, Workspace.",
       },
       {
         message: "\"Could not sync from the PLM.\"",
@@ -335,7 +334,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       {
         message: "A credential error quoting GitHub, such as bad credentials",
         meaning: "Your GitHub token is invalid or expired. Tokens expire by design.",
-        fix: "Create a new Personal Access Token with the repo scope and save it in Settings.",
+        fix: "Replace it under My account, or ask an admin to update the workspace credential on Settings, Workspace, Repository access.",
       },
       {
         message: "\"Repository needs reconfiguration\"",

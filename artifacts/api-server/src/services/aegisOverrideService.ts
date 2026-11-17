@@ -10,6 +10,7 @@ import {
 import { RunError } from "./runService.js";
 import { getRunRepository } from "./repoResolver.js";
 import { getConfigs } from "./configService.js";
+import { resolveGitCreds } from "./gitToken.js";
 import { postSecurityStatus } from "./securityStatus.js";
 import { canAdminister } from "./resourceAdmin.js";
 import { logger } from "../lib/logger.js";
@@ -212,7 +213,7 @@ export async function overrideSecurityGate(
   try {
     const repo = await getRunRepository(run);
     if (repo?.url && run.commitHash) {
-      const creds = await getConfigs(actor.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+      const creds = await resolveGitCreds(actor.userId);
       const posted = await postSecurityStatus({
         repoUrl: repo.url,
         commitHash: run.commitHash,
@@ -220,7 +221,7 @@ export async function overrideSecurityGate(
         runId: run.id,
         gate: "approved",
         details: `Security gate overridden by an admin: ${cleanReason}`.slice(0, 140),
-        creds: { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN },
+        creds,
       });
       statusReposted = posted.posted;
       if (!posted.posted) {

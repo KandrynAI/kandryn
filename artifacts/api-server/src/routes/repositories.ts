@@ -18,6 +18,7 @@ import { detectStack } from "../stack/detector.js";
 import { fetchFilePaths } from "../adapters/gitService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
+import { resolveGitCreds } from "../services/gitToken.js";
 import { isGraphUsable, isGraphifyConfigured, triggerRepoIndex } from "../services/graphifyService.js";
 import { resetProfile } from "../services/uiStyleService.js";
 import * as audit from "../services/auditService.js";
@@ -124,11 +125,11 @@ router.get("/repositories/:repoId/stack", async (req, res): Promise<void> => {
     return;
   }
 
-  const gitCreds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const gitCreds = await resolveGitCreds(req.userId);
   req.log.info({ repoId: repo.id, provider: repo.provider }, "Fetching file list for stack detection");
   const filePaths = await fetchFilePaths(repo.provider, repo.url, repo.defaultBranch, {
-    githubToken: gitCreds.GITHUB_TOKEN,
-    azureReposToken: gitCreds.AZURE_REPOS_TOKEN,
+    githubToken: gitCreds.githubToken,
+    azureReposToken: gitCreds.azureReposToken,
   });
 
   const stackProfile = await detectStack(filePaths);
@@ -187,8 +188,8 @@ router.post("/repositories", async (req, res): Promise<void> => {
   // repo can never be persisted (PART 1). Azure Repos URLs are not verified.
   let verifiedBranch: string | undefined;
   if (parsed.data.provider === "github") {
-    const { GITHUB_TOKEN } = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
-    const check = await verifyGithubUrl(parsed.data.url, GITHUB_TOKEN);
+    const { githubToken } = await resolveGitCreds(req.userId);
+    const check = await verifyGithubUrl(parsed.data.url, githubToken);
     if (!check.ok) {
       res.status(400).json({ error: check.error });
       return;
@@ -208,10 +209,10 @@ router.post("/repositories", async (req, res): Promise<void> => {
     .returning();
 
   try {
-    const gitCredsConnect = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+    const gitCredsConnect = await resolveGitCreds(req.userId);
     const gitService = await GitService.forRepo(repo.id, {
-      githubToken: gitCredsConnect.GITHUB_TOKEN,
-      azureReposToken: gitCredsConnect.AZURE_REPOS_TOKEN,
+      githubToken: gitCredsConnect.githubToken,
+      azureReposToken: gitCredsConnect.azureReposToken,
     });
     req.log.info({ repoId: repo.id, stackProfile: gitService.stackProfile }, "Stack detected on connect");
   } catch (err) {
@@ -226,8 +227,8 @@ router.post("/repositories", async (req, res): Promise<void> => {
   // Trigger async Graphify indexing if the microservice is configured
   // (Phase 2). Fire-and-forget — never blocks the response.
   if (isGraphifyConfigured() && updated.url) {
-    const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
-    triggerRepoIndex({ repoUrl: updated.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: updated.id, log: req.log });
+    const cfg = await resolveGitCreds(req.userId);
+    triggerRepoIndex({ repoUrl: updated.url, githubToken: cfg.githubToken ?? "", repoId: updated.id, log: req.log });
   }
 
   audit.log({
@@ -317,8 +318,8 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
   // Verify a changed GitHub URL by existence before saving (PART 1).
   let verifiedBranch: string | undefined;
   if (urlChanged && provider === "github") {
-    const { GITHUB_TOKEN } = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
-    const check = await verifyGithubUrl(parsed.data.url as string, GITHUB_TOKEN);
+    const { githubToken } = await resolveGitCreds(req.userId);
+    const check = await verifyGithubUrl(parsed.data.url as string, githubToken);
     if (!check.ok) {
       res.status(400).json({ error: check.error });
       return;
@@ -366,10 +367,10 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
   // stackProfile cleared above, GitService.forRepo re-runs detection.
   if (urlChanged) {
     try {
-      const creds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+      const creds = await resolveGitCreds(req.userId);
       await GitService.forRepo(repo.id, {
-        githubToken: creds.GITHUB_TOKEN,
-        azureReposToken: creds.AZURE_REPOS_TOKEN,
+        githubToken: creds.githubToken,
+        azureReposToken: creds.azureReposToken,
       });
       // Self-heal: if the graph microservice is configured, kick a rebuild so the
       // graph refreshes against the new URL (triggerRepoIndex flips status
@@ -377,7 +378,7 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
       // — retrieval already refuses the stale graph — so an unconfigured service
       // simply leaves it `stale` until a manual rebuild/upload.
       if (existing.graphBuiltAt != null && isGraphifyConfigured() && repo.url) {
-        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: req.log });
+        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.githubToken ?? "", repoId: repo.id, log: req.log });
       }
     } catch (err) {
       req.log.warn({ repoId: repo.id, err }, "Stack re-detection after URL change failed");
@@ -492,8 +493,8 @@ router.post("/repositories/:repoId/graph/rebuild", async (req, res): Promise<voi
     return;
   }
 
-  const cfg = await getConfigs(req.userId, ["GITHUB_TOKEN"]);
-  triggerRepoIndex({ repoUrl: repo.url, githubToken: cfg.GITHUB_TOKEN ?? "", repoId: repo.id, log: req.log });
+  const cfg = await resolveGitCreds(req.userId);
+  triggerRepoIndex({ repoUrl: repo.url, githubToken: cfg.githubToken ?? "", repoId: repo.id, log: req.log });
   req.log.info({ repoId: repo.id }, "Graphify rebuild triggered");
   res.status(202).json({ status: "indexing", message: "Rebuild started — the graph will update shortly." });
 });

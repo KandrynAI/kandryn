@@ -3,7 +3,8 @@ import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db, runsTable, runEventsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { executeRun, commitFromSuggestion, reviseAndRegenerate, regenerateCurrentPlan, approvePlan, rejectPlan, RunError } from "../services/runService.js";
-import { resolveModelKey, resolveModelKeys, kandrynRunsToday, dailyRunCap, NO_MODEL_KEY_MESSAGE } from "../services/modelKey.js";
+import { resolveModelKey, resolveModelKeys, kandrynRunsToday, dailyRunCap, noModelKeyMessage } from "../services/modelKey.js";
+import { resolveGitCreds } from "../services/gitToken.js";
 import { loadRunPlanDTO } from "../services/planningService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
@@ -180,16 +181,17 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
   // a key that is revoked between this check and the call.
   //
   // Resolved through req.userId, who is also the row's userId below.
-  const runKeys = await resolveModelKeys(req.userId, null);
+  const runKeys = await resolveModelKeys(req.userId);
+  const runGit = await resolveGitCreds(req.userId);
   if (!runKeys.anthropic && !runKeys.openai) {
-    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
+    res.status(424).json({ error: noModelKeyMessage(req.teamRole === "admin") });
     return;
   }
 
   // Kandryn-funded runs spend the platform's money, so the brake exists from
   // the start even though it is off by default (KANDRYN_AGENTS_DAILY_RUN_CAP).
   if (runKeys.source === "kandryn") {
-    const used = await kandrynRunsToday(req.userId);
+    const used = await kandrynRunsToday(req.userId, req.teamId ?? null);
     const cap = dailyRunCap();
     if (used != null && cap > 0 && used >= cap) {
       res.status(429).json({
@@ -243,6 +245,9 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
         // reporting can separate Kandryn-funded work later, and so a change of
         // preference mid-flight cannot rewrite history. The source only.
         agentKeySource: runKeys.source,
+        // The git token this run will commit with, resolved and stamped beside
+        // the model source. Both are the source only, never a credential.
+        githubSource: runGit.source,
         parentRunId: parentRunId ?? null,
         triggerContext: triggerContext ?? null,
       })
@@ -571,8 +576,8 @@ router.get("/runs/:id/tree", async (req, res): Promise<void> => {
     res.json({ paths: [] });
     return;
   }
-  const creds = await getConfigs(run.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
-  const git = await GitService.forRepo(repo.id, { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN });
+  const creds = await resolveGitCreds(run.userId);
+  const git = await GitService.forRepo(repo.id, creds);
   const paths = await git.fetchFilePaths();
   res.json({ paths });
 });
@@ -960,10 +965,10 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
 
   // Resolved through req.userId, as before: whoever presses the button on a
   // committed change funds that call. Only the SOURCE of the key is new.
-  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  const agentKey = await resolveModelKey(req.userId, "anthropic");
   if (!agentKey.key) {
     await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
-    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
+    res.status(424).json({ error: noModelKeyMessage(req.teamRole === "admin") });
     return;
   }
 
@@ -1053,9 +1058,9 @@ router.post("/runs/:id/remediation-draft", async (req, res): Promise<void> => {
     return;
   }
 
-  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  const agentKey = await resolveModelKey(req.userId, "anthropic");
   if (!agentKey.key) {
-    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
+    res.status(424).json({ error: noModelKeyMessage(req.teamRole === "admin") });
     return;
   }
 
@@ -1146,11 +1151,11 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
   // deprecated projects.repository_id.
   const repo = await getRunRepository(run);
 
-  const creds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
-  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  const creds = await resolveGitCreds(req.userId);
+  const agentKey = await resolveModelKey(req.userId, "anthropic");
   if (!agentKey.key) {
     await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
-    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
+    res.status(424).json({ error: noModelKeyMessage(req.teamRole === "admin") });
     return;
   }
 
@@ -1266,7 +1271,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
         runId: run.id,
         gate: scan.gateDecision,
         details: gateDesc,
-        creds: { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN },
+        creds,
       });
       if (!posted.posted) {
         // The scan itself stands; only the external signal is missing. Logged
@@ -1412,11 +1417,11 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
   // deprecated projects.repository_id.
   const repo = await getRunRepository(run);
 
-  const creds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
-  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  const creds = await resolveGitCreds(req.userId);
+  const agentKey = await resolveModelKey(req.userId, "anthropic");
   if (!agentKey.key) {
     await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
-    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
+    res.status(424).json({ error: noModelKeyMessage(req.teamRole === "admin") });
     return;
   }
 
@@ -1478,7 +1483,7 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
         branchName,
         repoId: repo.id,
         repoUrl: repo.url,
-        creds: { githubToken: creds.GITHUB_TOKEN, azureReposToken: creds.AZURE_REPOS_TOKEN },
+        creds,
       });
       pushedUrl = push?.url ?? null;
     } else if (target === "confluence") {
@@ -1701,7 +1706,7 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
           triggerContext: "remediation",
           // Same stamp as an ordinary run. The remediation belongs to the user
           // who asked for it, so it is funded the way their other runs are.
-          agentKeySource: (await resolveModelKeys(req.userId, null)).source,
+          agentKeySource: (await resolveModelKeys(req.userId)).source,
           parentRunId: runId,
           refinePrompt: buildRemediationPrompt(finding),
           autoCommit: false,

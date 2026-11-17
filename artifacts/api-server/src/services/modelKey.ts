@@ -27,13 +27,15 @@
  * is the same shape here.
  */
 
-import { and, count, eq, gte } from "drizzle-orm";
-import { db, runsTable } from "@workspace/db";
-import { getConfig, type ConfigKey } from "./configService.js";
+import { and, count, eq, gte, inArray } from "drizzle-orm";
+import { db, runsTable, teamMembersTable } from "@workspace/db";
+import { getConfig, getTeamConfig, type ConfigKey } from "./configService.js";
+import { getWorkspaceSettings, type WorkspaceSettings } from "./workspaceSettings.js";
+import { getTeamForUser } from "./teamService.js";
 import {
-  DEFAULT_AGENT_KEY_SOURCE,
-  isAgentKeySource,
-  type AgentKeySource,
+  readPersonalPreference,
+  type PersonalAgentPreference,
+  type RunKeySource,
 } from "../../../../shared/types/agentKey.js";
 
 export type ModelProvider = "anthropic" | "openai";
@@ -58,7 +60,7 @@ export interface ResolvedKey {
   /** The credential to hand a provider client, or undefined when there is none. */
   key: string | undefined;
   /** Which party's credential this is. Recorded on the run, never a key. */
-  source: AgentKeySource;
+  source: RunKeySource;
 }
 
 function platformKey(provider: ModelProvider): string | undefined {
@@ -88,72 +90,97 @@ export async function canUseKandrynAgents(_userId: string): Promise<boolean> {
   return true;
 }
 
-/** The user's stored preference, defaulting to today's behaviour. */
-export async function getKeySource(userId: string): Promise<AgentKeySource> {
-  const stored = await getConfig(userId, "AGENT_KEY_SOURCE");
-  return isAgentKeySource(stored) ? stored : DEFAULT_AGENT_KEY_SOURCE;
+/** The person's own preference. The only thing about this they control. */
+export async function getPersonalPreference(userId: string): Promise<PersonalAgentPreference> {
+  return readPersonalPreference(await getConfig(userId, "AGENT_KEY_SOURCE"));
 }
 
 /**
- * The effective source for a user: their preference, downgraded to `own` when
- * the platform cannot actually serve it.
+ * Which party funds this work, decided with nothing to read.
  *
- * Downgrading rather than failing is deliberate. A deployment that loses its
- * platform keys should fall back to the credentials the user still has saved
- * (B2 keeps them untouched), not refuse every run until someone notices a
- * missing environment variable.
+ * The order is the whole policy, and it reads in the order a person would
+ * argue it: a personal override wins if the workspace permits one AND the
+ * person asked for it AND they actually have credentials; otherwise the
+ * workspace's own choice applies.
+ *
+ * `hasPersonalKeys` is part of the FIRST condition rather than a fallback
+ * after it. A person who prefers their own keys but saved none should get the
+ * workspace's credentials, not a failure: their preference describes what they
+ * want when they can have it, not a refusal of everything else.
  */
-export async function effectiveSource(userId: string): Promise<AgentKeySource> {
-  const [preferred, entitled] = await Promise.all([getKeySource(userId), canUseKandrynAgents(userId)]);
-  return chooseSource(preferred, platformAvailable(), entitled);
-}
-
-/**
- * The decision itself, with nothing to read. Split out for the reason
- * confidenceScore.ts is split from confidence.ts: the rule is the part worth
- * proving, and proving it should not need a database.
- */
-export function chooseSource(
-  preferred: AgentKeySource,
-  platformOk: boolean,
-  entitled: boolean,
-): AgentKeySource {
-  if (preferred !== "kandryn") return "own";
-  return platformOk && entitled ? "kandryn" : "own";
+export function chooseSource(input: {
+  settings: WorkspaceSettings;
+  preference: PersonalAgentPreference;
+  hasPersonalKeys: boolean;
+  platformOk: boolean;
+  entitled: boolean;
+}): RunKeySource {
+  const { settings, preference, hasPersonalKeys, platformOk, entitled } = input;
+  if (settings.allowPersonalCredentials && preference === "own" && hasPersonalKeys) return "personal";
+  if (settings.agentKeySource === "kandryn" && platformOk && entitled) return "kandryn";
+  // A workspace that chose Kandryn in an environment that cannot serve it falls
+  // back to its own credentials rather than failing outright, the same way a
+  // person who cannot have their override falls back to the workspace.
+  return "workspace";
 }
 
 /**
  * Resolve one provider's credential for the user who owns the work.
  *
- * `teamId` keeps the team-first resolution `getConfigs` already does for the
- * own-key path (0017). It has no effect in `kandryn` mode: a team cannot share
- * the platform's credentials, it either has them or it does not.
+ * Reads the two scopes separately rather than through `getConfig(.., teamId)`,
+ * which resolves team-FIRST: here a personal credential is an override the
+ * workspace permits, not a fallback the workspace shadows.
  */
 export async function resolveModelKey(
   ownerUserId: string,
-  teamId: number | null | undefined,
   provider: ModelProvider,
 ): Promise<ResolvedKey> {
-  const source = await effectiveSource(ownerUserId);
-  if (source === "kandryn") return { key: platformKey(provider), source };
-  const own = await getConfig(ownerUserId, USER_KEY[provider], teamId ?? null);
-  return { key: own || undefined, source: "own" };
+  const both = await resolveModelKeys(ownerUserId);
+  return { key: provider === "anthropic" ? both.anthropic : both.openai, source: both.source };
 }
 
-/** Both providers in one read, for the paths that run Raptia and Fovea together. */
+/** Both providers in one pass. One decision covers both agents, by design. */
 export async function resolveModelKeys(
   ownerUserId: string,
-  teamId: number | null | undefined,
-): Promise<{ anthropic: string | undefined; openai: string | undefined; source: AgentKeySource }> {
-  const source = await effectiveSource(ownerUserId);
+): Promise<{ anthropic: string | undefined; openai: string | undefined; source: RunKeySource }> {
+  // Derived, not passed: see the note in gitToken.resolveGitCreds.
+  const teamId = (await getTeamForUser(ownerUserId))?.team.id ?? null;
+  const [settings, preference, entitled, personalA, personalO] = await Promise.all([
+    getWorkspaceSettings(teamId),
+    getPersonalPreference(ownerUserId),
+    canUseKandrynAgents(ownerUserId),
+    getConfig(ownerUserId, USER_KEY.anthropic),
+    getConfig(ownerUserId, USER_KEY.openai),
+  ]);
+
+  const source = chooseSource({
+    settings,
+    preference,
+    // Either agent is enough to count as "has credentials": a person with only
+    // one saved is in exactly the position generation already tolerates, where
+    // one agent answers and the other is recorded as failed.
+    hasPersonalKeys: Boolean(personalA || personalO),
+    platformOk: platformAvailable(),
+    entitled,
+  });
+
+  if (source === "personal") {
+    return { anthropic: personalA || undefined, openai: personalO || undefined, source };
+  }
   if (source === "kandryn") {
     return { anthropic: platformKey("anthropic"), openai: platformKey("openai"), source };
   }
-  const [anthropic, openai] = await Promise.all([
-    getConfig(ownerUserId, "ANTHROPIC_API_KEY", teamId ?? null),
-    getConfig(ownerUserId, "OPENAI_API_KEY", teamId ?? null),
+  if (teamId == null) {
+    // No workspace to read credentials from. Everything this person has is
+    // personal, so hand it back under its true name rather than claiming a
+    // workspace source for keys no workspace owns.
+    return { anthropic: personalA || undefined, openai: personalO || undefined, source: "personal" };
+  }
+  const [workspaceA, workspaceO] = await Promise.all([
+    getTeamConfig(teamId, USER_KEY.anthropic),
+    getTeamConfig(teamId, USER_KEY.openai),
   ]);
-  return { anthropic: anthropic || undefined, openai: openai || undefined, source: "own" };
+  return { anthropic: workspaceA || undefined, openai: workspaceO || undefined, source };
 }
 
 /**
@@ -162,8 +189,22 @@ export async function resolveModelKeys(
  * Names the screen that exists ("Settings", not "Integrations") and the option
  * by its real label, and names no vendor.
  */
-export const NO_MODEL_KEY_MESSAGE =
-  "Add your Raptia and Fovea credentials in Settings, or choose Use Kandryn Agents.";
+export const NO_MODEL_KEY_MESSAGE_ADMIN =
+  "Set up agent credentials in Settings, Workspace, Agents.";
+export const NO_MODEL_KEY_MESSAGE_MEMBER =
+  "Your workspace admin has not set up agent credentials. Ask an admin to open Settings, Workspace, Agents.";
+
+/**
+ * The message a person sees when nothing could be resolved.
+ *
+ * Two versions, because telling a member to go and fix a workspace setting
+ * they cannot reach is worse than telling them nothing: they go looking,
+ * find the controls disabled, and file a bug. An admin gets the instruction;
+ * everyone else gets told who to ask.
+ */
+export function noModelKeyMessage(isAdmin: boolean): string {
+  return isAdmin ? NO_MODEL_KEY_MESSAGE_ADMIN : NO_MODEL_KEY_MESSAGE_MEMBER;
+}
 
 /**
  * Per-user daily ceiling on Kandryn-funded runs. Platform keys spend Kandryn's
@@ -183,19 +224,26 @@ export function dailyRunCap(): number {
  * How many Kandryn-funded runs this user has created since midnight UTC.
  * Returns null when no cap is configured, so the caller can skip the query.
  */
-export async function kandrynRunsToday(userId: string): Promise<number | null> {
+export async function kandrynRunsToday(
+  userId: string,
+  teamId: number | null | undefined,
+): Promise<number | null> {
   if (dailyRunCap() === 0) return null;
   const midnight = new Date();
   midnight.setUTCHours(0, 0, 0, 0);
+  // Per WORKSPACE, because the workspace is what chose to spend Kandryn's
+  // money: a per-user cap on a shared decision would let a ten-person team
+  // spend ten times what a one-person team can. With no workspace the user is
+  // the only possible unit, so it falls back to them.
+  const scope = teamId == null
+    ? eq(runsTable.userId, userId)
+    : inArray(
+        runsTable.userId,
+        db.select({ u: teamMembersTable.userId }).from(teamMembersTable).where(eq(teamMembersTable.teamId, teamId)),
+      );
   const [row] = await db
     .select({ n: count() })
     .from(runsTable)
-    .where(
-      and(
-        eq(runsTable.userId, userId),
-        eq(runsTable.agentKeySource, "kandryn"),
-        gte(runsTable.createdAt, midnight),
-      ),
-    );
+    .where(and(scope, eq(runsTable.agentKeySource, "kandryn"), gte(runsTable.createdAt, midnight)));
   return row?.n ?? 0;
 }

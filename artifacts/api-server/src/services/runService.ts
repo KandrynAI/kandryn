@@ -36,6 +36,7 @@ import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js"
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { getConfigs } from "./configService.js";
 import { resolveModelKeys } from "./modelKey.js";
+import { resolveGitCreds } from "./gitToken.js";
 import { sendRunCompleted, sendRunFailed, sendRunParked } from "./emailService.js";
 import { confidenceReason } from "./confidence.js";
 import { recordOverrideOutcome } from "./sequenceGate.js";
@@ -417,15 +418,12 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     emit({ agent: "system", type: "stage.started", data: { stage: "context" } });
     if (stackDesc) emit({ agent: "system", type: "context.read", data: { kind: "stack_profile" } });
 
-    const creds = await getConfigs(userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+    const creds = await resolveGitCreds(userId);
     // Agent credentials come from the resolver, never from the config store
     // directly, and are resolved through `userId` — the run's owner, not
     // whoever triggered or approved it. See services/modelKey.ts.
     //
-    // teamId is null because the call this replaced passed no team either:
-    // generation has always read the owner's personal keys. Widening that to
-    // team-first resolution is a real behaviour change and not this PR's.
-    const modelKeys = await resolveModelKeys(userId, null);
+    const modelKeys = await resolveModelKeys(userId);
 
     const effectiveDescription = run.refinePrompt
       ? `${workItem.description ?? ""}\n\nRefinement request: ${run.refinePrompt}`
@@ -436,8 +434,8 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     let usedGraphContext = false;
     try {
       const git = await GitService.forRepo(repo.id, {
-        githubToken: creds.GITHUB_TOKEN,
-        azureReposToken: creds.AZURE_REPOS_TOKEN,
+        githubToken: creds.githubToken,
+        azureReposToken: creds.azureReposToken,
       });
       // Use the Graphify graph for precise, low-token context when one is loaded,
       // current, and its build succeeded (a stale graph — URL changed since the
@@ -473,8 +471,8 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     let coherenceGit: { fetchFilePaths: () => Promise<string[]>; fetchFileWithSha: FileReader } | undefined;
     try {
       const gitRead = await GitService.forRepo(repo.id, {
-        githubToken: creds.GITHUB_TOKEN,
-        azureReposToken: creds.AZURE_REPOS_TOKEN,
+        githubToken: creds.githubToken,
+        azureReposToken: creds.azureReposToken,
       });
       fileReader = (path) => gitRead.fetchFileWithSha(path);
       coherenceGit = { fetchFilePaths: () => gitRead.fetchFilePaths(), fetchFileWithSha: (p) => gitRead.fetchFileWithSha(p) };
@@ -567,8 +565,8 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
       emit({ agent: "system", type: "stage.started", data: { stage: "plan" } });
       try {
         const gitPlan = await GitService.forRepo(repo.id, {
-          githubToken: creds.GITHUB_TOKEN,
-          azureReposToken: creds.AZURE_REPOS_TOKEN,
+          githubToken: creds.githubToken,
+          azureReposToken: creds.azureReposToken,
         });
         const tree = await gitPlan.fetchFilePaths();
         // Pass the RAW graph + its status/build time; runPlanning owns the
@@ -767,8 +765,8 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         const commitStart = Date.now();
         emit({ agent: "system", type: "stage.started", data: { stage: "commit" } });
         const git = await GitService.forRepo(repo.id, {
-          githubToken: creds.GITHUB_TOKEN,
-          azureReposToken: creds.AZURE_REPOS_TOKEN,
+          githubToken: creds.githubToken,
+          azureReposToken: creds.azureReposToken,
         });
         // Re-check staleness against the current branch before committing (1.5).
         const resolved = await resolveCommitFiles(top.files, (p) => git.fetchFileWithSha(p));
@@ -794,7 +792,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         await db.update(tasksTable).set({ status: "review", linkedCommit: commitHash }).where(eq(tasksTable.id, workItem.id));
         // The repo changed — schedule a Graphify re-index so future runs use a
         // fresh graph (Phase 3). Fire-and-forget; no-op if unconfigured.
-        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
+        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.githubToken ?? "", repoId: repo.id, log: logger });
         // A committed styling change means the stored UI style profile no
         // longer describes the repository (0042). Fire-and-forget, and never a
         // re-extraction: the tab offers Re-extract and a human decides.
@@ -1029,10 +1027,10 @@ export async function commitFromSuggestion(
   if (!repo) throw new RunError("No repository is connected to this run's project.", 422);
   if (!repo.url) throw new RunError("Repository needs reconfiguration — set a valid repository URL and try again.", 400);
 
-  const creds = await getConfigs(userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const creds = await resolveGitCreds(userId);
   const git = await GitService.forRepo(repo.id, {
-    githubToken: creds.GITHUB_TOKEN,
-    azureReposToken: creds.AZURE_REPOS_TOKEN,
+    githubToken: creds.githubToken,
+    azureReposToken: creds.azureReposToken,
   });
   // Re-check staleness against the current branch before committing (1.5).
   const resolved = await resolveCommitFiles(sugFiles, (p) => git.fetchFileWithSha(p));
@@ -1062,7 +1060,7 @@ export async function commitFromSuggestion(
     .set({ prUrl, commitHash, committedSuggestionId: sug.id })
     .where(eq(runsTable.id, runId));
   // The repo changed — schedule a Graphify re-index (Phase 3). Fire-and-forget.
-  triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.GITHUB_TOKEN ?? "", repoId: repo.id, log: logger });
+  triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.githubToken ?? "", repoId: repo.id, log: logger });
   markStaleIfStyling(run.projectId, resolved.files.map((f) => f.path));
   recordOverrideOutcome(runId, "committed", { autoCommit: false });
   return { commitHash, prUrl };
@@ -1096,13 +1094,12 @@ async function regenerateFromPlan(
     const repo = await getRunRepository(run);
     if (!repo) throw new Error("No repository is connected to this run's project.");
     const stack = repo.stackProfile as StackProfile;
-    const creds = await getConfigs(run.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
-    // Personal-only, matching the call this replaced (see executeRun).
-    const modelKeys = await resolveModelKeys(run.userId, null);
+    const creds = await resolveGitCreds(run.userId);
+    const modelKeys = await resolveModelKeys(run.userId);
 
     const git = await GitService.forRepo(repo.id, {
-      githubToken: creds.GITHUB_TOKEN,
-      azureReposToken: creds.AZURE_REPOS_TOKEN,
+      githubToken: creds.githubToken,
+      azureReposToken: creds.azureReposToken,
     });
     const fileReader: FileReader = (p) => git.fetchFileWithSha(p);
     const tree = await git.fetchFilePaths();
