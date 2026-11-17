@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db, runsTable, runEventsTable, tasksTable, suggestionsTable, projectsTable } from "@workspace/db";
 import { z } from "zod/v4";
 import { executeRun, commitFromSuggestion, reviseAndRegenerate, regenerateCurrentPlan, approvePlan, rejectPlan, RunError } from "../services/runService.js";
+import { resolveModelKey, resolveModelKeys, kandrynRunsToday, dailyRunCap, NO_MODEL_KEY_MESSAGE } from "../services/modelKey.js";
 import { loadRunPlanDTO } from "../services/planningService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
@@ -171,6 +172,33 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
     }
   }
 
+  // --- Credentials -----------------------------------------------------------
+  // Generation never pre-checked a key: it started, both agents failed at the
+  // provider, and the run ended "No agent produced a suggestion" with no clue
+  // what to do. Refusing here means the run dialog shows the remedy and no
+  // empty run row is created. The in-run failure path stays as a backstop for
+  // a key that is revoked between this check and the call.
+  //
+  // Resolved through req.userId, who is also the row's userId below.
+  const runKeys = await resolveModelKeys(req.userId, null);
+  if (!runKeys.anthropic && !runKeys.openai) {
+    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
+    return;
+  }
+
+  // Kandryn-funded runs spend the platform's money, so the brake exists from
+  // the start even though it is off by default (KANDRYN_AGENTS_DAILY_RUN_CAP).
+  if (runKeys.source === "kandryn") {
+    const used = await kandrynRunsToday(req.userId);
+    const cap = dailyRunCap();
+    if (used != null && cap > 0 && used >= cap) {
+      res.status(429).json({
+        error: "You have reached today's limit for runs on Kandryn Agents. Add your own credentials in Settings, or try again tomorrow.",
+      });
+      return;
+    }
+  }
+
   // --- Run-order gate (Sequence Guard, 0038) --------------------------------
   // An Aegis remediation is exempt: it exists to fix something already on the
   // default branch, so making it wait behind the ordinary queue would leave a
@@ -211,6 +239,10 @@ router.post("/work-items/:id/runs", async (req, res): Promise<void> => {
         autoCommit,
         scheduledAt: when,
         runByUserId: req.userId,
+        // Whose credentials this run will spend. Recorded at creation so cost
+        // reporting can separate Kandryn-funded work later, and so a change of
+        // preference mid-flight cannot rewrite history. The source only.
+        agentKeySource: runKeys.source,
         parentRunId: parentRunId ?? null,
         triggerContext: triggerContext ?? null,
       })
@@ -926,10 +958,12 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
     ? workItem.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
     : [];
 
-  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY"]);
-  if (!creds.ANTHROPIC_API_KEY) {
+  // Resolved through req.userId, as before: whoever presses the button on a
+  // committed change funds that call. Only the SOURCE of the key is new.
+  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  if (!agentKey.key) {
     await db.update(runsTable).set({ reviewStatus: "failed" }).where(eq(runsTable.id, runId));
-    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Veria." });
+    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
     return;
   }
 
@@ -953,7 +987,7 @@ router.post("/runs/:id/review", async (req, res): Promise<void> => {
         suggestionAgent: suggestion.agent,
         files: veriaFiles,
       },
-      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+      { anthropicApiKey: agentKey.key },
     );
 
     await db.update(runsTable).set({ review, reviewStatus: "done" }).where(eq(runsTable.id, runId));
@@ -1019,9 +1053,9 @@ router.post("/runs/:id/remediation-draft", async (req, res): Promise<void> => {
     return;
   }
 
-  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY"]);
-  if (!creds.ANTHROPIC_API_KEY) {
-    res.status(424).json({ error: "Add your Anthropic API key in Integrations to draft a remediation prompt." });
+  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  if (!agentKey.key) {
+    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
     return;
   }
 
@@ -1033,7 +1067,7 @@ router.post("/runs/:id/remediation-draft", async (req, res): Promise<void> => {
   try {
     const draft = await buildVeriaRemediationDraft(
       { itemTitle: workItem?.title ?? "Untitled work item", review: run.review },
-      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+      { anthropicApiKey: agentKey.key },
     );
     res.status(200).json({ draft });
   } catch (err) {
@@ -1112,10 +1146,11 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
   // deprecated projects.repository_id.
   const repo = await getRunRepository(run);
 
-  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
-  if (!creds.ANTHROPIC_API_KEY) {
+  const creds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  if (!agentKey.key) {
     await db.update(runsTable).set({ securityScanStatus: "failed", securityGate: null }).where(eq(runsTable.id, runId));
-    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Aegis." });
+    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
     return;
   }
 
@@ -1137,7 +1172,7 @@ router.post("/runs/:id/security", async (req, res): Promise<void> => {
         files: scanFiles,
         stackDesc: run.stackDesc ?? undefined,
       },
-      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+      { anthropicApiKey: agentKey.key },
     );
 
     // File PLM tickets for High/Critical findings (best-effort; never fatal).
@@ -1377,10 +1412,11 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
   // deprecated projects.repository_id.
   const repo = await getRunRepository(run);
 
-  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
-  if (!creds.ANTHROPIC_API_KEY) {
+  const creds = await getConfigs(req.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  if (!agentKey.key) {
     await db.update(runsTable).set({ runbookStatus: "failed" }).where(eq(runsTable.id, runId));
-    res.status(424).json({ error: "Add your Anthropic API key in Integrations to run Narratia." });
+    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
     return;
   }
 
@@ -1431,7 +1467,7 @@ router.post("/runs/:id/runbook", async (req, res): Promise<void> => {
         testCases: testCases.length ? testCases : undefined,
         target,
       },
-      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+      { anthropicApiKey: agentKey.key },
     );
 
     let pushedUrl: string | null = null;
@@ -1663,6 +1699,9 @@ router.post("/runs/:id/security/remediate", async (req, res): Promise<void> => {
           scheduledAt: new Date(),
           trigger: "scheduled",
           triggerContext: "remediation",
+          // Same stamp as an ordinary run. The remediation belongs to the user
+          // who asked for it, so it is funded the way their other runs are.
+          agentKeySource: (await resolveModelKeys(req.userId, null)).source,
           parentRunId: runId,
           refinePrompt: buildRemediationPrompt(finding),
           autoCommit: false,

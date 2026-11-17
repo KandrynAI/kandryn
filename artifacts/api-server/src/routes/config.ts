@@ -10,6 +10,7 @@ import {
   type ConfigKey,
 } from "../services/configService.js";
 import { getUserRole } from "../services/teamService.js";
+import { getKeySource, platformAvailable, canUseKandrynAgents } from "../services/modelKey.js";
 import { logger } from "../lib/logger.js";
 import * as audit from "../services/auditService.js";
 
@@ -19,6 +20,70 @@ const router: IRouter = Router();
 router.get("/config", async (req, res): Promise<void> => {
   const configs = await getAllConfigs(req.userId);
   res.json(configs);
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/config/agents — whose credentials this user's runs spend
+//
+// Its own pair of endpoints rather than a key on /api/config, because this one
+// setting needs validation, an availability check, a refusal and its own audit
+// action. Folding that into the generic credential saver would put all four
+// behind an `if (key === ...)` in a handler whose job is to store whatever it
+// is given.
+//
+// The response carries no key material and no environment variable name: only
+// whether the platform CAN serve this deployment.
+// ---------------------------------------------------------------------------
+router.get("/config/agents", async (req, res): Promise<void> => {
+  const [source, entitled] = await Promise.all([
+    getKeySource(req.userId),
+    canUseKandrynAgents(req.userId),
+  ]);
+  res.json({
+    source,
+    platformAvailable: platformAvailable(),
+    entitled,
+  });
+});
+
+// PUT /api/config/agents — change it
+const AgentSourceBody = z.object({ source: z.enum(["own", "kandryn"]) });
+
+router.put("/config/agents", async (req, res): Promise<void> => {
+  const parsed = AgentSourceBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "source must be own or kandryn" });
+    return;
+  }
+  const next = parsed.data.source;
+
+  // The server refuses what the UI disables. A client that ignores
+  // platformAvailable must not be able to park a user in a mode this
+  // deployment cannot serve.
+  if (next === "kandryn") {
+    if (!platformAvailable()) {
+      res.status(409).json({ error: "Kandryn Agents is not available in this environment." });
+      return;
+    }
+    if (!(await canUseKandrynAgents(req.userId))) {
+      res.status(403).json({ error: "Kandryn Agents is not available on this account." });
+      return;
+    }
+  }
+
+  const previous = await getKeySource(req.userId);
+  await saveConfigs(req.userId, { AGENT_KEY_SOURCE: next });
+  // Its own action, not credential.set: nothing was set, and unlike a
+  // credential this value is safe to record on both sides of the change.
+  audit.log({
+    userId: req.userId,
+    teamId: req.teamId ?? null,
+    action: "agent_key_source.changed",
+    metadata: { from: previous, to: next },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
+  res.json({ source: next });
 });
 
 // PUT /api/config — save one or more key→value pairs

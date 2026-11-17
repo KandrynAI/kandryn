@@ -1,4 +1,5 @@
 import { pgTable, serial, text, integer, bigint, boolean, timestamp, index, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
@@ -177,6 +178,15 @@ export const runsTable = pgTable(
      * column and for runs whose pack came out empty.
      */
     contextManifest: jsonb("context_manifest").$type<PersistedContextManifest | null>().default(null),
+    /**
+     * Whose model credentials this run spent: "own" (the user's keys) or
+     * "kandryn" (the platform's). Stamped at creation from the run OWNER's
+     * preference, so a team admin approving someone else's parked plan cannot
+     * move the cost. Null for runs created before the column existed.
+     *
+     * The source only. A key, or any fragment of one, never reaches this table.
+     */
+    agentKeySource: text("agent_key_source").$type<"own" | "kandryn" | null>().default(null),
     // Human-readable stack this run targeted, e.g. "react · nodejs · postgresql"
     // (0013_run_stack.sql). Null for runs created before the column existed.
     stackDesc: text("stack_desc"),
@@ -234,6 +244,13 @@ export const runsTable = pgTable(
     index("runs_user_id_idx").on(t.userId),
     // Dispatcher query: scheduled runs that are due, ordered by time.
     index("runs_status_scheduled_idx").on(t.status, t.scheduledAt),
+    // Kandryn-funded runs for one user in a window: the daily cap counts on it,
+    // and cost reporting will read it. Declared here as well as in 0045 because
+    // drizzle-kit push DROPS an index it cannot see in the schema (the 0041
+    // pitfall), silently.
+    index("runs_agent_key_source_idx")
+      .on(t.userId, t.createdAt)
+      .where(sql`agent_key_source = 'kandryn'`),
   ],
 );
 

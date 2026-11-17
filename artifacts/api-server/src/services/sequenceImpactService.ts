@@ -10,6 +10,7 @@ import {
   sequenceChecksTable,
 } from "@workspace/db";
 import { getConfigs } from "./configService.js";
+import { resolveModelKey } from "./modelKey.js";
 import { getProjectRepository } from "./repoResolver.js";
 import { fetchPullRequestState, type PullRequestState } from "./pullRequestState.js";
 import { SequenceError, type SequenceActor } from "./sequenceService.js";
@@ -64,9 +65,11 @@ export async function buildImpact(checkId: number, actor: SequenceActor): Promis
 
   try {
     facts = await assembleFacts({ item, project, findings, actor });
-    const creds = await getConfigs(actor.userId, ["ANTHROPIC_API_KEY"], project.teamId);
-    if (creds.ANTHROPIC_API_KEY) {
-      const narrative = await narrate(facts, itemKey, findings, creds.ANTHROPIC_API_KEY);
+    // The one call site that resolved team-first, and it still does: the
+    // resolver takes the same teamId the getConfigs call did.
+    const agentKey = await resolveModelKey(actor.userId, project.teamId, "anthropic");
+    if (agentKey.key) {
+      const narrative = await narrate(facts, itemKey, findings, agentKey.key);
       if (narrative) impact = narrative;
     }
   } catch (err) {

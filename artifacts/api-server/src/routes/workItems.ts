@@ -6,6 +6,7 @@ import { getConfigs } from "../services/configService.js";
 import { getProjectRepository } from "../services/repoResolver.js";
 import { PLMService } from "../services/plmService.js";
 import { generateBreakdown, AIFormatError } from "../services/aiService.js";
+import { resolveModelKey, NO_MODEL_KEY_MESSAGE } from "../services/modelKey.js";
 import { createPlmWorkItem, type CreatableType, type PlmProvider } from "../services/plmWrite.js";
 import { PlmError } from "../services/plmProjects.js";
 import type { StackProfile } from "../stack/detector.js";
@@ -121,9 +122,9 @@ router.post("/work-items/:id/breakdown", async (req, res): Promise<void> => {
     return;
   }
 
-  const creds = await getConfigs(req.userId, ["ANTHROPIC_API_KEY"]);
-  if (!creds.ANTHROPIC_API_KEY) {
-    res.status(424).json({ error: "Add your Anthropic API key in Integrations to use AI breakdown." });
+  const agentKey = await resolveModelKey(req.userId, null, "anthropic");
+  if (!agentKey.key) {
+    res.status(424).json({ error: NO_MODEL_KEY_MESSAGE });
     return;
   }
 
@@ -145,7 +146,7 @@ router.post("/work-items/:id/breakdown", async (req, res): Promise<void> => {
           ? item.acceptanceCriteria.split(/\n/).map((s) => s.trim()).filter(Boolean)
           : [],
       },
-      { anthropicApiKey: creds.ANTHROPIC_API_KEY },
+      { anthropicApiKey: agentKey.key },
       stack,
     );
     req.log.info({ workItemId: item.id, count: children.length }, "Breakdown generated");

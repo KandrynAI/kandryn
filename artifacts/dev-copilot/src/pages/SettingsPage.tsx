@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, X, ExternalLink, ChevronDown, Loader2 } from "lucide-react";
 import { StatusPill, SecretInput, isSecret } from "@/components/settings/credentials";
+import { AgentSourceSection } from "@/components/settings/AgentSourceSection";
+import type { AgentSource } from "@/lib/agentSource";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -429,6 +431,9 @@ export default function SettingsPage() {
   const initialTab: "personal" | "team" | "audit" =
     tabParam === "team" ? "team" : tabParam === "audit" ? "audit" : "personal";
   const [tab, setTab] = useState<"personal" | "team" | "audit">(initialTab);
+  // Whose credentials the agents run on. Held here because it decides whether
+  // the two Agents cards are shown at all.
+  const [agentSource, setAgentSource] = useState<AgentSource>("own");
 
   const personalIntegrations = INTEGRATIONS.filter((i) =>
     PERSONAL_GROUPS.some((g) => g.ids.includes(i.id)),
@@ -503,14 +508,20 @@ export default function SettingsPage() {
               >
                 {group.label}
               </div>
-              <div className="flex flex-col gap-2.5">
-                {group.ids
-                  .map((id) => byId.get(id))
-                  .filter((i): i is Integration => Boolean(i))
-                  .map((integ) => (
-                    <IntegrationCard key={integ.id} integration={integ} configMap={configMap} onSaved={refreshConfig} />
-                  ))}
-              </div>
+              {group.label === "Agents" && <AgentSourceSection onChanged={setAgentSource} />}
+              {/* On Kandryn Agents the cards collapse away rather than sitting
+                  there inert. The section above says the saved keys are kept,
+                  and switching back brings the cards straight back. */}
+              {group.label === "Agents" && agentSource === "kandryn" ? null : (
+                <div className="flex flex-col gap-2.5">
+                  {group.ids
+                    .map((id) => byId.get(id))
+                    .filter((i): i is Integration => Boolean(i))
+                    .map((integ) => (
+                      <IntegrationCard key={integ.id} integration={integ} configMap={configMap} onSaved={refreshConfig} />
+                    ))}
+                </div>
+              )}
             </div>
           ))}
         </>

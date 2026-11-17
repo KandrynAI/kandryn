@@ -851,6 +851,30 @@ export async function approveRunPlan(runId: number): Promise<{ status: string }>
   return res;
 }
 
+/**
+ * Whose credentials this user's runs spend, and whether the platform can serve
+ * the alternative. Carries no key material and no environment variable name.
+ */
+export interface AgentKeySourceState {
+  source: 'own' | 'kandryn';
+  /** Whether this deployment has the platform credentials for BOTH agents. */
+  platformAvailable: boolean;
+  /** Whether this account may choose them. */
+  entitled: boolean;
+}
+
+export function fetchAgentKeySource(): Promise<AgentKeySourceState> {
+  return request<AgentKeySourceState>('/api/config/agents');
+}
+
+export function saveAgentKeySource(source: 'own' | 'kandryn'): Promise<{ source: string }> {
+  return request<{ source: string }>('/api/config/agents', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source }),
+  });
+}
+
 /** Reject a parked plan → the run ends canceled, no suggestions (Phase 4). */
 export function rejectRunPlan(runId: number): Promise<{ status: string }> {
   return request<{ status: string }>(`/api/runs/${runId}/plan/reject`, { method: 'POST' });

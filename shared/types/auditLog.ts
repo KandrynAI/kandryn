@@ -18,6 +18,9 @@ export const AUDIT_ACTIONS = [
   'credential.deleted',
   'team_credential.set',
   'team_credential.deleted',
+  // Whose model credentials this user's runs spend. Unlike a credential,
+  // the value is safe to record on both sides of the change.
+  'agent_key_source.changed',
 
   // Projects
   'project.created',

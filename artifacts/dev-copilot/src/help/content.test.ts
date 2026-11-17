@@ -47,6 +47,8 @@ const LABEL_ALLOWLIST: Record<string, string> = {
   "No agent produced a suggestion.": "Server string thrown by the run service when both agents fail.",
   "Run timed out": "Server string written by the dispatcher's stuck-run sweep.",
   "Run was never started": "Server string written by the dispatcher's stranded-run sweep.",
+  "Add your Raptia and Fovea credentials in Settings, or choose Use Kandryn Agents.":
+    "Server string (NO_MODEL_KEY_MESSAGE in services/modelKey.ts), returned by every path that needs a model credential.",
 };
 
 /** Everything a reader can see, as flat strings. */

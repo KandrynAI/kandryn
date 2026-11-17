@@ -97,7 +97,9 @@ export const HELP_SECTIONS: HelpSection[] = [
     steps: [
       "The \"Personal\" tab holds your own credentials, grouped into \"Repositories\" and \"Agents\".",
       "Under Repositories, save a GitHub \"Personal Access Token\". It needs the repo scope. Azure Repos is the alternative if your code lives there.",
-      "Under Agents, save \"Agent A credentials\" (used by Raptia) and \"Agent B credentials\" (used by Fovea). Each card has numbered steps and a link to the page where you create the key.",
+      "Under Agents, choose who supplies the credentials Raptia and Fovea run on. \"Use my own credentials\" is the default and shows the two cards below it. \"Use Kandryn Agents\" means Kandryn supplies them and there is nothing to set up.",
+      "With \"Use my own credentials\", save \"Agent A credentials\" (used by Raptia) and \"Agent B credentials\" (used by Fovea). Each card has numbered steps and a link to the page where you create the key.",
+      "Switching to Kandryn Agents hides those two cards but does not delete anything. Your saved credentials come back, untouched, the moment you switch back.",
       "Every card shows a pill: \"Not set\" before you save, \"Configured\" after. The bar at the top of the tab counts how many of your integrations are ready.",
       "Use \"Test connection\" before \"Save\" where the card offers it. It tells you the credential works rather than only that it was stored.",
       "Tracker credentials (Jira, Azure DevOps) and documentation targets (Confluence, Notion) are on the \"Team\" tab, because they are shared by everyone in the team. An admin sets those.",
@@ -303,6 +305,16 @@ export const HELP_SECTIONS: HelpSection[] = [
         message: "\"Add your Agent A credentials in Settings to run Veria.\" (also Aegis, Narratia)",
         meaning: "Those three agents run on the credentials saved in the Agents group.",
         fix: "Open Settings, Personal tab, Agents group, and save \"Agent A credentials\".",
+      },
+      {
+        message: "\"Add your Raptia and Fovea credentials in Settings, or choose Use Kandryn Agents.\"",
+        meaning: "A run was refused because there is no credential to make it with, in either mode.",
+        fix: "Open Settings, Personal tab, Agents group, and either save your own credentials or select \"Use Kandryn Agents\".",
+      },
+      {
+        message: "\"Kandryn Agents is not available in this environment.\"",
+        meaning: "This deployment has no platform credentials, so the option cannot be chosen here.",
+        fix: "Use your own credentials for now. Nothing you have saved is affected.",
       },
       {
         message: "\"Commit a suggestion before running Veria.\" (also Aegis, Narratia)",

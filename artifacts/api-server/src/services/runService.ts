@@ -35,6 +35,7 @@ import type { ChangePlan } from "../../../../shared/types/changePlan.js";
 import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { getConfigs } from "./configService.js";
+import { resolveModelKeys } from "./modelKey.js";
 import { sendRunCompleted, sendRunFailed, sendRunParked } from "./emailService.js";
 import { confidenceReason } from "./confidence.js";
 import { recordOverrideOutcome } from "./sequenceGate.js";
@@ -416,12 +417,15 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     emit({ agent: "system", type: "stage.started", data: { stage: "context" } });
     if (stackDesc) emit({ agent: "system", type: "context.read", data: { kind: "stack_profile" } });
 
-    const creds = await getConfigs(userId, [
-      "ANTHROPIC_API_KEY",
-      "OPENAI_API_KEY",
-      "GITHUB_TOKEN",
-      "AZURE_REPOS_TOKEN",
-    ]);
+    const creds = await getConfigs(userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+    // Agent credentials come from the resolver, never from the config store
+    // directly, and are resolved through `userId` — the run's owner, not
+    // whoever triggered or approved it. See services/modelKey.ts.
+    //
+    // teamId is null because the call this replaced passed no team either:
+    // generation has always read the owner's personal keys. Widening that to
+    // team-first resolution is a real behaviour change and not this PR's.
+    const modelKeys = await resolveModelKeys(userId, null);
 
     const effectiveDescription = run.refinePrompt
       ? `${workItem.description ?? ""}\n\nRefinement request: ${run.refinePrompt}`
@@ -479,13 +483,13 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
     }
 
     const orchestrator = new AIOrchestrator({
-      anthropicApiKey: creds.ANTHROPIC_API_KEY,
-      openaiApiKey: creds.OPENAI_API_KEY,
+      anthropicApiKey: modelKeys.anthropic,
+      openaiApiKey: modelKeys.openai,
       // Per-provider pinned model (governance item 2); undefined → provider default.
       claudeModel: proj?.pinnedClaudeModel ?? undefined,
       openaiModel: proj?.pinnedOpenaiModel ?? undefined,
     });
-    const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
+    const synth = new SynthesisEngine({ anthropicApiKey: modelKeys.anthropic });
     const devTask = dbTaskToDevCopilotTask({ ...workItem, description: effectiveDescription ?? null });
 
     // Project context (Project Context part 1): the item's ancestor chain,
@@ -555,7 +559,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         planInput = { plan, context: assembled.context };
         await db.update(changePlansTable).set({ status: "ready" }).where(eq(changePlansTable.id, planRow.id));
       }
-    } else if (creds.ANTHROPIC_API_KEY) {
+    } else if (modelKeys.anthropic) {
       const planStart = Date.now();
       // The change planner is orchestration, not one of the six agents, so its
       // stage is attributed to `system` rather than to Raptia — even though the
@@ -589,7 +593,7 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
           graphStatus: repo.graphStatus,
           graphBuiltAt: repo.graphBuiltAt,
           contextPack: contextPack.text || null,
-          anthropicApiKey: creds.ANTHROPIC_API_KEY,
+          anthropicApiKey: modelKeys.anthropic,
         });
         logger.info({ runId, ...planSummary, plan: undefined }, "Change plan produced");
 
@@ -1092,7 +1096,9 @@ async function regenerateFromPlan(
     const repo = await getRunRepository(run);
     if (!repo) throw new Error("No repository is connected to this run's project.");
     const stack = repo.stackProfile as StackProfile;
-    const creds = await getConfigs(run.userId, ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+    const creds = await getConfigs(run.userId, ["GITHUB_TOKEN", "AZURE_REPOS_TOKEN"]);
+    // Personal-only, matching the call this replaced (see executeRun).
+    const modelKeys = await resolveModelKeys(run.userId, null);
 
     const git = await GitService.forRepo(repo.id, {
       githubToken: creds.GITHUB_TOKEN,
@@ -1119,8 +1125,8 @@ async function regenerateFromPlan(
       fallbackUserId: run.userId,
       workItem: { title: workItem.title, acceptanceCriteria: devTask.acceptanceCriteria },
     });
-    const orchestrator = new AIOrchestrator({ anthropicApiKey: creds.ANTHROPIC_API_KEY, openaiApiKey: creds.OPENAI_API_KEY });
-    const synth = new SynthesisEngine({ anthropicApiKey: creds.ANTHROPIC_API_KEY });
+    const orchestrator = new AIOrchestrator({ anthropicApiKey: modelKeys.anthropic, openaiApiKey: modelKeys.openai });
+    const synth = new SynthesisEngine({ anthropicApiKey: modelKeys.anthropic });
 
     // Same reasoning as the first generation: the edited plan decides whether
     // this is interface work.

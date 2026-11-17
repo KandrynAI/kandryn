@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { GitService } from "./gitService.js";
 import { getConfigs } from "./configService.js";
+import { resolveModelKey, NO_MODEL_KEY_MESSAGE } from "./modelKey.js";
 import { AEGIS_MODEL, AEGIS_ZDR_MODEL, baselineFilePrompt, isRetentionError, parseFileScan } from "./aegisService.js";
 import { canAdminister } from "./resourceAdmin.js";
 import { RunError } from "./runService.js";
@@ -183,9 +184,10 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
     );
   if (active) throw new RunError("A baseline scan is already running for this repository.", 409);
 
-  const creds = await getConfigs(actor.userId, ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]);
-  if (!creds.ANTHROPIC_API_KEY) {
-    throw new RunError("Add your Anthropic API key in Integrations to run a baseline scan.", 424);
+  const creds = await getConfigs(actor.userId, ["GITHUB_TOKEN"]);
+  const agentKey = await resolveModelKey(actor.userId, null, "anthropic");
+  if (!agentKey.key) {
+    throw new RunError(NO_MODEL_KEY_MESSAGE, 424);
   }
 
   const repo = target.repo;
@@ -273,7 +275,7 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
 
     if (requests.length === 0) throw new RunError("None of this repository's files could be read.", 422);
 
-    const client = new Anthropic({ apiKey: creds.ANTHROPIC_API_KEY });
+    const client = new Anthropic({ apiKey: agentKey.key });
     const submit = (m: string) =>
       client.messages.batches.create({
         requests: requests.map((r) => ({ ...r, params: { ...r.params, model: m } })),
@@ -337,12 +339,14 @@ export async function collectBaselineScan(scan: BaselineScan): Promise<boolean> 
     return true;
   }
   try {
-    const creds = await getConfigs(scan.triggeredBy, ["ANTHROPIC_API_KEY"]);
-    if (!creds.ANTHROPIC_API_KEY) {
-      await failScan(scan.id, "The Anthropic API key that started this scan is no longer configured.");
+    // Collection runs long after the start, so the key is resolved again
+    // through the user who triggered it, not cached across invocations.
+    const collectKey = await resolveModelKey(scan.triggeredBy, null, "anthropic");
+    if (!collectKey.key) {
+      await failScan(scan.id, "The credentials that started this scan are no longer available.");
       return true;
     }
-    const client = new Anthropic({ apiKey: creds.ANTHROPIC_API_KEY });
+    const client = new Anthropic({ apiKey: collectKey.key });
     const batch = await client.messages.batches.retrieve(scan.batchId);
     if (batch.processing_status !== "ended") return false;
 

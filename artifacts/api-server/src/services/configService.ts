@@ -29,6 +29,12 @@ export const CONFIG_KEYS = [
   // Team preference (not a credential): how Aegis files findings in Jira —
   // "bug" | "subtask" | "smart". Stored team-level; read team-first.
   "AEGIS_JIRA_ISSUE_TYPE",
+  // Personal preference (not a credential): whose model credentials this user's
+  // runs spend — "own" | "kandryn". Stored here rather than in a new table
+  // because AEGIS_JIRA_ISSUE_TYPE already set the precedent that a non-secret
+  // preference may live in this store. It is encrypted at rest like everything
+  // else, which costs nothing and keeps one code path.
+  "AGENT_KEY_SOURCE",
 ] as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];

@@ -6,6 +6,7 @@ import { GitService } from "../services/gitService.js";
 import { AIOrchestrator, SynthesisEngine } from "../services/aiService.js";
 import { PLMService } from "../services/plmService.js";
 import { getConfigs } from "../services/configService.js";
+import { resolveModelKeys } from "../services/modelKey.js";
 import type { StackProfile } from "../stack/detector.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { PR_TITLE_PREFIX } from "../../../../shared/types/branding.js";
@@ -136,7 +137,7 @@ router.post("/tasks/:taskId/suggestions", async (req, res): Promise<void> => {
   }
 
   // Fetch user's AI credentials from DB
-  const userCreds = await getConfigs(userId, ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]);
+  const userCreds = await resolveModelKeys(userId, null);
 
   const stack = repo.stackProfile as StackProfile;
   const refinePrompt = body.data.refinePrompt;
@@ -165,11 +166,11 @@ router.post("/tasks/:taskId/suggestions", async (req, res): Promise<void> => {
 
   // Instantiate per-request orchestrator with user's credentials
   const aiOrchestrator = new AIOrchestrator({
-    anthropicApiKey: userCreds.ANTHROPIC_API_KEY,
-    openaiApiKey: userCreds.OPENAI_API_KEY,
+    anthropicApiKey: userCreds.anthropic,
+    openaiApiKey: userCreds.openai,
   });
   const synthesisEngine = new SynthesisEngine({
-    anthropicApiKey: userCreds.ANTHROPIC_API_KEY,
+    anthropicApiKey: userCreds.anthropic,
   });
 
   const devCopilotTask = dbTaskToDevCopilotTask({
