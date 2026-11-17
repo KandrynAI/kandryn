@@ -300,9 +300,8 @@ export const HELP_SECTIONS: HelpSection[] = [
         fix: "Open Settings, fill the card in, and use \"Test connection\" before saving.",
       },
       {
-        message: "A message asking you to add an agent API key before running Veria, Aegis or Narratia",
-        meaning:
-          "Those three agents need your Agent A credentials. The app's own wording here still names the key's provider.",
+        message: "\"Add your Agent A credentials in Settings to run Veria.\" (also Aegis, Narratia)",
+        meaning: "Those three agents run on the credentials saved in the Agents group.",
         fix: "Open Settings, Personal tab, Agents group, and save \"Agent A credentials\".",
       },
       {

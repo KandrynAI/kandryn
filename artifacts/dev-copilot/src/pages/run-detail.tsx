@@ -371,7 +371,7 @@ export default function RunDetailPage() {
       if (err instanceof ApiError && err.status === 409) {
         toast({ title: "Commit a suggestion before running Veria.", variant: "destructive" });
       } else if (err instanceof ApiError && err.status === 424) {
-        toast({ title: "Add your Anthropic API key in Settings to run Veria.", variant: "destructive" });
+        toast({ title: "Add your Agent A credentials in Settings to run Veria.", variant: "destructive" });
       } else {
         toast({ title: "Veria could not complete. Try again.", variant: "destructive" });
       }
@@ -392,7 +392,7 @@ export default function RunDetailPage() {
       } else if (err instanceof ApiError && err.status === 409) {
         toast({ title: "Commit a suggestion before running Aegis.", variant: "destructive" });
       } else if (err instanceof ApiError && err.status === 424) {
-        toast({ title: "Add your Anthropic API key in Settings to run Aegis.", variant: "destructive" });
+        toast({ title: "Add your Agent A credentials in Settings to run Aegis.", variant: "destructive" });
       } else {
         toast({ title: "Aegis scan failed. Try again.", variant: "destructive" });
       }
@@ -413,7 +413,7 @@ export default function RunDetailPage() {
       } else if (err instanceof ApiError && err.status === 409) {
         toast({ title: "Commit a suggestion before running Narratia.", variant: "destructive" });
       } else if (err instanceof ApiError && err.status === 424) {
-        toast({ title: "Add your Anthropic API key in Settings to run Narratia.", variant: "destructive" });
+        toast({ title: "Add your Agent A credentials in Settings to run Narratia.", variant: "destructive" });
       } else {
         toast({ title: "Generation failed. Try again.", variant: "destructive" });
       }
