@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
 import { useUser, useClerk } from "@clerk/react";
-import { LayoutDashboard, Kanban, Play, GitBranch, History, BarChart2, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Kanban, Play, GitBranch, History, BarChart2, CircleHelp, Settings, LogOut } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -106,6 +106,15 @@ export function CommandRail() {
 
         <div className="cr-spacer" />
 
+        <button
+          className={`cr-icon${location === "/help" ? " active" : ""}`}
+          title="Help"
+          aria-label="Help"
+          data-testid="rail-help"
+          onClick={() => navigate("/help")}
+        >
+          <CircleHelp size={16} strokeWidth={1.5} />
+        </button>
         <button
           className={`cr-icon${location === "/settings" ? " active" : ""}`}
           title="Settings"

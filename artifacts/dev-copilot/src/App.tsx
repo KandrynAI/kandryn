@@ -38,6 +38,7 @@ import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
 import RunReportPage from "@/pages/run-report";
 import ReportsPage from "@/pages/ReportsPage";
+import HelpPage from "@/pages/HelpPage";
 import AcceptInvitePage from "@/pages/AcceptInvitePage";
 import TeamSetupPage from "@/pages/TeamSetupPage";
 import { fetchMyTeam } from "@/services/api";
@@ -328,6 +329,7 @@ function ProtectedApp() {
           <Route path="/history" component={HistoryPage} />
           <Route path="/reports" component={ReportsPage} />
           <Route path="/reports/:tab" component={ReportsPage} />
+          <Route path="/help" component={HelpPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>

@@ -300,9 +300,17 @@ export default function ProjectBoard() {
               </div>
               <div style={{ padding: 8, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 {colIdx === 0 && all.length === 0 && (
-                  <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-4)", padding: "8px 2px" }}>
-                    No items. Click Sync to load your board.
-                  </p>
+                  <>
+                    <p style={{ fontSize: "var(--fs-base)", color: "var(--c-ink-4)", padding: "8px 2px" }}>
+                      No items. Click Sync to load your board.
+                    </p>
+                    {/* The one place a first-run reader is offered the guide. Quiet,
+                        inline, and only on an empty board: never a modal or a nag. */}
+                    <p style={{ fontSize: "var(--fs-sm)", color: "var(--c-ink-4)", padding: "0 2px" }}>
+                      New to Kandryn?{" "}
+                      <Link href="/help" style={{ color: "var(--c-blue)" }}>Read the guide</Link>.
+                    </p>
+                  </>
                 )}
                 {colItems.map((it) => (
                   <WorkItemCard

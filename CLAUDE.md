@@ -295,6 +295,7 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 | `/repositories`, `/repositories/:id` | `repositories.tsx`, `repository-detail.tsx` | Repo list + detail with the detected stack panel (`components/dc/StackBadge.tsx`) |
 | `/history` | `HistoryPage.tsx` | Past activity |
 | `/settings` | `SettingsPage.tsx` | Per-user integration credentials (the `CONFIG_KEYS`) + connection tests |
+| `/help` | `HelpPage.tsx` | **The in-app guide for people who execute runs.** Static content in the bundle: `src/help/content.ts` is the typed section array, `src/help/filter.ts` the pure filter/outline/link logic (a `.tsx` cannot be tested), `HelpPage.tsx` the markup. Outline plus anchor scroll, a client-side filter over titles and step text, and a "Where you are" link per section; the outline collapses to a select below 900px. Reached from the rail's Help icon, a Help link in the TopBar, and one quiet line in the board's empty state. No modal, no auto-open, no stored dismissal. **Any screen change changes the guide too:** `src/help/content.test.ts` fails the build when a label the guide quotes no longer exists in the app (allowlisting only strings that are real on screen but not literals here, each with its reason), and also guards against a model vendor name, an em dash, a duplicate anchor and a link to a route `App.tsx` does not declare |
 | `/sign-in`, `/sign-up` | Clerk pages (simplified, see §5) | |
 
 ### Key dialogs/panels

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { CircleHelp } from "lucide-react";
 import { useRepo } from "@/context/RepoContext";
 import { useTopBarSlot } from "@/context/TopBarContext";
 import { fetchProjects, type Project } from "@/services/api";
@@ -44,6 +45,7 @@ function usePageTitle(): { title: string; subtitle: string } {
   if (location === "/repositories") return { title: "Repositories", subtitle: "" };
   if (location === "/history") return { title: "History", subtitle: "" };
   if (location === "/settings") return { title: "Settings", subtitle: "" };
+  if (location === "/help") return { title: "Help", subtitle: "" };
   if (location === "/projects/new") return { title: "New project", subtitle: "" };
   if (location === "/tasks") return { title: "Tasks", subtitle: "" };
   if (location === "/tasks/new") return { title: "New task", subtitle: "" };
@@ -55,6 +57,7 @@ function usePageTitle(): { title: string; subtitle: string } {
 export function TopBar() {
   const { title, subtitle } = usePageTitle();
   const { actions } = useTopBarSlot();
+  const [location, navigate] = useLocation();
 
   return (
     <>
@@ -69,11 +72,23 @@ export function TopBar() {
         .tb-sub { font-size: var(--fs-sm); color: var(--c-ink-4); font-family: var(--mono);
           margin-left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .tb-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; padding-left: 12px; }
+        .tb-help { display: inline-flex; align-items: center; gap: 4px; border: none; background: none;
+          cursor: pointer; font-family: var(--sans); font-size: var(--fs-sm); color: var(--c-ink-4);
+          padding: 3px 6px; border-radius: 5px; }
+        .tb-help:hover { background: var(--c-raised); color: var(--c-ink-2); }
       `}</style>
       <header className="tb-root" data-testid="topbar">
         <span className="tb-title" title={title}>{title}</span>
         {subtitle && <span className="tb-sub">{subtitle}</span>}
-        <div className="tb-actions">{actions}</div>
+        <div className="tb-actions">
+          {actions}
+          {location !== "/help" && (
+            <button className="tb-help" onClick={() => navigate("/help")} title="Open the guide">
+              <CircleHelp size={13} strokeWidth={1.75} />
+              Help
+            </button>
+          )}
+        </div>
       </header>
     </>
   );
