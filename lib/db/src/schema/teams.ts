@@ -45,7 +45,19 @@ export const teamsTable = pgTable(
      * an enterprise starts closed and opens up by choice. A single nullable
      * default cannot say both things.
      */
-    allowPersonalCredentials: boolean("allow_personal_credentials").notNull().default(false),
+    // Default TRUE (0053). It was false, and 0046's backfill set true only for
+    // workspaces that already existed, so every workspace created after that
+    // deploy silently ignored the credentials its own users had pasted: the
+    // resolver skips a personal token when this is false, and a new workspace
+    // owns none of its own. Confirmed in production on run #42, where the
+    // commit reached GitHub with no credential at all.
+    //
+    // True is also the right default on its own terms: the flag exists so an
+    // admin can RESTRICT a workspace to credentials it owns, which is a
+    // decision to take once there is something to restrict to. Starting
+    // restricted with nothing configured is not a safe default, it is a
+    // broken one.
+    allowPersonalCredentials: boolean("allow_personal_credentials").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("teams_owner_idx").on(t.ownerUserId)],

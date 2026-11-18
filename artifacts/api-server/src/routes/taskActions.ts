@@ -7,7 +7,7 @@ import { AIOrchestrator, SynthesisEngine } from "../services/aiService.js";
 import { PLMService } from "../services/plmService.js";
 import { getConfigs } from "../services/configService.js";
 import { resolveModelKeys } from "../services/modelKey.js";
-import { resolveGitCreds } from "../services/gitToken.js";
+import { resolveGitCreds, gitWriteRefusal } from "../services/gitToken.js";
 import type { StackProfile } from "../stack/detector.js";
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { PR_TITLE_PREFIX } from "../../../../shared/types/branding.js";
@@ -237,6 +237,15 @@ router.post("/tasks/:taskId/commit", async (req, res): Promise<void> => {
     azureReposToken: gitCredsCommit.azureReposToken,
   });
   const branchName = `task/${task.id}`;
+
+  // Refuse before writing, as the project flow does: an unauthenticated client
+  // makes the provider answer 404, which reads as a missing branch rather than
+  // a missing credential.
+  const refusal = gitWriteRefusal(gitCredsCommit, commitRepo.provider, req.teamRole === "admin");
+  if (refusal) {
+    res.status(424).json({ error: refusal });
+    return;
+  }
 
   await gitService.createBranch(String(task.id));
 

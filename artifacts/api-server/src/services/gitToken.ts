@@ -40,6 +40,17 @@ export interface ResolvedGitCreds {
   azureReposToken: string | undefined;
   /** Recorded on the run. The source only, never a token. */
   source: GitTokenSource;
+  /**
+   * Whether the OWNER administers their workspace.
+   *
+   * Returned because this function already looks the membership up, and the
+   * refusal message differs by audience ("add repository access" versus "ask
+   * an admin"). Without it every caller would re-query, or thread a boolean
+   * through the run pipeline for the sake of one sentence. Where an ACTOR is
+   * present and differs from the owner, the caller passes the actor's role
+   * instead: the message is read by whoever pressed the button.
+   */
+  ownerIsAdmin: boolean;
 }
 
 /**
@@ -54,7 +65,9 @@ export async function resolveGitCreds(ownerUserId: string): Promise<ResolvedGitC
   // handing over a team id is twenty-one chances to hand over the ACTOR's
   // workspace instead of the owner's, and the two differ exactly when it
   // matters. One lookup, in one place, cannot be got wrong.
-  const teamId = (await getTeamForUser(ownerUserId))?.team.id ?? null;
+  const membership = await getTeamForUser(ownerUserId);
+  const teamId = membership?.team.id ?? null;
+  const ownerIsAdmin = membership?.role === "admin";
   const [settings, personalGithub, personalAzure] = await Promise.all([
     getWorkspaceSettings(teamId),
     getConfig(ownerUserId, "GITHUB_TOKEN"),
@@ -70,6 +83,7 @@ export async function resolveGitCreds(ownerUserId: string): Promise<ResolvedGitC
       githubToken: personalGithub || undefined,
       azureReposToken: personalAzure || undefined,
       source: "personal",
+      ownerIsAdmin,
     };
   }
 
@@ -80,6 +94,7 @@ export async function resolveGitCreds(ownerUserId: string): Promise<ResolvedGitC
       githubToken: personalGithub || undefined,
       azureReposToken: personalAzure || undefined,
       source: "personal",
+      ownerIsAdmin,
     };
   }
 
@@ -91,15 +106,15 @@ export async function resolveGitCreds(ownerUserId: string): Promise<ResolvedGitC
     githubToken: workspaceGithub || undefined,
     azureReposToken: workspaceAzure || undefined,
     source: "workspace",
+    ownerIsAdmin,
   };
 }
 
-export const NO_GIT_CREDS_MESSAGE_ADMIN =
-  "Add repository access in Settings, Workspace, Repository access.";
-export const NO_GIT_CREDS_MESSAGE_MEMBER =
-  "Ask a workspace admin to add repository access.";
-
-/** Split by audience, for the reason noModelKeyMessage is. */
-export function noGitCredsMessage(isAdmin: boolean): string {
-  return isAdmin ? NO_GIT_CREDS_MESSAGE_ADMIN : NO_GIT_CREDS_MESSAGE_MEMBER;
-}
+// The pure half lives in a db-free module so it can be unit-tested without a
+// DATABASE_URL; re-exported here so callers keep importing from one place.
+export {
+  NO_GIT_CREDS_MESSAGE_ADMIN,
+  NO_GIT_CREDS_MESSAGE_MEMBER,
+  noGitCredsMessage,
+  gitWriteRefusal,
+} from "./gitCredsCore.js";

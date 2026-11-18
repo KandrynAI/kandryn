@@ -36,7 +36,7 @@ import type { CodeSuggestion } from "../../../../shared/types/codeSuggestion.js"
 import type { DevCopilotTask } from "../../../../shared/types/task.js";
 import { getConfigs } from "./configService.js";
 import { resolveModelKeys } from "./modelKey.js";
-import { resolveGitCreds } from "./gitToken.js";
+import { resolveGitCreds, gitWriteRefusal } from "./gitToken.js";
 import { sendRunCompleted, sendRunFailed, sendRunParked } from "./emailService.js";
 import { confidenceReason } from "./confidence.js";
 import { recordOverrideOutcome } from "./sequenceGate.js";
@@ -454,13 +454,32 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         data: { kind: "repo_graph", retrievalMode: ctx.usedGraph ? "graph" : "keyword" },
       });
     } catch (e) {
-      logger.warn({ runId, err: e }, "Run: git file context unavailable — proceeding without it");
+      // A run that cannot READ its repository is not a run with less context,
+      // it is a run generating blind. This used to warn and carry on, so run
+      // #42 produced confident suggestions against a repository it had never
+      // seen and then reported success; the only trace was one amber timeline
+      // event nobody had reason to read. Failing here is the same call 0039
+      // made about a run whose every agent failed: better a run that says it
+      // could not start than one that invents an answer.
+      //
+      // Note the distinction this relies on: fetchFileContextWithGraph
+      // RETURNS an empty string when nothing matched the keywords, which is
+      // normal and not an error. It only THROWS when the provider refused,
+      // so reaching this catch means the repository was unreadable.
+      logger.error({ runId, err: e }, "Run: repository could not be read");
       emit({
         agent: "system",
         type: "context.read",
-        status: "warn",
+        status: "failed",
         data: { kind: "repo_graph", retrievalMode: "unavailable" },
       });
+      const refusal = gitWriteRefusal(creds, repo.provider, creds.ownerIsAdmin);
+      throw new RunError(
+        refusal
+          ? `Kandryn could not read ${repo.name}. ${refusal}`
+          : `Kandryn could not read ${repo.name}. Check that the saved credentials still have access to it.`,
+        424,
+      );
     }
 
     // Reader so the orchestrator can apply edit hunks against current source
@@ -776,6 +795,11 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
           );
         }
         const branchName = `task/${workItem.id}`;
+        // Refuse before writing. Without this the client is built
+        // unauthenticated and the provider answers 404, which reads as a
+        // missing branch rather than a missing credential.
+        const autoRefusal = gitWriteRefusal(creds, repo.provider, creds.ownerIsAdmin);
+        if (autoRefusal) throw new Error(autoRefusal);
         await git.createBranch(String(workItem.id));
         commitHash = await git.commitChanges({
           branchName,
@@ -995,6 +1019,13 @@ export async function commitFromSuggestion(
   suggestionId: number,
   commitMessage?: string,
   override?: boolean,
+  /**
+   * Whether the person who pressed Commit administers their workspace. Only
+   * used to word a credential refusal, because the message is read by whoever
+   * pressed the button, not by the run's owner. Omitted falls back to the
+   * owner's role, which is right for every caller that has no actor.
+   */
+  actorIsAdmin?: boolean,
 ): Promise<{ commitHash: string; prUrl: string }> {
   const [run] = await db
     .select()
@@ -1046,6 +1077,11 @@ export async function commitFromSuggestion(
     );
   }
   const branchName = `task/${workItem.id}`;
+  // Refuse before writing, with the remedy. This is the exact failure seen on
+  // run #42: no token resolved, an anonymous client was built, and GitHub
+  // answered 404 with a documentation link about git refs.
+  const refusal = gitWriteRefusal(creds, repo.provider, actorIsAdmin ?? creds.ownerIsAdmin);
+  if (refusal) throw new RunError(refusal, 424);
   await git.createBranch(String(workItem.id));
   const commitHash = await git.commitChanges({
     branchName,

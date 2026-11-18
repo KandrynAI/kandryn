@@ -15,7 +15,7 @@ import { loadSuggestionFiles } from "../services/suggestionFiles.js";
 import { GitService } from "../services/gitService.js";
 import { generateTests, AIFormatError } from "../services/aiService.js";
 import { resolveModelKey, noModelKeyMessage } from "../services/modelKey.js";
-import { resolveGitCreds } from "../services/gitToken.js";
+import { resolveGitCreds, gitWriteRefusal } from "../services/gitToken.js";
 import { createPlmTestCase } from "../services/plmWrite.js";
 import { PlmError } from "../services/plmProjects.js";
 import type { StackProfile } from "../stack/detector.js";
@@ -216,6 +216,13 @@ router.post("/work-items/:id/tests/commit-script", async (req, res): Promise<voi
   // Stack the test commit ON the branch's current HEAD so the implementation
   // commit is preserved and both show up in the existing PR.
   const headSha = await git.branchHeadSha(branchName);
+  // Refuse before writing: an unauthenticated client makes the provider answer
+  // 404, which reads as a missing branch rather than a missing credential.
+  const refusal = gitWriteRefusal(gitCreds, repo.provider, req.teamRole === "admin");
+  if (refusal) {
+    res.status(424).json({ error: refusal });
+    return;
+  }
   const commitHash = await git.commitChanges({
     branchName,
     baseSha: headSha,

@@ -844,6 +844,7 @@ router.post("/runs/:id/commit", async (req, res): Promise<void> => {
       parsed.data.suggestionId,
       parsed.data.commitMessage,
       parsed.data.override,
+      req.teamRole === "admin",
     );
     req.log.info({ runId: params.data.id, ...result }, "Run suggestion committed");
     const [committedSuggestion] = await db

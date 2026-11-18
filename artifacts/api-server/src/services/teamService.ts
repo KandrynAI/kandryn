@@ -90,7 +90,12 @@ export async function ensureUserHasTeam(userId: string, displayName?: string): P
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || null;
     const [team] = await tx
       .insert(teamsTable)
-      .values({ name, slug, ownerUserId: userId, plan: "free" })
+      // allowPersonalCredentials is stated rather than left to the column
+      // default (0053): this insert is the only place a workspace is born, and
+      // the whole run #42 failure was a new workspace taking a default that
+      // made the resolver ignore its users' own credentials. Stated here, a
+      // future change to the column default cannot silently change it back.
+      .values({ name, slug, ownerUserId: userId, plan: "free", allowPersonalCredentials: true })
       .returning();
     await tx.insert(teamMembersTable).values({ teamId: team.id, userId, role: "admin" });
     return team;
