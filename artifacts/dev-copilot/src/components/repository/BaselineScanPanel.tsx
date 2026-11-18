@@ -97,6 +97,20 @@ export function BaselineScanPanel({ repoId }: { repoId: number }) {
           tickets are created — findings are yours to acknowledge or push to the tracker.
         </p>
 
+        {/* A scan was asked for when the repository was connected and could not
+            be started (0048). Amber, never red: nothing is broken, and the
+            reason says what to do. Shown above the list because it explains
+            why the list is empty. */}
+        {data?.setupError && scans.length === 0 && (
+          <div
+            className="mb-4 rounded-md border p-3 text-sm leading-relaxed"
+            style={{ borderColor: "var(--c-amber, #b4802a)", color: "var(--c-amber, #b4802a)" }}
+          >
+            You asked for a security scan when this repository was connected, and it could not be
+            started. {data.setupError}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="text-muted-foreground text-sm">Loading…</div>
         ) : !data?.canScan && scans.length === 0 ? (

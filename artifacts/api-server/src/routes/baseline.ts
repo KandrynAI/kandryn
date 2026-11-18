@@ -163,14 +163,23 @@ router.get("/repositories/:repoId/baseline", async (req, res): Promise<void> => 
     return;
   }
   try {
-    const { canView, gate } = await loadScanTarget(params.data.repoId, actorOf(req));
+    const { target, canView, gate } = await loadScanTarget(params.data.repoId, actorOf(req));
     if (!canView) {
       // 404, not 403: a repository the caller cannot see should not be
       // confirmed to exist by the shape of the refusal.
       res.status(404).json({ error: "Repository not found" });
       return;
     }
-    res.json({ scans: await listScansForRepository(params.data.repoId), canScan: gate.allowed, reason: gate.reason });
+    res.json({
+      scans: await listScansForRepository(params.data.repoId),
+      canScan: gate.allowed,
+      reason: gate.reason,
+      // Why a scan asked for at connect did not happen (0048). It belongs
+      // here, beside the scans, because this is where someone looks when the
+      // scan they ticked a box for is missing. Null when nothing was asked
+      // for, or when it worked.
+      setupError: target.repo.setupError ?? null,
+    });
   } catch (err) {
     if (!sendRunError(res, err)) throw err;
   }

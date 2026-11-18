@@ -37,6 +37,9 @@ export function isGraphServable(
  */
 export const INDEX_CLAIM_STALE_MINUTES = 30;
 
+/** The statuses that mean an index is already pending for this repository. */
+const PENDING_STATUSES = new Set(["queued", "indexing"]);
+
 /**
  * Whether an index is genuinely in flight, and so a new one must be refused.
  *
@@ -47,6 +50,11 @@ export const INDEX_CLAIM_STALE_MINUTES = 30;
  * permanently un-indexable. So a claim is in flight only while it is fresh, and
  * a claim with no timestamp at all (every row written before 0047) reads as not
  * in flight, which is the safe direction: a rebuild is allowed, not blocked.
+ *
+ * `queued` counts as pending too (0048). A queued index is one the dispatcher
+ * has not started yet, so starting a second is the same duplicate work the
+ * guard exists to prevent; and the same stale window applies, so a queue the
+ * dispatcher can never drain cannot wedge the repository either.
  */
 export function isIndexInFlight(
   graphStatus: string | null | undefined,
@@ -54,7 +62,7 @@ export function isIndexInFlight(
   now: Date = new Date(),
   staleMinutes: number = INDEX_CLAIM_STALE_MINUTES,
 ): boolean {
-  if (graphStatus !== "indexing") return false;
+  if (!graphStatus || !PENDING_STATUSES.has(graphStatus)) return false;
   if (!graphStartedAt) return false;
   const ageMs = now.getTime() - new Date(graphStartedAt).getTime();
   return ageMs < staleMinutes * 60 * 1000;

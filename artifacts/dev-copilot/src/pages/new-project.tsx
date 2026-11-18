@@ -8,13 +8,26 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { ArrowLeft, ArrowRight, Check, Boxes, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   fetchPlmProjects,
+  fetchRepositories,
+  estimateRepositoryScan,
   createProject,
   ApiError,
   type PlmProvider,
   type PlmProjectRef,
+  type Repository,
 } from "@/services/api";
+import { SETUP_OPTIONS, needsEstimate, estimateLine, canConfirm } from "@/lib/repoSetup";
+import {
+  DEFAULT_SETUP_CHOICE,
+  type RepoSetupChoice,
+} from "../../../../shared/types/repoSetup.ts";
+
+// The amber the Knowledge and UI style panels use for a caution. Never red:
+// nothing here has failed.
+const AMBER = "var(--c-amber, #b4802a)";
 
 type Step = 1 | 2 | 3;
 
@@ -32,6 +45,41 @@ export default function NewProject() {
   const [provider, setProvider] = useState<PlmProvider | null>(null);
   const [plmKey, setPlmKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [setup, setSetup] = useState<RepoSetupChoice>(DEFAULT_SETUP_CHOICE);
+  const [repositoryId, setRepositoryId] = useState<number | null>(null);
+
+  // Repositories with no project (0048). `repositories.project_id` is
+  // ON DELETE SET NULL, so a repository outlives the project it belonged to and
+  // can be adopted here. For most customers this list is empty, which is why
+  // the step's empty state is the important part of it, not the picker.
+  const {
+    data: repositories,
+    isLoading: reposLoading,
+    error: reposError,
+  } = useQuery({ queryKey: ["repositories"], queryFn: () => fetchRepositories(), retry: false });
+  const unbound: Repository[] = (repositories ?? []).filter((r) => r.projectId == null);
+  const picked = unbound.find((r) => r.id === repositoryId) ?? null;
+
+  // Only priced when a repository is actually being bound here: without one
+  // there is nothing to measure, and the choice travels as the project's
+  // default for the connect form to price later.
+  const wantsCost = needsEstimate(setup) && picked?.url != null;
+  const {
+    data: estimate,
+    isFetching: estimating,
+    error: estimateError,
+  } = useQuery({
+    queryKey: ["repo-estimate", picked?.id],
+    queryFn: () =>
+      estimateRepositoryScan({
+        url: picked!.url!,
+        provider: picked!.provider === "azure-repos" ? "azure-repos" : "github",
+        defaultBranch: picked!.defaultBranch,
+      }),
+    enabled: wantsCost,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
 
   return (
     <div className="mx-auto flex h-full w-full max-w-2xl flex-col gap-6 px-5 py-8">
@@ -96,14 +144,116 @@ export default function NewProject() {
         )}
 
         {step === 3 && (
-          <div className="flex flex-col gap-3">
-            <div className="text-sm font-medium">Repository</div>
-            <p className="text-muted-foreground text-sm leading-relaxed">
-              A repository is connected per project. You can create the project now and connect its
-              repository from the board — the board shows a <strong>Connect repository</strong> action
-              until one is bound. This keeps each project's repository, stack profile, and graph index
-              isolated from other projects.
-            </p>
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-3">
+              <div className="text-sm font-medium">Repository</div>
+              {reposLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-2/3" />
+                </div>
+              ) : reposError ? (
+                <p className="text-sm leading-relaxed" style={{ color: AMBER }}>
+                  Your repositories could not be loaded. You can still create the project and connect a
+                  repository from the board.
+                </p>
+              ) : unbound.length === 0 ? (
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  A repository is connected per project, and you have none waiting to be connected. Create
+                  the project now and connect its repository from the board, which shows a{" "}
+                  <strong>Connect repository</strong> action until one is bound. This keeps each project's
+                  repository, stack profile and index separate from every other project's.
+                </p>
+              ) : (
+                <>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    These repositories are not connected to a project. Bind one now, or skip and connect one
+                    from the board later.
+                  </p>
+                  <div className="space-y-2" role="radiogroup" aria-label="Repository to bind">
+                    {unbound.map((repo) => (
+                      <label
+                        key={repo.id}
+                        className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border border-border p-3"
+                      >
+                        <input
+                          type="radio"
+                          name="wizard-repo"
+                          className="mt-1"
+                          checked={repositoryId === repo.id}
+                          onChange={() => setRepositoryId(repo.id)}
+                        />
+                        <span className="space-y-0.5">
+                          <span className="block text-sm">{repo.name}</span>
+                          <span className="text-muted-foreground block font-mono text-xs">
+                            {repo.url ?? "needs reconfiguration"}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                    <label className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+                      <input
+                        type="radio"
+                        name="wizard-repo"
+                        className="mt-1"
+                        checked={repositoryId === null}
+                        onChange={() => setRepositoryId(null)}
+                      />
+                      <span className="text-sm">Skip for now, connect one from the board</span>
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* The setup choice (0048). With a repository bound here it is an
+                instruction; without one it is remembered as this project's
+                default so the connect form arrives on it. */}
+            <div className="border-border flex flex-col gap-3 border-t pt-4">
+              <div className="text-sm font-medium">When a repository is connected</div>
+              <div className="space-y-2" role="radiogroup" aria-label="What to do when a repository is connected">
+                {SETUP_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border border-border p-3"
+                  >
+                    <input
+                      type="radio"
+                      name="wizard-setup"
+                      className="mt-1"
+                      checked={setup === opt.value}
+                      onChange={() => setSetup(opt.value)}
+                    />
+                    <span className="space-y-1">
+                      <span className="block text-sm">{opt.label}</span>
+                      <span className="text-muted-foreground block text-xs leading-relaxed">{opt.detail}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {needsEstimate(setup) && (
+                <div className="text-xs leading-relaxed" aria-live="polite">
+                  {!picked ? (
+                    <span className="text-muted-foreground">
+                      You will see what a scan costs before it starts, when you connect the repository.
+                    </span>
+                  ) : estimating ? (
+                    <span className="text-muted-foreground">Checking the repository size...</span>
+                  ) : estimateError ? (
+                    <span style={{ color: AMBER }}>
+                      {estimateError instanceof Error
+                        ? estimateError.message
+                        : "The repository size could not be read, so a scan cannot be priced yet."}
+                    </span>
+                  ) : (
+                    <span style={{ color: estimate?.overCap ? AMBER : undefined }} className={estimate?.overCap ? undefined : "text-muted-foreground"}>
+                      {estimateLine(estimate)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
             <p className="text-muted-foreground text-sm leading-relaxed">
               Next you can add documents for background (optional).
             </p>
@@ -131,7 +281,16 @@ export default function NewProject() {
           </Button>
         ) : (
           <Button
-            disabled={submitting || !provider || !plmKey}
+            // canConfirm only bites when a repository is bound here AND the
+            // scan was chosen: without a repository there is nothing to price
+            // yet, so the choice travels as the project's default and the
+            // connect form shows the cost before anything is spent.
+            disabled={
+              submitting ||
+              !provider ||
+              !plmKey ||
+              (picked != null && !canConfirm(setup, estimate, estimating))
+            }
             onClick={async () => {
               if (!provider || !plmKey) return;
               setSubmitting(true);
@@ -140,6 +299,8 @@ export default function NewProject() {
                   name: name.trim(),
                   plmProvider: provider,
                   plmProjectKey: plmKey,
+                  ...(repositoryId != null ? { repositoryId } : {}),
+                  setup,
                 });
                 toast({ title: "Project created", description: `${project.name} is ready.` });
                 navigate(`/p/${project.id}/settings?tab=knowledge&welcome=1`);

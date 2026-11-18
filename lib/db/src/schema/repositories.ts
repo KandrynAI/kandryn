@@ -56,8 +56,12 @@ export const repositoriesTable = pgTable(
     // `stale` (no migration — text column) is set when the repository URL changes:
     // the existing graph was built against different content, so retrieval must
     // refuse it and fall back to tree-only planning until a rebuild succeeds.
+    // `queued` (0048) is what makes indexing survive a serverless response: a
+    // trigger that could not reach the microservice parks here and the cron
+    // dispatcher drains it, rather than the request being the only chance the
+    // index ever gets.
     graphStatus: text("graph_status")
-      .$type<"idle" | "indexing" | "succeeded" | "failed" | "stale">()
+      .$type<"idle" | "queued" | "indexing" | "succeeded" | "failed" | "stale">()
       .notNull()
       .default("idle"),
     graphError: text("graph_error"),
@@ -70,6 +74,18 @@ export const repositoriesTable = pgTable(
     // ui_style_profiles.claimed_at uses, for the same reason.
     graphStartedAt: timestamp("graph_started_at", { withTimezone: true }),
     graphTriggeredBy: text("graph_triggered_by"),
+    // What the customer asked for when they connected this repository, and
+    // when it was acted on (0048). Union inlined because lib/db is a composite
+    // project rooted at src/ and cannot import from ../../../../shared — see
+    // shared/types/repoSetup.ts, which is the source of truth. Nullable: every
+    // row written before 0048 predates the question and reads as the default.
+    setupChoice: text("setup_choice").$type<"none" | "index" | "index_scan" | null>().default(null),
+    setupCompletedAt: timestamp("setup_completed_at", { withTimezone: true }),
+    // Why the chosen setup could not be honoured, in words a customer reads
+    // (0048): no model key, above the file cap, a scan already running. Null
+    // when it worked. Set together with setupCompletedAt, because a refusal is
+    // a final answer rather than something to retry every five minutes.
+    setupError: text("setup_error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("repositories_user_id_idx").on(t.userId)],

@@ -28,7 +28,14 @@ import { fileURLToPath } from "node:url";
 
 const SRC = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
-const CLAIMANT = "triggerRepoIndex";
+/**
+ * Both claim writers. `triggerRepoIndex` dispatches to the microservice and
+ * `queueRepoIndex` parks the work for the dispatcher, but each writes
+ * graph_status, graph_started_at and graph_triggered_by, so each is a write the
+ * duplicate-index guard depends on.
+ */
+const CLAIMANTS = ["triggerRepoIndex", "queueRepoIndex"];
+const CLAIMANT_RE = CLAIMANTS.join("|");
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -62,9 +69,9 @@ test("guard: the call sites were found to scan", () => {
       code
         .split("\n")
         .map((line, i) => ({ rel, i, line }))
-        .filter(({ line }) => new RegExp(`(^|[^.\\w])${CLAIMANT}\\s*\\(`).test(line)),
+        .filter(({ line }) => new RegExp(`(^|[^.\\w])(${CLAIMANT_RE})\\s*\\(`).test(line)),
     );
-  assert.ok(calls.length >= 5, `expected at least five ${CLAIMANT} call sites, found ${calls.length}`);
+  assert.ok(calls.length >= 5, `expected at least five claim call sites, found ${calls.length}`);
 });
 
 test("every call site awaits the claim", () => {
@@ -79,7 +86,7 @@ test("every call site awaits the claim", () => {
   // happened to contain the word `await` (here, `const cfg = await
   // resolveGitCreds(...)` on the line above). Both planted regressions passed.
   const offenders: string[] = [];
-  const call = new RegExp(`(?<![.\\w])${CLAIMANT}\\s*\\(`, "g");
+  const call = new RegExp(`(?<![.\\w])(${CLAIMANT_RE})\\s*\\(`, "g");
   for (const { rel, code } of files) {
     if (rel === "services/graphifyService.ts") continue; // the declaration itself
     for (const m of code.matchAll(call)) {

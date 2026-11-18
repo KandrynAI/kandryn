@@ -26,12 +26,38 @@ import {
   triggerRepoIndex,
 } from "../services/graphifyService.js";
 import { canAdminister } from "../services/resourceAdmin.js";
+import { discoverFiles, estimateScan } from "../services/baselineScanCore.js";
+import {
+  DEFAULT_SETUP_CHOICE,
+  REPO_SETUP_CHOICES,
+  readSetupChoice,
+  wantsBaselineScan,
+  wantsIndex,
+} from "../../../../shared/types/repoSetup.js";
 import { resetProfile } from "../services/uiStyleService.js";
 import * as audit from "../services/auditService.js";
 
 const router: IRouter = Router();
 
 const RepoIdParam = z.object({ repoId: z.coerce.number().int().positive() });
+
+/**
+ * The connect-time setup choice (0048), parsed on its own.
+ *
+ * CreateRepositoryBody comes from the orval codegen and is marked do not edit
+ * manually, so this rides alongside it rather than being added to the OpenAPI
+ * spec, which is the convention for newer fields here. Optional: a client that
+ * does not send it gets the project's remembered default, and failing that the
+ * default choice, which is what connect already did.
+ */
+const SetupField = z.object({ setup: z.enum(REPO_SETUP_CHOICES).optional() });
+
+/** The URL to estimate a scan for, before any repository row exists. */
+const EstimateBody = z.object({
+  url: z.string().min(1),
+  provider: z.enum(["github", "azure-repos"]),
+  defaultBranch: z.string().min(1).optional(),
+});
 
 // https://github.com/{owner}/{repo}, tolerating a www. prefix, a .git suffix,
 // and a trailing slash. Anchored so nothing but owner/repo may follow the host.
@@ -166,6 +192,63 @@ router.get("/repositories", async (req, res): Promise<void> => {
   res.json(ListRepositoriesResponse.parse(repos));
 });
 
+/**
+ * What a baseline scan of this URL would cost, before any repository row
+ * exists (0048).
+ *
+ * The connect-time choice offers a security scan of the whole codebase, and
+ * that choice is only meaningful with a number beside it. The existing
+ * estimate endpoint takes a repository id, which there is not one of yet, so
+ * this one takes the URL the customer has just typed.
+ *
+ * It does no more than connect itself already does: verify the URL, read the
+ * tree once, and run the same pure discovery and pricing functions the scan
+ * uses (services/baselineScanCore.ts), so the figure here and the figure in
+ * the scan's own pre-flight dialog cannot disagree. Nothing is written and no
+ * model is called.
+ *
+ * `source` is always "tree": there is no graph for a repository that has not
+ * been connected, so the count is the extension filter's, which is the higher
+ * of the two and therefore the safe direction for a number shown before spend.
+ */
+router.post("/repositories/estimate", async (req, res): Promise<void> => {
+  const parsed = EstimateBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "A repository URL and provider are required." });
+    return;
+  }
+  const { githubToken, azureReposToken } = await resolveGitCreds(req.userId);
+
+  let branch = parsed.data.defaultBranch;
+  if (parsed.data.provider === "github") {
+    const check = await verifyGithubUrl(parsed.data.url, githubToken);
+    if (!check.ok) {
+      res.status(400).json({ error: check.error });
+      return;
+    }
+    branch = check.defaultBranch;
+  }
+  if (!branch) {
+    res.status(400).json({ error: "A default branch is required to estimate an Azure Repos repository." });
+    return;
+  }
+
+  const tree = await fetchFilePaths(parsed.data.provider, parsed.data.url, branch, {
+    githubToken,
+    azureReposToken,
+  });
+  if (tree.length === 0) {
+    // Either the branch is wrong or the token cannot read the tree. Saying so
+    // beats quoting a confident $0.00 for a repository nobody can read.
+    res.status(422).json({
+      error: "No files could be read from that repository. Check the URL, the branch and your repository access.",
+    });
+    return;
+  }
+  const { paths, source } = discoverFiles(null, tree);
+  res.json({ ...estimateScan(paths.length), source, treeFileCount: tree.length });
+});
+
 router.post("/repositories", async (req, res): Promise<void> => {
   const parsed = CreateRepositoryBody.safeParse(req.body);
   if (!parsed.success) {
@@ -182,7 +265,7 @@ router.post("/repositories", async (req, res): Promise<void> => {
     return;
   }
   const [project] = await db
-    .select({ id: projectsTable.id })
+    .select({ id: projectsTable.id, setupChoice: projectsTable.setupChoice })
     .from(projectsTable)
     .where(and(eq(projectsTable.id, parsed.data.projectId), eq(projectsTable.userId, req.userId)));
   if (!project) {
@@ -203,6 +286,14 @@ router.post("/repositories", async (req, res): Promise<void> => {
     verifiedBranch = check.defaultBranch;
   }
 
+  // What to do with the repository once it is connected (0048). An explicit
+  // choice from the form wins; otherwise the project's remembered default from
+  // the wizard; otherwise the default, which is what connect already did.
+  const setupField = SetupField.safeParse(req.body);
+  const setup = setupField.success && setupField.data.setup
+    ? setupField.data.setup
+    : readSetupChoice(project.setupChoice ?? DEFAULT_SETUP_CHOICE);
+
   const [repo] = await db
     .insert(repositoriesTable)
     .values({
@@ -211,6 +302,11 @@ router.post("/repositories", async (req, res): Promise<void> => {
       projectId: project.id,
       defaultBranch: verifiedBranch ?? parsed.data.defaultBranch,
       stackProfile: {},
+      setupChoice: setup,
+      // Only `index_scan` leaves work for the dispatcher. `none` and `index`
+      // are settled in this request, so they are stamped here rather than
+      // being read on every tick for ever.
+      setupCompletedAt: wantsBaselineScan(setup) ? null : new Date(),
     })
     .returning();
 
@@ -230,9 +326,12 @@ router.post("/repositories", async (req, res): Promise<void> => {
     .from(repositoriesTable)
     .where(eq(repositoriesTable.id, repo.id));
 
-  // Trigger async Graphify indexing if the microservice is configured
-  // (Phase 2). Fire-and-forget — never blocks the response.
-  if (isGraphifyConfigured() && updated.url) {
+  // Index the repository, unless the customer asked us not to (0048). Awaited:
+  // the handoff used to be fire-and-forget, which on @vercel/node means the
+  // request can be frozen before it leaves, and a failed handoff now parks the
+  // row as `queued` for the dispatcher instead of leaving it reading
+  // `indexing` for an index that never started.
+  if (wantsIndex(setup) && isGraphifyConfigured() && updated.url) {
     const cfg = await resolveGitCreds(req.userId);
     await triggerRepoIndex({
       repoUrl: updated.url,
@@ -249,7 +348,7 @@ router.post("/repositories", async (req, res): Promise<void> => {
     action: "repository.connected",
     entityType: "repository",
     entityId: updated.id,
-    metadata: { name: updated.name, provider: updated.provider },
+    metadata: { name: updated.name, provider: updated.provider, setup },
     ipAddress: audit.getIp(req),
     userAgent: req.headers["user-agent"],
   });

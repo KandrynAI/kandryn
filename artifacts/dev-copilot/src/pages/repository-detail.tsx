@@ -457,11 +457,19 @@ function GraphifySection({ repoId }: { repoId: number }) {
     queryFn: () => fetchRepositoryGraphStatus(repoId),
     // Poll while a rebuild is in flight so the panel updates itself (and self-
     // corrects after navigating away and back — the state is server-persisted).
-    refetchInterval: (q) => (q.state.data?.status === "indexing" ? 3000 : false),
+    // A queued index is polled too, or the page would sit on "Queued" until a
+    // manual refresh even after the dispatcher started it. Slower than the
+    // indexing poll: the wait is up to one cron tick, not seconds.
+    refetchInterval: (q) =>
+      q.state.data?.status === "indexing" ? 3000 : q.state.data?.status === "queued" ? 15000 : false,
   });
 
   const graphStatus = status?.status ?? "idle";
-  const isIndexing = graphStatus === "indexing";
+  // `queued` is pending work too (0048): an index the dispatcher has not
+  // started yet, because the handoff could not be made or because a commit
+  // queued a re-index. The poll and the disabled Rebuild button must treat it
+  // exactly like `indexing`, or the page offers a button the server refuses.
+  const isIndexing = graphStatus === "indexing" || graphStatus === "queued";
 
   // Toast when a rebuild finishes (state transitions out of "indexing").
   const prevStatus = useRef<string | undefined>(undefined);
@@ -538,6 +546,8 @@ function GraphifySection({ repoId }: { repoId: number }) {
   const stale = status?.stale ?? false;
   const dot = isLoading
     ? "#9ba3ac"
+    : graphStatus === "queued"
+      ? "#9ba3ac"
     : isIndexing
       ? "#3b82f6"
       : graphStatus === "failed"
@@ -551,7 +561,9 @@ function GraphifySection({ repoId }: { repoId: number }) {
               : "#1a7f4b";
   const statusText = isLoading
     ? "Checking…"
-    : isIndexing
+    : graphStatus === "queued"
+      ? "Queued — indexing starts within a few minutes"
+      : isIndexing
       ? "Indexing… this can take a minute"
       : graphStatus === "failed"
         ? `Rebuild failed${status?.error ? ` — ${status.error}` : ""}`

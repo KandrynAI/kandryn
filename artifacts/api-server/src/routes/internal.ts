@@ -5,6 +5,8 @@ import { executeRun } from "../services/runService.js";
 import { holdIfOrderChanged } from "../services/sequenceGate.js";
 import { dispatchPendingProfiles } from "../services/uiStyleService.js";
 import { runJiraRetention } from "../services/jiraExt/installations.js";
+import { dispatchQueuedIndexes } from "../services/graphifyService.js";
+import { dispatchPendingSetups } from "../services/repoSetup.js";
 import { listScansAwaitingCollection, collectBaselineScan } from "../services/baselineScanService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
 import { backfillEncryption } from "../services/configService.js";
@@ -51,15 +53,21 @@ function authorized(header: string | undefined): boolean {
 
 /**
  * Cron-only dispatcher (spec §5.4). Not behind requireAuth — mounted before it
- * and guarded by CRON_SECRET. Four jobs each tick — the last two are the
- * baseline scan's only execution surface, since a scan cannot fit in one
- * function invocation:
+ * and guarded by CRON_SECRET. Steps 3 and 4 are the baseline scan's only
+ * execution surface, since a scan cannot fit in one function invocation, and
+ * steps 5 to 8 are additive: each records its own failures and none may delay
+ * the run dispatch above it.
  *   1. Sweep stuck `running` rows (>20 min) to `failed`.
+ *   1b. Fail manual runs stranded in `queued` with no execution.
  *   2. Claim up to DISPATCH_BATCH due `scheduled` rows with FOR UPDATE SKIP
  *      LOCKED so concurrent ticks never grab the same run, flip them to
  *      `queued`, and execute each inline.
  *   3. Sweep baseline scans stuck in `queued` (start died before submitting).
  *   4. Collect baseline scans whose Message Batch has ended.
+ *   5. Extract UI style profiles waiting to be read (0042).
+ *   6. Jira app retention (0043).
+ *   7. Start graph indexes waiting in `queued` (0048).
+ *   8. Act on connect-time setup choices still outstanding (0048).
  */
 async function dispatchHandler(req: Request, res: Response): Promise<void> {
   if (!authorized(req.header("authorization"))) {
@@ -204,6 +212,43 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     logger.warn({ err }, "Jira retention tick failed");
   }
 
+  // 7. Start indexes waiting in `queued` (0048).
+  //
+  // A repository parks there when the handoff to the Graphify microservice
+  // could not be made — it was unreachable, or it refused — and when a commit
+  // queues a re-index rather than paying for the handoff inside the response
+  // the committer is waiting on. Before this, the request that asked for an
+  // index was the only chance it ever got: the handoff was `void fetch(...)`,
+  // so on @vercel/node it could be frozen before leaving, and the row sat
+  // reading `indexing` for an index that never started.
+  //
+  // Additive and after the run dispatch, like steps 5 and 6, so a slow
+  // microservice can never delay a scheduled run.
+  let indexesStarted: number[] = [];
+  try {
+    indexesStarted = await dispatchQueuedIndexes();
+    if (indexesStarted.length > 0) logger.info({ indexesStarted }, "graph index dispatch tick");
+  } catch (err) {
+    logger.warn({ err }, "Graph index dispatch tick failed");
+  }
+
+  // 8. Act on connect-time setup choices that are still outstanding (0048).
+  //
+  // Only `index_scan` reaches here: a baseline scan reads every source file,
+  // submits a Message Batch and is collected minutes later by step 4 of this
+  // same tick, so it cannot be started from the connect request. It waits for
+  // the index to settle first, because the scan's file discovery prefers a
+  // built graph over the raw tree.
+  //
+  // Last, for the same reason as the two steps above.
+  let setupsActed: number[] = [];
+  try {
+    setupsActed = await dispatchPendingSetups();
+    if (setupsActed.length > 0) logger.info({ setupsActed }, "repository setup tick");
+  } catch (err) {
+    logger.warn({ err }, "Repository setup tick failed");
+  }
+
   res.json({
     swept: sweptCount,
     dispatched: ids.length - held,
@@ -213,6 +258,8 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     baselineCollected: collected,
     uiStyleExtracted: profiles.length,
     jiraLinksRevoked: jiraRetention.links,
+    indexesStarted: indexesStarted.length,
+    setupsActed: setupsActed.length,
   });
 }
 

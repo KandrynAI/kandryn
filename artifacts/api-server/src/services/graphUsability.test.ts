@@ -30,10 +30,20 @@ test("a row written before 0047 has no claim timestamp and reads as not in fligh
   assert.equal(isIndexInFlight("indexing", undefined, NOW), false);
 });
 
-test("only the indexing status is a claim at all", () => {
-  for (const status of ["idle", "succeeded", "failed", "stale", null, undefined]) {
+test("only a pending status is a claim at all", () => {
+  for (const status of ["idle", "succeeded", "failed", "stale", null, undefined, "", "INDEXING"]) {
     assert.equal(isIndexInFlight(status, minutesAgo(1), NOW), false, `status ${String(status)}`);
   }
+});
+
+test("a queued index counts as pending, and goes stale on the same clock", () => {
+  // A queued index is one the dispatcher has not started yet, so starting a
+  // second is the duplicate work this guard exists to prevent. And it must go
+  // stale like any other claim, or a queue nothing can drain would wedge the
+  // repository just as a lost callback would.
+  assert.equal(isIndexInFlight("queued", minutesAgo(1), NOW), true);
+  assert.equal(isIndexInFlight("queued", minutesAgo(INDEX_CLAIM_STALE_MINUTES + 1), NOW), false);
+  assert.equal(isIndexInFlight("queued", null, NOW), false);
 });
 
 test("a timestamp is accepted as a string, the shape a database row carries", () => {

@@ -46,6 +46,13 @@ export const projectsTable = pgTable(
     // triggered a run may not approve its own parked plan — a different admin must.
     requireSecondApprover: boolean("require_second_approver").notNull().default(false),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    // What the project wizard asked for at creation (0048), remembered as a
+    // DEFAULT rather than an instruction: the wizard asks before a repository
+    // exists, which is the common path, so the connect form arrives with this
+    // already selected. The instruction lives on repositories.setup_choice.
+    // Union inlined, like repositories.setup_choice; shared/types/repoSetup.ts
+    // is the source of truth.
+    setupChoice: text("setup_choice").$type<"none" | "index" | "index_scan" | null>().default(null),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

@@ -8,6 +8,14 @@ import { getProjectRepository } from "../services/repoResolver.js";
 import { createPlmWorkItem } from "../services/plmWrite.js";
 import * as audit from "../services/auditService.js";
 import { ensureProfileRow } from "../services/uiStyleService.js";
+import { isGraphifyConfigured, triggerRepoIndex } from "../services/graphifyService.js";
+import { resolveGitCreds } from "../services/gitToken.js";
+import {
+  DEFAULT_SETUP_CHOICE,
+  REPO_SETUP_CHOICES,
+  wantsBaselineScan,
+  wantsIndex,
+} from "../../../../shared/types/repoSetup.js";
 import { canAdminister } from "../services/resourceAdmin.js";
 import { ensureUserHasTeam } from "../services/teamService.js";
 
@@ -20,6 +28,10 @@ const CreateProjectBody = z.object({
   // Optional (0020): a project can be created with no repository, then have one
   // connected on the board. When provided, the repo is adopted via project_id.
   repositoryId: z.coerce.number().int().positive().optional(),
+  // What to do with the repository once there is one (0048). Remembered as the
+  // project's DEFAULT, because the wizard asks before a repository exists on
+  // the common path; applied immediately when the wizard did bind one.
+  setup: z.enum(REPO_SETUP_CHOICES).optional(),
 });
 
 const UpdateProjectBody = z.object({
@@ -188,6 +200,7 @@ router.post("/projects", async (req, res): Promise<void> => {
     return;
   }
   const { name, plmProvider, plmProjectKey, repositoryId } = parsed.data;
+  const setup = parsed.data.setup ?? DEFAULT_SETUP_CHOICE;
 
   // Duplicate-binding guard (unique on user_id, plm_provider, plm_project_key).
   // Catch it here with a friendly 409 instead of letting the unique index throw
@@ -270,15 +283,45 @@ router.post("/projects", async (req, res): Promise<void> => {
         // the request and is stale when we just created one, so use `team`.
         teamId: team.id,
         visibility: "team",
+        // The wizard's answer, kept as this project's default so the connect
+        // form arrives with it selected (0048).
+        setupChoice: setup,
       })
       .returning();
     // Adopt the repository into this project (repositories.project_id is the
     // source of truth). Scoped to the user; a repo belongs to one project.
     if (repositoryId != null) {
-      await db
+      const [adopted] = await db
         .update(repositoriesTable)
-        .set({ projectId: proj.id })
-        .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)));
+        .set({
+          projectId: proj.id,
+          // The wizard bound a repository, so the choice is an instruction
+          // here and not just a default. Only `index_scan` leaves work for the
+          // dispatcher; the other two are settled by this request.
+          setupChoice: setup,
+          setupCompletedAt: wantsBaselineScan(setup) ? null : new Date(),
+        })
+        .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)))
+        .returning();
+      // Index it, unless asked not to, and unless it already has a graph. A
+      // repository reachable by the wizard's picker is one that was unbound by
+      // a deleted project, so it may already be indexed, and re-cloning a
+      // repository to rebuild a graph that is already there is pure waste.
+      if (
+        adopted?.url &&
+        wantsIndex(setup) &&
+        adopted.graphBuiltAt == null &&
+        isGraphifyConfigured()
+      ) {
+        const creds = await resolveGitCreds(req.userId);
+        await triggerRepoIndex({
+          repoUrl: adopted.url,
+          githubToken: creds.githubToken ?? "",
+          repoId: adopted.id,
+          triggeredBy: req.userId,
+          log: req.log,
+        });
+      }
     }
     req.log.info({ projectId: proj.id, plmProvider, plmProjectKey }, "Project created");
     // Queue the UI style extraction (0042). A cheap insert, deliberately not
@@ -298,7 +341,7 @@ router.post("/projects", async (req, res): Promise<void> => {
       action: "project.created",
       entityType: "project",
       entityId: proj.id,
-      metadata: { name: proj.name, plmProvider: proj.plmProvider, teamCreatedForThisProject: req.teamId == null },
+      metadata: { name: proj.name, plmProvider: proj.plmProvider, setup, teamCreatedForThisProject: req.teamId == null },
       ipAddress: audit.getIp(req),
       userAgent: req.headers["user-agent"],
     });

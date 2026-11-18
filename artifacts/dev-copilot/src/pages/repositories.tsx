@@ -1,5 +1,5 @@
-import { useListRepositories, useCreateRepository, getListRepositoriesQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useListRepositories, getListRepositoriesQueryKey } from "@workspace/api-client-react";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,6 +15,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { connectRepository, estimateRepositoryScan, fetchProject, ApiError } from "@/services/api";
+import { SETUP_OPTIONS, initialChoice, needsEstimate, estimateLine, canConfirm } from "@/lib/repoSetup";
+import type { RepoSetupChoice } from "../../../../shared/types/repoSetup.ts";
+
+// The same amber the Knowledge and UI style panels use for a caution. Amber,
+// never red: nothing has failed, and the customer can still connect.
+const AMBER = "var(--c-amber, #b4802a)";
 import { SiGithub } from "react-icons/si";
 import { Cloud } from "lucide-react";
 
@@ -152,7 +159,21 @@ function StackBadge({ icon: Icon, value }: { icon: any, value: string }) {
 function CreateRepoForm({ projectId, onSuccess }: { projectId: number; onSuccess: () => void }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const createRepository = useCreateRepository();
+  // Hand-written client rather than the generated useCreateRepository: the
+  // setup choice cannot be added to CreateRepositoryBody, which is orval output
+  // marked do not edit manually.
+  const createRepository = useMutation({ mutationFn: connectRepository });
+
+  // The project's remembered answer from the wizard, so this form arrives on
+  // it rather than asking the same question twice (0048). A failure to read it
+  // is not worth surfacing: the form falls back to the default choice.
+  const { data: project } = useQuery({
+    queryKey: ["project", projectId, "setup-default"],
+    queryFn: () => fetchProject(projectId),
+    retry: false,
+  });
+  const [setup, setSetup] = useState<RepoSetupChoice | null>(null);
+  const choice = setup ?? initialChoice(project?.setupChoice);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -172,20 +193,50 @@ function CreateRepoForm({ projectId, onSuccess }: { projectId: number; onSuccess
     }
   });
 
+  // What a scan of this repository would cost, fetched only when the customer
+  // has asked for one and has entered a URL. Real money is spent on that
+  // choice, so the figure is shown before the button is live (canConfirm).
+  const url = form.watch("url");
+  const provider = form.watch("provider");
+  const branch = form.watch("defaultBranch");
+  const wantsCost = needsEstimate(choice) && /^https?:\/\/\S+$/.test(url ?? "");
+  const {
+    data: estimate,
+    isFetching: estimating,
+    error: estimateError,
+  } = useQuery({
+    queryKey: ["repo-estimate", provider, url, branch],
+    queryFn: () => estimateRepositoryScan({ url, provider, defaultBranch: branch || undefined }),
+    enabled: wantsCost,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    createRepository.mutate({ data: { ...values, projectId } }, {
+    createRepository.mutate({ ...values, projectId, setup: choice }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListRepositoriesQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListRepositoriesQueryKey({ projectId }) });
-        toast({ title: "Repository connected", description: "The repository has been successfully registered." });
+        toast({
+          title: "Repository connected",
+          description:
+            choice === "index_scan"
+              ? "Indexing has started. The security scan begins once indexing finishes."
+              : choice === "index"
+                ? "Indexing has started."
+                : "The repository is connected. Nothing else was started.",
+        });
         onSuccess();
       },
       onError: (error) => {
         // Surface the server's validation message (e.g. URL not found, owner ===
-        // repo). The generated client's ApiError message embeds the server detail.
+        // repo).
         toast({
           title: "Couldn't connect repository",
-          description: error instanceof Error ? error.message : "Failed to connect repository.",
+          description:
+            error instanceof ApiError || error instanceof Error
+              ? error.message
+              : "Failed to connect repository.",
           variant: "destructive",
         });
       }
@@ -395,9 +446,60 @@ function CreateRepoForm({ projectId, onSuccess }: { projectId: number; onSuccess
           </div>
         </div>
 
+        {/* What to do once it is connected (0048). */}
+        <div className="border-border space-y-3 border-t pt-4">
+          <div className="text-sm font-medium">After connecting</div>
+          <div className="space-y-2" role="radiogroup" aria-label="What to do after connecting">
+            {SETUP_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border border-border p-3"
+              >
+                <input
+                  type="radio"
+                  name="repo-setup"
+                  className="mt-1"
+                  value={opt.value}
+                  checked={choice === opt.value}
+                  onChange={() => setSetup(opt.value)}
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm">{opt.label}</span>
+                  <span className="text-muted-foreground block text-xs leading-relaxed">{opt.detail}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {needsEstimate(choice) && (
+            <div className="text-xs leading-relaxed" aria-live="polite">
+              {!url ? (
+                <span className="text-muted-foreground">Enter the repository URL to see what a scan would cost.</span>
+              ) : estimating ? (
+                <span className="text-muted-foreground">Checking the repository size...</span>
+              ) : estimateError ? (
+                /* Amber, not red: the connect itself is unaffected and the
+                   customer can still pick a free option. */
+                <span style={{ color: AMBER }}>
+                  {estimateError instanceof Error
+                    ? estimateError.message
+                    : "The repository size could not be read, so a scan cannot be priced yet."}
+                </span>
+              ) : estimate?.overCap ? (
+                <span style={{ color: AMBER }}>{estimateLine(estimate)}</span>
+              ) : (
+                <span className="text-muted-foreground">{estimateLine(estimate)}</span>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onSuccess} className="font-mono text-xs">Cancel</Button>
-          <Button type="submit" disabled={createRepository.isPending} className="font-mono text-xs">
+          <Button
+            type="submit"
+            disabled={createRepository.isPending || !canConfirm(choice, estimate, estimating)}
+            className="font-mono text-xs"
+          >
             {createRepository.isPending ? "Connecting..." : "Connect Repository"}
           </Button>
         </div>

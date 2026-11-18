@@ -1,5 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, repositoriesTable } from "@workspace/db";
+import { resolveGitCreds } from "./gitToken.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
 // Pure usability predicates live in a db-free module (unit-testable); re-exported
@@ -135,20 +136,65 @@ interface TriggerIndexArgs {
   log?: { warn: (obj: unknown, msg: string) => void };
 }
 
+/** How long the handoff to the microservice is given before it is queued instead. */
+const DISPATCH_TIMEOUT_MS = 10_000;
+
 /**
- * Ask the Graphify microservice to (re)index a repository. Used on connect
- * (Phase 2), on manual Rebuild, and after a commit lands (Phase 3 — the graph
- * is now stale). Returns whether a request was dispatched (false when the
- * microservice isn't configured). Never throws: the microservice replies 202
- * and does the clone + extract in the background, POSTing the result back to
- * /api/internal/graphify-callback.
+ * Park an index for the cron dispatcher to start, without calling the
+ * microservice at all (0048).
  *
- * The CLAIM is awaited; the request to the microservice is not. That split is
- * deliberate. `isIndexInFlight` reads graph_started_at to refuse a duplicate
- * index, and a guard whose column is written fire-and-forget is not a guard:
- * on a serverless invocation the write can be dropped when the response is
- * sent, and the next caller then sees an unclaimed row. So the claim lands
- * before this function returns, and the caller awaits it.
+ * Used where the caller must not pay for the handoff: after a commit lands,
+ * where adding an external request to the commit response buys nothing (the
+ * graph is read by the NEXT run, minutes or hours later) and risks delaying a
+ * response the user is waiting on.
+ *
+ * A no-op when indexing is unconfigured, so a deployment without the
+ * microservice never accumulates a queue it cannot drain.
+ */
+export async function queueRepoIndex(
+  repoId: number,
+  triggeredBy: string | null,
+  log?: { warn: (obj: unknown, msg: string) => void },
+): Promise<boolean> {
+  if (!isGraphifyConfigured()) return false;
+  try {
+    await db
+      .update(repositoriesTable)
+      .set({
+        graphStatus: "queued",
+        graphError: null,
+        graphStartedAt: new Date(),
+        graphTriggeredBy: triggeredBy,
+      })
+      .where(eq(repositoriesTable.id, repoId));
+    return true;
+  } catch (err) {
+    log?.warn({ err }, "Graphify index queue write failed");
+    return false;
+  }
+}
+
+/**
+ * Ask the Graphify microservice to (re)index a repository now. Used on connect
+ * and on manual Rebuild, where the customer has just asked and is watching.
+ * Returns whether the microservice accepted the handoff (false when indexing is
+ * unconfigured, or when the request could not be made). Never throws.
+ *
+ * BOTH the claim and the handoff are awaited, and that is the whole point.
+ *
+ * The claim is awaited because `isIndexInFlight` reads graph_started_at to
+ * refuse a duplicate index, and a guard whose column is written
+ * fire-and-forget is not a guard: on @vercel/node the write can be dropped
+ * when the response is sent, and the next caller then sees an unclaimed row.
+ *
+ * The handoff is awaited because it used to be `void fetch(...)`, which on the
+ * same runtime means the request may never leave: the invocation ends when the
+ * route answers and the container is frozen mid-flight. An index that silently
+ * never started, with the row left reading `indexing`, is exactly the failure
+ * the rest of this codebase learned from run #41. A handoff that times out or
+ * is refused parks the row as `queued` so the cron dispatcher retries it,
+ * which is the one case where "the request was the only chance" is no longer
+ * true.
  */
 export async function triggerRepoIndex({
   repoUrl,
@@ -179,20 +225,162 @@ export async function triggerRepoIndex({
     log?.warn({ err }, "Graphify status update to indexing failed");
   }
 
-  const callbackUrl = `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/api/internal/graphify-callback`;
-  void fetch(`${graphifyUrl}/index`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-service-secret": process.env.GRAPHIFY_SERVICE_SECRET ?? "",
-    },
-    body: JSON.stringify({
-      repo_url: repoUrl,
-      github_token: githubToken,
-      repo_id: repoId,
-      callback_url: callbackUrl,
-    }),
-  }).catch((err) => log?.warn({ err }, "Graphify index trigger failed"));
+  const outcome = await dispatchIndexRequest(repoUrl, githubToken, repoId, log);
+  if (outcome.ok) return true;
+  // Queue rather than fail. Nothing about the repository is wrong: the handoff
+  // did not land, and a 5xx from a restarting service is exactly what a retry
+  // is for. `failed` is reserved for what the microservice's own callback says
+  // when extraction itself breaks, and conflating the two would show a customer
+  // an error for a transient blip.
+  await parkAsQueued(repoId, outcome.note, log);
+  return false;
+}
 
-  return true;
+/**
+ * The handoff itself: one POST to the microservice, bounded by a timeout.
+ *
+ * Shared by the immediate trigger and the dispatcher's drain so there is one
+ * place that knows the request shape and one place that decides what a refusal
+ * means. Returns a note written for a customer to read on the repository row,
+ * never the raw error: a connection string or a token could otherwise reach
+ * the UI through graph_error.
+ */
+async function dispatchIndexRequest(
+  repoUrl: string,
+  githubToken: string,
+  repoId: number,
+  log?: { warn: (obj: unknown, msg: string) => void },
+): Promise<{ ok: boolean; note: string }> {
+  const graphifyUrl = process.env.GRAPHIFY_SERVICE_URL;
+  if (!graphifyUrl) return { ok: false, note: "Indexing is not configured." };
+  const callbackUrl = `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/api/internal/graphify-callback`;
+  try {
+    const res = await fetch(`${graphifyUrl}/index`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-service-secret": process.env.GRAPHIFY_SERVICE_SECRET ?? "",
+      },
+      body: JSON.stringify({
+        repo_url: repoUrl,
+        github_token: githubToken,
+        repo_id: repoId,
+        callback_url: callbackUrl,
+      }),
+      signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
+    });
+    if (res.ok) return { ok: true, note: "" };
+    log?.warn({ repoId, status: res.status }, "Graphify index handoff refused");
+    return { ok: false, note: `The indexing service answered ${res.status}. Retrying shortly.` };
+  } catch (err) {
+    log?.warn({ repoId, err }, "Graphify index handoff failed");
+    return { ok: false, note: "The indexing service could not be reached. Retrying shortly." };
+  }
+}
+
+/**
+ * Take a queued repository, exactly once.
+ *
+ * A CONDITIONAL update: the row moves out of `queued` only if it is still in
+ * `queued`, so of two overlapping dispatcher ticks exactly one gets `true` and
+ * the other gets `false` and moves on. Selecting and then updating would let
+ * both proceed and start two clone-and-extract jobs on a customer's
+ * repository, which is the whole reason this is one statement. It is the same
+ * shape `POST /runs/:id/execute` uses to make a double-click one run.
+ *
+ * Exported so it can be raced directly in
+ * scripts/reposetup-verify/queue.ts. Racing it through the drain does not
+ * work: the two ticks serialize on the connection pool, so the second one's
+ * read happens after the first one's write and the condition is never
+ * exercised. A test that cannot fail when the condition is removed proves
+ * nothing, and the first version of that test did exactly that.
+ */
+export async function claimQueuedIndex(repoId: number): Promise<boolean> {
+  const claimed = await db
+    .update(repositoriesTable)
+    .set({ graphStatus: "indexing", graphError: null, graphStartedAt: new Date() })
+    .where(and(eq(repositoriesTable.id, repoId), eq(repositoriesTable.graphStatus, "queued")))
+    .returning({ id: repositoriesTable.id });
+  return claimed.length > 0;
+}
+
+/**
+ * Move a claimed row back to `queued` so the dispatcher picks it up.
+ *
+ * Deliberately not `failed`: nothing about the repository is wrong, the
+ * handoff did not land. `failed` is what the microservice's own callback says
+ * when extraction itself breaks, and conflating the two would show a customer
+ * an error for a transient service blip.
+ */
+async function parkAsQueued(
+  repoId: number,
+  note: string,
+  log?: { warn: (obj: unknown, msg: string) => void },
+): Promise<void> {
+  try {
+    await db
+      .update(repositoriesTable)
+      .set({ graphStatus: "queued", graphError: note })
+      .where(eq(repositoriesTable.id, repoId));
+  } catch (err) {
+    log?.warn({ repoId, err }, "Graphify queue fallback write failed");
+  }
+}
+
+/** How many queued indexes one dispatcher tick starts. */
+const DRAIN_BATCH = 2;
+
+/**
+ * Start the indexes waiting in `queued` (0048). Called by the cron dispatcher.
+ *
+ * Bounded at DRAIN_BATCH per tick for the same reason the run dispatcher is
+ * bounded at two: each handoff is an outbound request inside a function with a
+ * 300s ceiling that is also running the run dispatch, and a backlog drains over
+ * several ticks rather than risking the whole tick.
+ *
+ * The claim is a CONDITIONAL update (`WHERE graph_status = 'queued'`), so two
+ * overlapping ticks cannot both start the same repository: the second update
+ * matches no row. Selecting then updating would not be enough, and this is the
+ * same shape `POST /runs/:id/execute` uses to make a double-click one run.
+ *
+ * Never throws: the dispatcher treats this as an additive step and one bad
+ * repository must not abort the tick.
+ */
+export async function dispatchQueuedIndexes(): Promise<number[]> {
+  if (!isGraphifyConfigured()) return [];
+
+  const waiting = await db
+    .select({ id: repositoriesTable.id, userId: repositoriesTable.userId, url: repositoriesTable.url, triggeredBy: repositoriesTable.graphTriggeredBy })
+    .from(repositoriesTable)
+    .where(eq(repositoriesTable.graphStatus, "queued"))
+    .orderBy(repositoriesTable.graphStartedAt)
+    .limit(DRAIN_BATCH);
+
+  const started: number[] = [];
+  for (const repo of waiting) {
+    if (!repo.url) {
+      // Nothing to index and nothing a retry will fix. Settle the row rather
+      // than leaving it in the queue for ever.
+      await db
+        .update(repositoriesTable)
+        .set({ graphStatus: "failed", graphError: "This repository has no URL. Set one, then rebuild." })
+        .where(and(eq(repositoriesTable.id, repo.id), eq(repositoriesTable.graphStatus, "queued")));
+      continue;
+    }
+    if (!(await claimQueuedIndex(repo.id))) continue; // another tick took it
+
+    // The OWNER's credentials: the queue outlives the request that filled it,
+    // so there is no actor here, and resolveGitCreds derives the workspace from
+    // the id it is given.
+    const creds = await resolveGitCreds(repo.userId);
+    const outcome = await dispatchIndexRequest(repo.url, creds.githubToken ?? "", repo.id);
+    if (outcome.ok) {
+      started.push(repo.id);
+    } else {
+      // Back to the queue for the next tick. The handoff, not the repository,
+      // is what failed.
+      await parkAsQueued(repo.id, outcome.note);
+    }
+  }
+  return started;
 }

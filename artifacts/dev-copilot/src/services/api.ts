@@ -1,5 +1,6 @@
 import type { StackProfile } from '@/components/dc';
 import type { RunEventDTO } from '../../../../shared/types/runEvent';
+import type { RepoSetupChoice } from '../../../../shared/types/repoSetup';
 
 /**
  * A timeline event (0044). Imported from shared/types rather than redeclared:
@@ -129,7 +130,7 @@ export interface RepositoryGraphStatus {
   stale: boolean;
   // 'stale' is set when the repo URL changed after the build — the graph is kept
   // but retrieval refuses it (tree-only) until a rebuild succeeds.
-  status: 'idle' | 'indexing' | 'succeeded' | 'failed' | 'stale';
+  status: 'idle' | 'queued' | 'indexing' | 'succeeded' | 'failed' | 'stale';
   error: string | null;
 }
 
@@ -164,12 +165,24 @@ export function fetchRepositories(projectId?: number): Promise<Repository[]> {
   return request<Repository[]>(`/api/repositories${q}`);
 }
 
+/**
+ * Connect a repository.
+ *
+ * Hand-written rather than the generated `useCreateRepository`, because the
+ * setup choice cannot be added to CreateRepositoryBody: that schema is orval
+ * output marked do not edit manually, and the OpenAPI spec is the legacy task
+ * flow. The server parses `setup` alongside the generated body for the same
+ * reason.
+ */
 export function connectRepository(data: {
   name: string;
   provider: string;
   url: string;
   defaultBranch: string;
   projectId: number;
+  stackProfile?: Record<string, string>;
+  /** What to do once it is connected (0048). */
+  setup?: RepoSetupChoice;
 }): Promise<Repository> {
   return request<Repository>('/api/repositories', {
     method: 'POST',
@@ -232,6 +245,11 @@ export interface Project {
   pinnedOpenaiModel: string | null;
   /** Segregation of duties (governance item 6): trigger-er can't self-approve. */
   requireSecondApprover: boolean;
+  /**
+   * What the wizard asked for at creation (0048), remembered as the default the
+   * connect form arrives on. Null for a project created before the column.
+   */
+  setupChoice: RepoSetupChoice | null;
   lastSyncedAt: string | null;
   createdAt: string;
   counts?: { open: number; running: number; review: number };
@@ -306,6 +324,8 @@ export function createProject(data: {
   plmProvider: PlmProvider;
   plmProjectKey: string;
   repositoryId?: number;
+  /** What to do with the repository once there is one (0048). */
+  setup?: RepoSetupChoice;
 }): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
@@ -1320,9 +1340,36 @@ export function fetchBaselineEstimate(repoId: number): Promise<BaselineEstimate>
   return request(`/api/repositories/${repoId}/baseline/estimate`);
 }
 
+/**
+ * The same estimate, for a repository that does not exist yet (0048).
+ *
+ * Needed because the connect-time choice offers a scan of the whole codebase
+ * and that choice is only meaningful with a number beside it, but the estimate
+ * above takes a repository id. The server runs the same pure pricing functions
+ * for both, so the two figures cannot disagree.
+ */
+export function estimateRepositoryScan(data: {
+  url: string;
+  provider: 'github' | 'azure-repos';
+  defaultBranch?: string;
+}): Promise<BaselineEstimate & { treeFileCount: number }> {
+  return request('/api/repositories/estimate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+
 export function fetchBaselineScans(
   repoId: number,
-): Promise<{ scans: BaselineScan[]; canScan: boolean; reason: string | null }> {
+): Promise<{
+  scans: BaselineScan[];
+  canScan: boolean;
+  reason: string | null;
+  /** Why a scan asked for at connect did not happen (0048). */
+  setupError?: string | null;
+}> {
   return request(`/api/repositories/${repoId}/baseline`);
 }
 
@@ -1497,7 +1544,7 @@ export interface RepoHealth {
   provider: string;
   projectId: number | null;
   projectName: string | null;
-  graphStatus: 'idle' | 'indexing' | 'succeeded' | 'failed' | 'stale';
+  graphStatus: 'idle' | 'queued' | 'indexing' | 'succeeded' | 'failed' | 'stale';
   graphBuiltAt: string | null;
   graphNodeCount: number | null;
   graphAgeHours: number | null;
