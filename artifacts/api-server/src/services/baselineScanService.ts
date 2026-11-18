@@ -20,11 +20,11 @@ import { RunError } from "./runService.js";
 import * as audit from "./auditService.js";
 import { logger } from "../lib/logger.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
-import { canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, sortFindings, MAX_FILE_CHARS, MAX_FILES, type BaselineEstimate } from "./baselineScanCore.js";
+import { canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, normalisePathPrefix, sortFindings, MAX_FILE_CHARS, MAX_FILES, type BaselineEstimate } from "./baselineScanCore.js";
 
 // Re-exported so existing callers keep importing from the service; the pure
 // core lives in its own module only so it can be tested without a database.
-export { canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, sortFindings, MAX_FILES };
+export { canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, normalisePathPrefix, sortFindings, MAX_FILES };
 export type { BaselineEstimate };
 
 /**
@@ -133,7 +133,12 @@ export async function loadScanTarget(repositoryId: number, actor: BaselineActor)
 // ---------------------------------------------------------------------------
 
 /** What the admin sees before any spend begins. */
-export async function estimateForRepository(repositoryId: number, userId: string): Promise<BaselineEstimate> {
+export async function estimateForRepository(
+  repositoryId: number,
+  userId: string,
+  /** Limit to this folder (0049). Null is the whole repository. */
+  pathPrefix: string | null = null,
+): Promise<BaselineEstimate> {
   const { repo } = await loadTarget(repositoryId);
   if (!repo.url) throw new RunError("This repository needs a valid URL before it can be scanned.", 400);
 
@@ -144,8 +149,8 @@ export async function estimateForRepository(repositoryId: number, userId: string
     const git = await GitService.forRepo(repo.id, { githubToken: creds.githubToken });
     treePaths = await git.fetchFilePaths();
   }
-  const { paths, source } = discoverFiles(graph, treePaths);
-  return { ...estimateScan(paths.length), source };
+  const { paths, source } = discoverFiles(graph, treePaths, pathPrefix);
+  return { ...estimateScan(paths.length), source, pathPrefix };
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +174,12 @@ function describeStackProfile(profile: unknown): string | undefined {
  * Returns as soon as the batch is accepted. Nothing here waits for results,
  * which is the whole point: the work outlives the request that started it.
  */
-export async function startBaselineScan(repositoryId: number, actor: BaselineActor): Promise<BaselineScan> {
+export async function startBaselineScan(
+  repositoryId: number,
+  actor: BaselineActor,
+  /** Limit to this folder (0049). Null is the whole repository. */
+  pathPrefix: string | null = null,
+): Promise<BaselineScan> {
   const target = await loadTarget(repositoryId);
   const gate = await canRunBaselineScan(actor, target);
   if (!gate.allowed) throw new RunError(gate.reason!, 403);
@@ -195,12 +205,21 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
   const graph = repo.graphStatus === "succeeded" ? (repo.graphJson as GraphifyGraph | null) : null;
   const git = await GitService.forRepo(repo.id, { githubToken: creds.githubToken });
   const treePaths = graph ? [] : await git.fetchFilePaths();
-  const { paths } = discoverFiles(graph, treePaths);
+  const { paths } = discoverFiles(graph, treePaths, pathPrefix);
 
-  if (paths.length === 0) throw new RunError("No scannable source files were found in this repository.", 422);
+  if (paths.length === 0) {
+    throw new RunError(
+      pathPrefix
+        ? `No scannable source files were found under "${pathPrefix}". Check the folder path.`
+        : "No scannable source files were found in this repository.",
+      422,
+    );
+  }
   if (paths.length > MAX_FILES) {
     throw new RunError(
-      `This repository has ${paths.length} scannable files, above the ${MAX_FILES}-file limit for a baseline scan.`,
+      pathPrefix
+        ? `"${pathPrefix}" has ${paths.length} scannable files, above the ${MAX_FILES}-file limit for one scan. Choose a folder inside it.`
+        : `This repository has ${paths.length} scannable files, above the ${MAX_FILES}-file limit for a baseline scan. Scan a folder at a time instead.`,
       422,
     );
   }
@@ -224,6 +243,7 @@ export async function startBaselineScan(repositoryId: number, actor: BaselineAct
       // into THIS array, so a push to the repository mid-scan can no longer
       // slide a different file into slot i.
       filePaths: paths,
+      pathPrefix,
       estimatedCostUsd: String(estimate.estimatedCostUsd),
       startedAt: new Date(),
     })

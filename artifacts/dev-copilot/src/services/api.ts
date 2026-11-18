@@ -1334,10 +1334,17 @@ export interface BaselineEstimate {
   source: 'graph' | 'tree';
   overCap: boolean;
   maxFiles: number;
+  /** The folder the estimate was limited to (0049). */
+  pathPrefix?: string | null;
 }
 
-export function fetchBaselineEstimate(repoId: number): Promise<BaselineEstimate> {
-  return request(`/api/repositories/${repoId}/baseline/estimate`);
+export function fetchBaselineEstimate(
+  repoId: number,
+  /** Limit the estimate to this folder (0049). */
+  pathPrefix?: string | null,
+): Promise<BaselineEstimate> {
+  const q = pathPrefix ? `?path=${encodeURIComponent(pathPrefix)}` : '';
+  return request(`/api/repositories/${repoId}/baseline/estimate${q}`);
 }
 
 /**
@@ -1374,11 +1381,16 @@ export function fetchBaselineScans(
 }
 
 /** `acknowledgedFileCount` is the count the admin approved; the API refuses a stale one. */
-export function startBaselineScan(repoId: number, acknowledgedFileCount: number): Promise<{ scan: BaselineScan }> {
+export function startBaselineScan(
+  repoId: number,
+  acknowledgedFileCount: number,
+  /** Limit the scan to this folder (0049). Omitted means the whole repository. */
+  pathPrefix?: string | null,
+): Promise<{ scan: BaselineScan }> {
   return request(`/api/repositories/${repoId}/baseline`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ acknowledgedFileCount }),
+    body: JSON.stringify({ acknowledgedFileCount, ...(pathPrefix ? { pathPrefix } : {}) }),
   });
 }
 

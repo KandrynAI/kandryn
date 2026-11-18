@@ -31,6 +31,43 @@ const CODE_EXT =
 /** Vendored or generated trees: findings there are not the team's to fix. */
 export const EXCLUDED_PATH = /(^|\/)(node_modules|vendor|dist|build|out|\.next|coverage|__snapshots__|migrations)\//i;
 
+/**
+ * Normalise a folder scope, or reject it.
+ *
+ * Returns the prefix with no leading or trailing slash, `null` for "the whole
+ * repository", or `false` for a value that must be refused.
+ *
+ * Refusals are deliberate rather than defensive cleanup. A prefix is compared
+ * against paths from the git tree, so an absolute path or a `..` segment can
+ * only come from a client that has misunderstood or is probing: silently
+ * rewriting it would scope the scan to something the customer did not ask for,
+ * and the file list is what the findings are attributed to.
+ */
+export function normalisePathPrefix(raw: unknown): string | null | false {
+  if (raw == null || raw === "") return null;
+  if (typeof raw !== "string") return false;
+  const trimmed = raw.trim();
+  if (trimmed === "" || trimmed === "/" || trimmed === ".") return null;
+  if (trimmed.startsWith("/") || /^[a-zA-Z]:/.test(trimmed)) return false;
+  if (trimmed.includes("\\")) return false;
+  const parts = trimmed.replace(/\/+$/, "").split("/");
+  if (parts.some((p) => p === "" || p === "." || p === "..")) return false;
+  if (trimmed.length > 400) return false;
+  return parts.join("/");
+}
+
+/**
+ * Whether a repository path lies inside a folder scope.
+ *
+ * Boundary-aware on purpose: a plain `startsWith` would put `src/apps/x.ts`
+ * inside the scope `src/app`, which is a different folder. The prefix must be
+ * followed by a separator.
+ */
+export function withinPrefix(path: string, prefix: string | null): boolean {
+  if (prefix == null) return true;
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
 export interface BaselineEstimate {
   filesTotal: number;
   estimatedCostUsd: number;
@@ -40,6 +77,8 @@ export interface BaselineEstimate {
   /** True when filesTotal exceeds MAX_FILES; the caller must refuse. */
   overCap: boolean;
   maxFiles: number;
+  /** The folder this estimate was limited to (0049). Null is the whole repository. */
+  pathPrefix?: string | null;
 }
 
 /**
@@ -53,15 +92,23 @@ export interface BaselineEstimate {
 export function discoverFiles(
   graph: GraphifyGraph | null,
   treePaths: string[],
+  pathPrefix: string | null = null,
 ): { paths: string[]; source: "graph" | "tree" } {
   if (graph?.nodes?.length) {
     const fromGraph = [
       ...new Set(graph.nodes.filter((n) => n.fileType === "code" && n.sourceFile).map((n) => n.sourceFile)),
-    ].filter((p) => !EXCLUDED_PATH.test(p));
+    ].filter((p) => !EXCLUDED_PATH.test(p) && withinPrefix(p, pathPrefix));
     if (fromGraph.length > 0) return { paths: fromGraph.sort(), source: "graph" };
+    // A prefix that matches nothing in the graph is NOT a reason to fall back
+    // to the tree: that would silently widen a scope the customer narrowed,
+    // and quote a file count for a folder they did not choose. An empty result
+    // is the honest answer, and the caller refuses it with a 422.
+    if (pathPrefix != null) return { paths: [], source: "graph" };
   }
   return {
-    paths: treePaths.filter((p) => CODE_EXT.test(p) && !EXCLUDED_PATH.test(p)).sort(),
+    paths: treePaths
+      .filter((p) => CODE_EXT.test(p) && !EXCLUDED_PATH.test(p) && withinPrefix(p, pathPrefix))
+      .sort(),
     source: "tree",
   };
 }

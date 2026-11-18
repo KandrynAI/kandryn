@@ -4,6 +4,7 @@ import { db, projectsTable, repositoriesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
   estimateForRepository,
+  normalisePathPrefix,
   startBaselineScan,
   listScansForRepository,
   getScanWithFindings,
@@ -72,7 +73,12 @@ router.get("/repositories/:repoId/baseline/estimate", async (req, res): Promise<
       res.status(403).json({ error: gate.reason });
       return;
     }
-    res.json(await estimateForRepository(params.data.repoId, req.userId));
+    const prefix = normalisePathPrefix(req.query.path);
+    if (prefix === false) {
+      res.status(400).json({ error: "That folder path is not valid. Use a path inside the repository, like src/api." });
+      return;
+    }
+    res.json(await estimateForRepository(params.data.repoId, req.userId, prefix));
   } catch (err) {
     if (!sendRunError(res, err)) throw err;
   }
@@ -89,6 +95,12 @@ const StartBody = z.object({
    * fetch first cannot be sent by accident.
    */
   acknowledgedFileCount: z.number().int().nonnegative(),
+  /**
+   * Limit the scan to this folder (0049). Validated by normalisePathPrefix
+   * rather than by zod, because the refusal cases (an absolute path, a `..`
+   * segment) deserve their own message and must never be silently rewritten.
+   */
+  pathPrefix: z.string().max(400).optional(),
 });
 
 router.post("/repositories/:repoId/baseline", async (req, res): Promise<void> => {
@@ -109,12 +121,22 @@ router.post("/repositories/:repoId/baseline", async (req, res): Promise<void> =>
       return;
     }
 
-    // Re-price against the repository as it stands now. A scan is real money,
-    // and the admin approved a specific number of files.
-    const estimate = await estimateForRepository(params.data.repoId, req.userId);
+    const prefix = normalisePathPrefix(body.data.pathPrefix);
+    if (prefix === false) {
+      res.status(400).json({ error: "That folder path is not valid. Use a path inside the repository, like src/api." });
+      return;
+    }
+
+    // Re-price against the repository as it stands now, UNDER THE SAME SCOPE.
+    // Pricing the whole repository here and scanning a folder would compare
+    // two different numbers and reject every scoped scan on the count check
+    // below.
+    const estimate = await estimateForRepository(params.data.repoId, req.userId, prefix);
     if (estimate.overCap) {
       res.status(422).json({
-        error: `This repository has ${estimate.filesTotal} scannable files, above the ${estimate.maxFiles}-file limit for a baseline scan.`,
+        error: prefix
+          ? `"${prefix}" has ${estimate.filesTotal} scannable files, above the ${estimate.maxFiles}-file limit for one scan. Choose a folder inside it.`
+          : `This repository has ${estimate.filesTotal} scannable files, above the ${estimate.maxFiles}-file limit for a baseline scan. Scan a folder at a time instead.`,
         estimate,
       });
       return;
@@ -127,7 +149,7 @@ router.post("/repositories/:repoId/baseline", async (req, res): Promise<void> =>
       return;
     }
 
-    const scan = await startBaselineScan(params.data.repoId, actorOf(req));
+    const scan = await startBaselineScan(params.data.repoId, actorOf(req), prefix);
     audit.log({
       userId: req.userId,
       teamId: scan.teamId,
@@ -142,6 +164,7 @@ router.post("/repositories/:repoId/baseline", async (req, res): Promise<void> =>
         estimatedCostUsd: scan.estimatedCostUsd,
         batchId: scan.batchId,
         fileListSource: estimate.source,
+        pathPrefix: prefix,
       },
       ipAddress: audit.getIp(req),
       userAgent: req.headers["user-agent"],

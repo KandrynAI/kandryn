@@ -43,6 +43,12 @@ export const baselineScansTable = pgTable(
      * findings to whatever file had drifted into the slot after a push.
      */
     filePaths: jsonb("file_paths").$type<string[]>().notNull().default([]),
+    // The folder this scan was limited to, with no leading or trailing slash
+    // (0049). Null means the whole repository, which is every scan written
+    // before the column. Stored because the findings only describe this
+    // subtree: a reader comparing two scans of the same repository needs to
+    // know one of them looked at a tenth of it.
+    pathPrefix: text("path_prefix"),
 
     /** The Anthropic Message Batch backing this scan; the cron dispatcher polls it. */
     batchId: text("batch_id"),

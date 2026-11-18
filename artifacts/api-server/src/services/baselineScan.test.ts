@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { discoverFiles, estimateScan, findingFingerprint, sortFindings, MAX_FILES } from "./baselineScanCore.js";
+import {
+  discoverFiles,
+  estimateScan,
+  findingFingerprint,
+  normalisePathPrefix,
+  sortFindings,
+  withinPrefix,
+  MAX_FILES,
+} from "./baselineScanCore.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
 const graph = (files: { sourceFile: string; fileType: string }[]): GraphifyGraph => ({
@@ -200,4 +208,68 @@ test("collection reads the frozen file list, never re-derives it", async () => {
     /scan\.filePaths/.test(body),
     "collectBaselineScan does not read the stored file list.",
   );
+});
+
+// --- folder scoping (0049) ---------------------------------------------------
+
+test("a folder scope is normalised to a bare prefix", () => {
+  assert.equal(normalisePathPrefix("src/api"), "src/api");
+  assert.equal(normalisePathPrefix("src/api/"), "src/api");
+  assert.equal(normalisePathPrefix("  src/api  "), "src/api");
+  assert.equal(normalisePathPrefix("src/api///"), "src/api");
+});
+
+test("an empty scope means the whole repository", () => {
+  for (const raw of [null, undefined, "", "   ", "/", "."]) {
+    assert.equal(normalisePathPrefix(raw), null, JSON.stringify(raw));
+  }
+});
+
+test("a scope that could escape the repository is refused, never cleaned up", () => {
+  // Rewriting these would scope the scan to something the customer did not
+  // ask for, and the file list is what every finding is attributed to.
+  for (const raw of ["/etc", "../secrets", "src/../../etc", "C:\\win", "a\\b", "src//api", 42, {}]) {
+    assert.equal(normalisePathPrefix(raw), false, JSON.stringify(raw));
+  }
+});
+
+test("a scope boundary is a separator, not a string prefix", () => {
+  // src/app must not swallow src/apps.
+  assert.equal(withinPrefix("src/app/x.ts", "src/app"), true);
+  assert.equal(withinPrefix("src/app", "src/app"), true);
+  assert.equal(withinPrefix("src/apps/x.ts", "src/app"), false);
+  assert.equal(withinPrefix("srcx/app.ts", "src"), false);
+  assert.equal(withinPrefix("anything", null), true);
+});
+
+test("discovery honours the scope on the tree path", () => {
+  const tree = ["src/api/a.ts", "src/web/b.ts", "src/apis/c.ts", "docs/d.md"];
+  const { paths, source } = discoverFiles(null, tree, "src/api");
+  assert.deepEqual(paths, ["src/api/a.ts"]);
+  assert.equal(source, "tree");
+});
+
+test("discovery honours the scope on the graph path", () => {
+  const g = graph([
+    { sourceFile: "src/api/a.ts", fileType: "code" },
+    { sourceFile: "src/web/b.ts", fileType: "code" },
+  ]);
+  assert.deepEqual(discoverFiles(g, [], "src/api").paths, ["src/api/a.ts"]);
+});
+
+test("a scope matching nothing in the graph does not silently widen to the tree", () => {
+  // Falling back would quote a count for the whole repository against a folder
+  // the customer narrowed to. Empty is the honest answer; the route 422s.
+  const g = graph([{ sourceFile: "src/web/b.ts", fileType: "code" }]);
+  const out = discoverFiles(g, ["src/api/a.ts", "src/web/b.ts"], "src/api");
+  assert.deepEqual(out.paths, []);
+  assert.equal(out.source, "graph");
+});
+
+test("with no scope the graph still falls back to the tree when it is empty", () => {
+  // The pre-existing behaviour, which the guard above must not have broken.
+  const g = graph([{ sourceFile: "README.md", fileType: "doc" }]);
+  const out = discoverFiles(g, ["src/a.ts"], null);
+  assert.deepEqual(out.paths, ["src/a.ts"]);
+  assert.equal(out.source, "tree");
 });

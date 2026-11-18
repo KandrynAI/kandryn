@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -57,10 +58,10 @@ export function BaselineScanPanel({ repoId }: { repoId: number }) {
   const latest = scans[0] ?? null;
   const inFlight = latest?.status === "queued" || latest?.status === "scanning";
 
-  const start = async (fileCount: number) => {
+  const start = async (fileCount: number, pathPrefix: string | null) => {
     setStarting(true);
     try {
-      await startBaselineScan(repoId, fileCount);
+      await startBaselineScan(repoId, fileCount, pathPrefix);
       toast({
         title: "Baseline scan started",
         description: "It runs in the background. This page updates as it progresses.",
@@ -149,14 +150,20 @@ function EstimateDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   starting: boolean;
-  onConfirm: (fileCount: number) => void;
+  onConfirm: (fileCount: number, pathPrefix: string | null) => void;
 }) {
+  // The folder to scan (0049). `typed` is what is in the field; `scope` is what
+  // has been committed and priced. Separated so a tree read is not issued on
+  // every keystroke: the estimate costs a git call.
+  const [typed, setTyped] = useState("");
+  const [scope, setScope] = useState<string | null>(null);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["repo", repoId, "baseline", "estimate"],
-    queryFn: () => fetchBaselineEstimate(repoId),
+    queryKey: ["repo", repoId, "baseline", "estimate", scope],
+    queryFn: () => fetchBaselineEstimate(repoId, scope),
     enabled: open,
     staleTime: 0,
   });
+  const commitScope = () => setScope(typed.trim() === "" ? null : typed.trim());
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -172,17 +179,23 @@ function EstimateDialog({
             {error instanceof ApiError ? error.message : "Could not size this repository."}
           </div>
         ) : data.overCap ? (
+          /* Amber, not red, and no longer a dead end (0049): the folder field
+             below is the way forward, so this is a caution with an action
+             rather than a refusal with an apology. */
           <div
             className="rounded p-3 text-sm"
-            style={{ background: "var(--c-red-bg)", border: "1px solid var(--c-red)", color: "var(--c-red)" }}
+            style={{
+              background: "var(--c-amber-bg, transparent)",
+              border: "1px solid var(--c-amber, #b4802a)",
+              color: "var(--c-amber, #b4802a)",
+            }}
           >
             <strong>
-              {data.filesTotal.toLocaleString()} scannable files — above the {data.maxFiles.toLocaleString()}-file
-              limit.
+              {data.filesTotal.toLocaleString()} scannable files{scope ? ` under ${scope}` : ""}, above the{" "}
+              {data.maxFiles.toLocaleString()}-file limit for one scan.
             </strong>
             <div className="mt-1">
-              A scan this size is not something to start from a dialog. Narrow the repository, or get in touch so we
-              can run it deliberately.
+              Scan a folder at a time instead. Enter one below and the estimate updates.
             </div>
           </div>
         ) : (
@@ -212,11 +225,39 @@ function EstimateDialog({
           </>
         )}
 
+        {/* Always offered, not only when the repository is over the cap: a
+            re-scan of the part that changed is the cheaper habit, and the field
+            is how someone forms it. */}
+        <div className="space-y-1.5 border-t pt-3" style={{ borderColor: "var(--hairline)" }}>
+          <label className="text-xs font-medium" htmlFor="scan-folder">
+            Folder to scan (optional)
+          </label>
+          <Input
+            id="scan-folder"
+            value={typed}
+            placeholder="whole repository"
+            spellCheck={false}
+            className="font-mono text-xs"
+            onChange={(e) => setTyped(e.target.value)}
+            onBlur={commitScope}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitScope();
+              }
+            }}
+          />
+          <p className="text-muted-foreground text-xs">
+            A path inside the repository, like <span className="font-mono">src/api</span>. Leave it empty to scan
+            everything. Press Enter to re-price.
+          </p>
+        </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={starting}>
             Cancel
           </Button>
-          <Button onClick={() => data && onConfirm(data.filesTotal)} disabled={starting || isLoading || !data || data.overCap}>
+          <Button onClick={() => data && onConfirm(data.filesTotal, scope)} disabled={starting || isLoading || !data || data.overCap}>
             {starting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
             {starting ? "Starting…" : "Start scan"}
           </Button>
