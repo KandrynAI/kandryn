@@ -13,6 +13,7 @@ export * from "./teams";
 export * from "./auditLog";
 export * from "./aegisOverrides";
 export * from "./baselineScans";
+export * from "./reviewScans";
 export * from "./workItemLinks";
 export * from "./sequenceChecks";
 export * from "./sequenceOverrides";

@@ -13,7 +13,7 @@ import { resolveGitCreds } from "../services/gitToken.js";
 import {
   DEFAULT_SETUP_CHOICE,
   REPO_SETUP_CHOICES,
-  wantsBaselineScan,
+  needsDispatch,
   wantsIndex,
 } from "../../../../shared/types/repoSetup.js";
 import { canAdminister } from "../services/resourceAdmin.js";
@@ -296,10 +296,10 @@ router.post("/projects", async (req, res): Promise<void> => {
         .set({
           projectId: proj.id,
           // The wizard bound a repository, so the choice is an instruction
-          // here and not just a default. Only `index_scan` leaves work for the
-          // dispatcher; the other two are settled by this request.
+          // here and not just a default. Only a choice asking for a scan or a
+          // review leaves work for the dispatcher; the rest are settled here.
           setupChoice: setup,
-          setupCompletedAt: wantsBaselineScan(setup) ? null : new Date(),
+          setupCompletedAt: needsDispatch(setup) ? null : new Date(),
         })
         .where(and(eq(repositoriesTable.id, repositoryId), eq(repositoriesTable.userId, req.userId)))
         .returning();

@@ -1400,6 +1400,96 @@ export function startBaselineScan(
   });
 }
 
+// --- Whole-repository code review (0051) ------------------------------------
+
+export interface CodeReviewScan {
+  id: number;
+  repositoryId: number;
+  projectId: number | null;
+  status: 'queued' | 'scanning' | 'succeeded' | 'failed';
+  filesTotal: number;
+  filesReviewed: number;
+  filesSkipped: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  pathPrefix: string | null;
+  model: string | null;
+  estimatedCostUsd: string | null;
+  actualCostUsd: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+/**
+ * Renamed from the obvious `ReviewFinding`, which is already taken by Veria's
+ * per-run review (line ~570). Two interfaces of that name silently MERGE in
+ * TypeScript rather than clashing, which is how this was caught: the compiler
+ * reported mismatched modifiers on `severity`, not a duplicate name.
+ */
+export interface CodeReviewFinding {
+  id: number;
+  scanId: number;
+  severity: 'high' | 'medium' | 'low';
+  category: string;
+  filePath: string;
+  title: string;
+  detail: string;
+  lineRef: string | null;
+  remediation: string;
+  status: 'open' | 'acknowledged';
+  acknowledgedBy: string | null;
+  acknowledgedAt: string | null;
+  acknowledgeReason: string | null;
+}
+
+export function fetchReviewEstimate(
+  repoId: number,
+  pathPrefix?: string | null,
+): Promise<BaselineEstimate> {
+  const q = pathPrefix ? `?path=${encodeURIComponent(pathPrefix)}` : '';
+  return request(`/api/repositories/${repoId}/review/estimate${q}`);
+}
+
+export function startCodeReview(
+  repoId: number,
+  acknowledgedFileCount: number,
+  pathPrefix?: string | null,
+): Promise<{ scan: CodeReviewScan }> {
+  return request(`/api/repositories/${repoId}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ acknowledgedFileCount, ...(pathPrefix ? { pathPrefix } : {}) }),
+  });
+}
+
+export function fetchCodeReviews(
+  repoId: number,
+): Promise<{ scans: CodeReviewScan[]; canReview: boolean; reason: string | null }> {
+  return request(`/api/repositories/${repoId}/review`);
+}
+
+export function fetchCodeReview(
+  scanId: number,
+): Promise<{ scan: CodeReviewScan; findings: CodeReviewFinding[]; canReview: boolean; reason: string | null }> {
+  return request(`/api/review-scans/${scanId}`);
+}
+
+export function acknowledgeReviewFinding(
+  findingId: number,
+  reason: string,
+): Promise<{ finding: CodeReviewFinding }> {
+  return request(`/api/review-findings/${findingId}/acknowledge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+}
+
 export function fetchBaselineScan(
   scanId: number,
 ): Promise<{ scan: BaselineScan; findings: BaselineFinding[]; canScan: boolean; reason: string | null }> {

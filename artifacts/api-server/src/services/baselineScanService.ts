@@ -58,8 +58,15 @@ const TARBALL_THRESHOLD = 1_000;
 /** Parallel reads while starting a scan. Matches the scanner's own ceiling. */
 const FETCH_CONCURRENCY = 8;
 
-/** Bounded-concurrency map preserving input order. */
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+/**
+ * Bounded-concurrency map preserving input order.
+ *
+ * Exported for reviewScanService (0051), which has the same problem: reading a
+ * few thousand files inside the 300s start window. Shared rather than copied,
+ * because the two scans differ in prompt, taxonomy and table, not in how they
+ * survive a serverless function.
+ */
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -73,13 +80,41 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return out;
 }
 
+/**
+ * Submit a batch, falling back when the default model is retention-gated.
+ *
+ * AEGIS_MODEL is a Covered Model, so an organisation on zero data retention is
+ * refused at submit. Falling back keeps whole-repository scanning available to
+ * exactly the regulated customers most likely to have that configuration.
+ *
+ * Exported for reviewScanService (0051). This is provider behaviour, not scan
+ * behaviour: a second copy would be a second place to forget the fallback, and
+ * the failure is a hard refusal for the customers who need it most.
+ */
+export async function submitWithRetentionFallback<T>(
+  submit: (model: string) => Promise<T>,
+  ctx: { scanId: number; kind: string },
+): Promise<{ batch: T; model: string }> {
+  try {
+    return { batch: await submit(AEGIS_MODEL), model: AEGIS_MODEL };
+  } catch (err) {
+    if (!isRetentionError(err)) throw err;
+    logger.warn(
+      { scanId: ctx.scanId, from: AEGIS_MODEL, to: AEGIS_ZDR_MODEL },
+      `${ctx.kind}: default model is retention-gated for this organisation, falling back`,
+    );
+    return { batch: await submit(AEGIS_ZDR_MODEL), model: AEGIS_ZDR_MODEL };
+  }
+}
+
 /** A repository plus the project that owns it, for authorization and PLM context. */
-interface ScanTarget {
+export interface ScanTarget {
   repo: typeof repositoriesTable.$inferSelect;
   project: typeof projectsTable.$inferSelect | null;
 }
 
-async function loadTarget(repositoryId: number): Promise<ScanTarget> {
+/** Exported for reviewScanService (0051): the same lookup, for the same gate. */
+export async function loadTarget(repositoryId: number): Promise<ScanTarget> {
   const [repo] = await db.select().from(repositoriesTable).where(eq(repositoriesTable.id, repositoryId));
   if (!repo) throw new RunError("Repository not found", 404);
   const [project] = repo.projectId
@@ -302,23 +337,7 @@ export async function startBaselineScan(
         requests: requests.map((r) => ({ ...r, params: { ...r.params, model: m } })),
       });
 
-    // Same retention fallback as the runtime scan: AEGIS_MODEL is a Covered
-    // Model, so an organisation on zero data retention is refused at submit.
-    // Falling back keeps baseline scanning available to exactly the regulated
-    // customers most likely to have that configuration.
-    let model = AEGIS_MODEL;
-    let batch;
-    try {
-      batch = await submit(model);
-    } catch (err) {
-      if (!isRetentionError(err)) throw err;
-      logger.warn(
-        { scanId: scan.id, from: AEGIS_MODEL, to: AEGIS_ZDR_MODEL },
-        "Baseline scan: default model is retention-gated for this organisation — falling back",
-      );
-      model = AEGIS_ZDR_MODEL;
-      batch = await submit(model);
-    }
+    const { batch, model } = await submitWithRetentionFallback(submit, { scanId: scan.id, kind: "Baseline scan" });
 
     const [updated] = await db
       .update(baselineScansTable)

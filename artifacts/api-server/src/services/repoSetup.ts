@@ -3,8 +3,9 @@ import { db, repositoriesTable, projectsTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { isIndexInFlight } from "./graphUsability.js";
 import { startBaselineScan } from "./baselineScanService.js";
+import { startReview } from "./reviewScanService.js";
 import { getTeamForUser } from "./teamService.js";
-import { readSetupChoice, wantsBaselineScan } from "../../../../shared/types/repoSetup.js";
+import { needsDispatch, readSetupChoice, wantsBaselineScan, wantsCodeReview } from "../../../../shared/types/repoSetup.js";
 
 /**
  * Acting on what a customer chose when they connected a repository (0048).
@@ -61,25 +62,46 @@ async function complete(repoId: number, error: string | null): Promise<void> {
  * its own, and inventing one would mean a scan whose cost lands on whoever the
  * code happened to pick.
  */
-async function startScan(row: PendingRow): Promise<void> {
+async function startChosenWork(row: PendingRow, choice: string): Promise<void> {
   const team = await getTeamForUser(row.userId);
-  try {
-    const scan = await startBaselineScan(row.id, {
-      userId: row.userId,
-      teamId: team?.team.id ?? null,
-      teamRole: team?.role ?? null,
-    });
-    logger.info({ repoId: row.id, scanId: scan.id }, "Baseline scan started from the connect-time setup choice");
-    await complete(row.id, null);
-  } catch (err) {
-    // A refusal here is a real answer, not a transient failure: no model key,
-    // a repository above the file cap, a scan already running. Record it and
-    // stop, so the customer sees why the scan they asked for did not happen
-    // instead of a dispatcher retrying it every five minutes for ever.
-    const message = err instanceof Error ? err.message : "The scan could not be started.";
-    logger.warn({ repoId: row.id, err }, "Connect-time baseline scan could not be started");
-    await complete(row.id, message);
+  const actor = {
+    userId: row.userId,
+    teamId: team?.team.id ?? null,
+    teamRole: team?.role ?? null,
+  };
+  // Both are attempted, and the FAILURES ARE COLLECTED rather than the first
+  // one aborting the rest. A customer who asked for a scan and a review, and
+  // whose repository is above the file cap for the scan, should still get the
+  // review if it fits, and should be told about the part that did not happen.
+  const problems: string[] = [];
+
+  if (wantsBaselineScan(choice as never)) {
+    try {
+      const scan = await startBaselineScan(row.id, actor);
+      logger.info({ repoId: row.id, scanId: scan.id }, "Baseline scan started from the connect-time setup choice");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "The security scan could not be started.";
+      logger.warn({ repoId: row.id, err }, "Connect-time baseline scan could not be started");
+      problems.push(`Security scan: ${message}`);
+    }
   }
+
+  if (wantsCodeReview(choice as never)) {
+    try {
+      const review = await startReview(row.id, actor);
+      logger.info({ repoId: row.id, scanId: review.id }, "Code review started from the connect-time setup choice");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "The code review could not be started.";
+      logger.warn({ repoId: row.id, err }, "Connect-time code review could not be started");
+      problems.push(`Code review: ${message}`);
+    }
+  }
+
+  // A refusal is a real answer, not a transient failure: no model key, a
+  // repository above the file cap, one already running. Record it and stop, so
+  // the customer sees why the work they asked for did not happen instead of a
+  // dispatcher retrying it every five minutes for ever.
+  await complete(row.id, problems.length > 0 ? problems.join(" ") : null);
 }
 
 /**
@@ -105,7 +127,7 @@ export async function dispatchPendingSetups(): Promise<number[]> {
   const acted: number[] = [];
   for (const row of pending) {
     const choice = readSetupChoice(row.setupChoice);
-    if (!wantsBaselineScan(choice)) {
+    if (!needsDispatch(choice)) {
       // Nothing is outstanding for `none` or `index`: the connect request
       // settles both. A row that reaches here is one whose stamp did not land,
       // so stamp it now rather than reading it again every tick.
@@ -113,13 +135,13 @@ export async function dispatchPendingSetups(): Promise<number[]> {
       acted.push(row.id);
       continue;
     }
-    // Wait for the index to settle first, because the scan's file discovery
-    // prefers a built graph over the raw tree: the graph is a parser's output,
-    // so it already excludes docs, config and anything unparseable. Waiting is
+    // Wait for the index to settle first, because file discovery prefers a
+    // built graph over the raw tree: the graph is a parser's output, so it
+    // already excludes docs, config and anything unparseable. Waiting is
     // bounded by the same stale window the duplicate guard uses, so an index
-    // that never finishes delays the scan by minutes, not for ever.
+    // that never finishes delays the work by minutes, not for ever.
     if (isIndexInFlight(row.graphStatus, row.graphStartedAt)) continue;
-    await startScan(row);
+    await startChosenWork(row, choice);
     acted.push(row.id);
   }
   return acted;

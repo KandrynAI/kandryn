@@ -11,11 +11,11 @@
  *  - On `repositories.setup_choice` it is an INSTRUCTION, acted on once and
  *    then stamped with `setup_completed_at`.
  *
- * `index_scan_review` is deliberately absent until the whole-repository code
- * review exists. An option that silently does nothing is worse than an option
- * that is not offered yet.
+ * `index_scan_review` arrived with the whole-repository code review (0051). It
+ * was deliberately absent until then, because an option that silently does
+ * nothing is worse than an option not yet offered.
  */
-export const REPO_SETUP_CHOICES = ["none", "index", "index_scan"] as const;
+export const REPO_SETUP_CHOICES = ["none", "index", "index_scan", "index_scan_review"] as const;
 
 export type RepoSetupChoice = (typeof REPO_SETUP_CHOICES)[number];
 
@@ -38,10 +38,26 @@ export function readSetupChoice(value: unknown): RepoSetupChoice {
 
 /** Whether this choice asks for the code graph to be built. */
 export function wantsIndex(choice: RepoSetupChoice): boolean {
-  return choice === "index" || choice === "index_scan";
+  return choice !== "none";
 }
 
 /** Whether this choice asks for a baseline security scan of the whole codebase. */
 export function wantsBaselineScan(choice: RepoSetupChoice): boolean {
-  return choice === "index_scan";
+  return choice === "index_scan" || choice === "index_scan_review";
+}
+
+/** Whether this choice asks for a code review of the whole codebase (0051). */
+export function wantsCodeReview(choice: RepoSetupChoice): boolean {
+  return choice === "index_scan_review";
+}
+
+/**
+ * Whether anything beyond the connect request itself is outstanding.
+ *
+ * The one predicate the connect routes use to decide whether to stamp
+ * setup_completed_at immediately, so adding a future choice cannot leave a row
+ * stamped complete with work still to do.
+ */
+export function needsDispatch(choice: RepoSetupChoice): boolean {
+  return wantsBaselineScan(choice) || wantsCodeReview(choice);
 }

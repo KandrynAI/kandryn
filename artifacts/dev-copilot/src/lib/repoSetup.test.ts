@@ -35,10 +35,17 @@ test("every value the server accepts is offered somewhere", () => {
   }
 });
 
-test("exactly one option spends money, and it is the scan", () => {
+test("every option that spends money needs an estimate first, and only those", () => {
+  // The invariant, rather than a hard-coded list: a new paid option added
+  // without `spends: true` would skip the cost screen entirely.
   const spending = SETUP_OPTIONS.filter((o) => o.spends).map((o) => o.value);
-  assert.deepEqual(spending, ["index_scan"]);
-  assert.equal(needsEstimate("index_scan"), true);
+  assert.deepEqual(spending, ["index_scan", "index_scan_review"]);
+  for (const o of SETUP_OPTIONS) {
+    assert.equal(needsEstimate(o.value), o.spends, o.value);
+  }
+});
+
+test("the free options are the ones that call no model", () => {
   assert.equal(needsEstimate("index"), false);
   assert.equal(needsEstimate("none"), false);
 });
@@ -64,7 +71,8 @@ test("a form arrives on the project default, and never on `none` by accident", (
   assert.equal(initialChoice("index_scan"), "index_scan");
   assert.equal(initialChoice("none"), "none");
   assert.equal(initialChoice(null), "index");
-  assert.equal(initialChoice("index_scan_review"), "index", "an unknown value must not read as nothing");
+  assert.equal(initialChoice("index_scan_review"), "index_scan_review");
+  assert.equal(initialChoice("index_scan_review_plus"), "index", "an unknown value must not read as nothing");
 });
 
 test("a free choice confirms without an estimate", () => {

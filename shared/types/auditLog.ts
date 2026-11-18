@@ -33,6 +33,11 @@ export const AUDIT_ACTIONS = [
   'project.synced',
   'repository.connected',
   'repository.deleted',
+  // The whole-repository code review (0051). Started by hand and collected by
+  // the dispatcher, so the completion is attributed to whoever started it.
+  'review.scan_started',
+  'review.scan_completed',
+  'review.finding_acknowledged',
   // A re-index of the whole repository, started by hand (0047). Recorded
   // because the action moved from owner-only to canAdminister: a team admin can
   // now re-index a repository they do not own, so the row's user_id no longer

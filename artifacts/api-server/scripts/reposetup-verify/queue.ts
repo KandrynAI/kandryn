@@ -239,6 +239,32 @@ async function main() {
     check("the refusal names no credential value", !/sk-|ghp_|Bearer /.test(readyRow.setupError ?? ""));
     check("and the choice is still on the row", readyRow.setupChoice === "index_scan");
 
+    // The review choice: BOTH the scan and the review are attempted and both
+    // failures are collected, rather than the first one aborting the rest. A
+    // customer who asked for both and whose repository is too large for one of
+    // them should be told about each part separately.
+    const both = await makeRepo({
+      url: "https://github.com/acme/app",
+      graphStatus: "succeeded",
+      setupChoice: "index_scan_review",
+      setupCompletedAt: null,
+      projectId: project.id,
+    });
+    await dispatchPendingSetups();
+    const bothRow = await readRepo(both);
+    check("a review choice is acted on", bothRow.setupCompletedAt != null);
+    check(
+      "the security scan's refusal is named",
+      (bothRow.setupError ?? "").includes("Security scan:"),
+      bothRow.setupError ?? "none",
+    );
+    check(
+      "the code review's refusal is named too, not hidden by the first",
+      (bothRow.setupError ?? "").includes("Code review:"),
+      bothRow.setupError ?? "none",
+    );
+    await db.delete(repositoriesTable).where(eq(repositoriesTable.id, both));
+
     // A second tick must not act on it again.
     const before = readyRow.setupCompletedAt?.getTime();
     await dispatchPendingSetups();

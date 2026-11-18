@@ -7,6 +7,7 @@ import { dispatchPendingProfiles } from "../services/uiStyleService.js";
 import { runJiraRetention } from "../services/jiraExt/installations.js";
 import { dispatchQueuedIndexes } from "../services/graphifyService.js";
 import { dispatchPendingSetups } from "../services/repoSetup.js";
+import { collectReview, listReviewsAwaitingCollection } from "../services/reviewScanService.js";
 import { listScansAwaitingCollection, collectBaselineScan } from "../services/baselineScanService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
 import { backfillEncryption } from "../services/configService.js";
@@ -64,6 +65,7 @@ function authorized(header: string | undefined): boolean {
  *      `queued`, and execute each inline.
  *   3. Sweep baseline scans stuck in `queued` (start died before submitting).
  *   4. Collect baseline scans whose Message Batch has ended.
+ *   4b. The same sweep and collection for code reviews (0051).
  *   5. Extract UI style profiles waiting to be read (0042).
  *   6. Jira app retention (0043).
  *   7. Start graph indexes waiting in `queued` (0048).
@@ -186,6 +188,33 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     logger.info({ pending: pending.length, collected }, "baseline scan collection tick");
   }
 
+  // 4b. The code review's sweep and collector (0051).
+  //
+  // Same two steps as 3 and 4 above, on its own tables. A review is one
+  // Message Batch for exactly the reason a security scan is: it cannot fit in
+  // one function invocation. A row left `queued` means the start died before
+  // submitting, and nothing else would ever look at it, because collection
+  // only polls `scanning` and every retry is refused by the duplicate check.
+  const sweptReviews = await db.execute(
+    sql`UPDATE review_scans SET status = 'failed', finished_at = now(),
+          error = 'Review did not finish starting (no batch was submitted within ${sql.raw(String(BASELINE_STUCK_MINUTES))} minutes). Start it again.'
+        WHERE status = 'queued'
+          AND created_at < now() - interval '${sql.raw(String(BASELINE_STUCK_MINUTES))} minutes'
+        RETURNING id`,
+  );
+  if (sweptReviews.rows.length > 0) {
+    logger.warn({ swept: sweptReviews.rows.length }, "code reviews swept from queued to failed");
+  }
+
+  let reviewsCollected = 0;
+  const pendingReviews = await listReviewsAwaitingCollection();
+  for (const scan of pendingReviews) {
+    if (await collectReview(scan)) reviewsCollected++;
+  }
+  if (pendingReviews.length > 0) {
+    logger.info({ pending: pendingReviews.length, collected: reviewsCollected }, "code review collection tick");
+  }
+
   // 5. Extract UI style profiles that are waiting (0042).
   //
   // Last and additive on purpose: a project-creation insert or a repository
@@ -256,6 +285,9 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     baselineSwept: sweptScanCount,
     baselinePending: pending.length,
     baselineCollected: collected,
+    reviewsSwept: sweptReviews.rows.length,
+    reviewsPending: pendingReviews.length,
+    reviewsCollected,
     uiStyleExtracted: profiles.length,
     jiraLinksRevoked: jiraRetention.links,
     indexesStarted: indexesStarted.length,

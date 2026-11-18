@@ -52,7 +52,7 @@ export const projectsTable = pgTable(
     // already selected. The instruction lives on repositories.setup_choice.
     // Union inlined, like repositories.setup_choice; shared/types/repoSetup.ts
     // is the source of truth.
-    setupChoice: text("setup_choice").$type<"none" | "index" | "index_scan" | null>().default(null),
+    setupChoice: text("setup_choice").$type<"none" | "index" | "index_scan" | "index_scan_review" | null>().default(null),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

@@ -31,7 +31,7 @@ import {
   DEFAULT_SETUP_CHOICE,
   REPO_SETUP_CHOICES,
   readSetupChoice,
-  wantsBaselineScan,
+  needsDispatch,
   wantsIndex,
 } from "../../../../shared/types/repoSetup.js";
 import { resetProfile } from "../services/uiStyleService.js";
@@ -303,10 +303,10 @@ router.post("/repositories", async (req, res): Promise<void> => {
       defaultBranch: verifiedBranch ?? parsed.data.defaultBranch,
       stackProfile: {},
       setupChoice: setup,
-      // Only `index_scan` leaves work for the dispatcher. `none` and `index`
-      // are settled in this request, so they are stamped here rather than
-      // being read on every tick for ever.
-      setupCompletedAt: wantsBaselineScan(setup) ? null : new Date(),
+      // Only a choice that asks for a scan or a review leaves work for the
+      // dispatcher. `none` and `index` are settled in this request, so they
+      // are stamped here rather than being read on every tick for ever.
+      setupCompletedAt: needsDispatch(setup) ? null : new Date(),
     })
     .returning();
 

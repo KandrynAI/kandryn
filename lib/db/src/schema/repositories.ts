@@ -79,7 +79,7 @@ export const repositoriesTable = pgTable(
     // project rooted at src/ and cannot import from ../../../../shared — see
     // shared/types/repoSetup.ts, which is the source of truth. Nullable: every
     // row written before 0048 predates the question and reads as the default.
-    setupChoice: text("setup_choice").$type<"none" | "index" | "index_scan" | null>().default(null),
+    setupChoice: text("setup_choice").$type<"none" | "index" | "index_scan" | "index_scan_review" | null>().default(null),
     setupCompletedAt: timestamp("setup_completed_at", { withTimezone: true }),
     // Why the chosen setup could not be honoured, in words a customer reads
     // (0048): no model key, above the file cap, a scan already running. Null

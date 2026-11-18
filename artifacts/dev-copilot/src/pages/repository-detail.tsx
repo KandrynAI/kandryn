@@ -21,6 +21,7 @@ import * as z from "zod";
 import { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { BaselineScanPanel } from "@/components/repository/BaselineScanPanel";
+import { ReviewScanPanel } from "@/components/repository/ReviewScanPanel";
 import { SECURITY_CHECK_CONTEXT } from "../../../../shared/types/branding";
 
 const formSchema = z.object({
@@ -307,6 +308,7 @@ export default function RepositoryDetail() {
       <GraphifySection repoId={id} />
 
       <BaselineScanPanel repoId={id} />
+      <ReviewScanPanel repoId={id} />
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">

@@ -40,9 +40,16 @@ export const SETUP_OPTIONS: SetupOption[] = [
     spends: true,
   },
   {
+    value: 'index_scan_review',
+    label: 'Index the code, scan it for security issues, and review it',
+    detail:
+      'Everything above, plus a code review of every source file: correctness, error handling, resource and concurrency problems. This spends on the model credentials this workspace uses.',
+    spends: true,
+  },
+  {
     value: 'none',
-    label: 'Neither for now',
-    detail: 'Connect the repository and nothing else. You can start either from the repository page later.',
+    label: 'Nothing for now',
+    detail: 'Connect the repository and nothing else. You can start any of these from the repository page later.',
     spends: false,
   },
 ];

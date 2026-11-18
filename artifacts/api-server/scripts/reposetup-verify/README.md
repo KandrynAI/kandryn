@@ -31,9 +31,14 @@ What it proves:
    repository.
 3. **A repository with no URL is settled**, so it cannot sit in the queue for
    ever being retried.
-4. **The setup dispatch** stamps a non-scanning choice without doing anything,
-   leaves a scanning choice alone while its index is still in flight, records a
-   refusal in words once it is not, and does not act on a settled row twice.
+4. **The setup dispatch** stamps a choice with no outstanding work without
+   doing anything, leaves a scanning choice alone while its index is still in
+   flight, records a refusal in words once it is not, and does not act on a
+   settled row twice.
+4b. **Both failures are collected** for `index_scan_review`. The scan and the
+   review are each attempted and each refusal is named in `setup_error`, so a
+   customer who asked for both and whose repository is too large for one of
+   them is told about each part rather than only the first.
 5. **`setup_choice` survives being honoured.** Only `setup_completed_at` is
    written, because the record of what a customer asked for is the one thing an
    auditor wants when a scan appears that nobody remembers starting.
