@@ -379,9 +379,11 @@ export async function runAegisScan(
       "Aegis: default model is retention-gated for this organisation — falling back",
     );
     model = AEGIS_ZDR_MODEL;
+    // Reads on the run page, so it names neither model id. The two ids are in
+    // the log above and in `runs.security_scan`'s model column.
     modelFallbackReason =
-      `${AEGIS_MODEL} requires 30-day data retention, which this Anthropic organisation does not have. ` +
-      `Scanned with ${AEGIS_ZDR_MODEL} instead.`;
+      `Aegis's default model requires 30-day data retention, which this Anthropic organisation does not have. ` +
+      `Scanned with its zero-retention fallback model instead.`;
     results = await mapWithConcurrency(input.files, SCAN_CONCURRENCY, runScan(model));
 
     if (retentionBlocked(results)) {

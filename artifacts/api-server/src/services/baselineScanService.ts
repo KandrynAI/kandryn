@@ -345,7 +345,7 @@ export async function startBaselineScan(
       .where(eq(baselineScansTable.id, scan.id))
       .returning();
     logger.info(
-      { scanId: scan.id, batchId: batch.id, model, files: requests.length, skipped },
+      { scanId: scan.id, batchId: batch.id, agent: "aegis", model, files: requests.length, skipped },
       "Baseline scan batch submitted",
     );
     return updated;

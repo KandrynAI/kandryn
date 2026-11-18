@@ -277,7 +277,7 @@ function ReviewDetail({ scanId, repoId }: { scanId: number; repoId: number }) {
       <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
         <span>{reviewStatusLine(scan)}</span>
         {cost && <span className="text-muted-foreground text-xs">{cost}</span>}
-        {scan.model && <span className="text-muted-foreground font-mono text-xs">{scan.model}</span>}
+        {scan.model && <span className="text-muted-foreground text-xs">Veria</span>}
         <span className="text-muted-foreground text-xs">
           {scan.finishedAt ? formatDistanceToNow(new Date(scan.finishedAt), { addSuffix: true }) : ""}
         </span>

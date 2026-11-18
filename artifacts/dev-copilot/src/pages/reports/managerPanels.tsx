@@ -457,7 +457,7 @@ export function PlanningCostPanel({ days, projectId }: { days: number; projectId
             </div>
             <TrendBars points={data.trend.map((t) => ({ label: t.label, value: t.cost }))} color="var(--accent-blue)" format={money} />
             <div style={{ marginTop: 8, fontSize: "var(--fs-xs)", color: "var(--c-ink-4)" }}>
-              Avg {data.avgInputTokens ?? 0} in / {data.avgOutputTokens ?? 0} out tokens over {data.runsWithTokens} run{data.runsWithTokens === 1 ? "" : "s"} · Sonnet 4.5 rates. Planning call only — Raptia/Fovea/Veria/Aegis/Narratia usage not yet counted.
+              Avg {data.avgInputTokens ?? 0} in / {data.avgOutputTokens ?? 0} out tokens over {data.runsWithTokens} run{data.runsWithTokens === 1 ? "" : "s"} · the planning model's published rates. Planning call only — Raptia/Fovea/Veria/Aegis/Narratia usage not yet counted.
             </div>
           </div>
         )}

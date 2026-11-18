@@ -373,7 +373,7 @@ function ScanSummary({ scanId, repoId }: { scanId: number; repoId: number }) {
               : ""}
           </span>
         )}
-        {scan.model && <span className="text-muted-foreground font-mono text-xs">{scan.model}</span>}
+        {scan.model && <span className="text-muted-foreground text-xs">Aegis</span>}
         <span className="text-muted-foreground text-xs">
           {scan.finishedAt ? formatDistanceToNow(new Date(scan.finishedAt), { addSuffix: true }) : ""}
         </span>

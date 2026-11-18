@@ -263,7 +263,7 @@ export async function startReview(
       .where(eq(reviewScansTable.id, scan.id))
       .returning();
     logger.info(
-      { scanId: scan.id, batchId: batch.id, model, files: requests.length, skipped },
+      { scanId: scan.id, batchId: batch.id, agent: "veria", model, files: requests.length, skipped },
       "Code review batch submitted",
     );
     return updated;

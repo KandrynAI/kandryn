@@ -281,7 +281,7 @@ export default function ProjectSettingsPage() {
         <div className={groupLabel}>Model pinning</div>
         <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-foreground">Raptia (Claude) model</label>
+            <label className="mb-1.5 block text-xs font-medium text-foreground">Raptia model</label>
             <Input
               value={claudePin}
               onChange={(e) => setClaudePin(e.target.value)}
@@ -290,7 +290,7 @@ export default function ProjectSettingsPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-foreground">Fovea (OpenAI) model</label>
+            <label className="mb-1.5 block text-xs font-medium text-foreground">Fovea model</label>
             <Input
               value={openaiPin}
               onChange={(e) => setOpenaiPin(e.target.value)}
