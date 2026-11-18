@@ -19,7 +19,13 @@ import { fetchFilePaths } from "../adapters/gitService.js";
 import { GitService } from "../services/gitService.js";
 import { getConfigs } from "../services/configService.js";
 import { resolveGitCreds } from "../services/gitToken.js";
-import { isGraphUsable, isGraphifyConfigured, triggerRepoIndex } from "../services/graphifyService.js";
+import {
+  isGraphUsable,
+  isGraphifyConfigured,
+  isIndexInFlight,
+  triggerRepoIndex,
+} from "../services/graphifyService.js";
+import { canAdminister } from "../services/resourceAdmin.js";
 import { resetProfile } from "../services/uiStyleService.js";
 import * as audit from "../services/auditService.js";
 
@@ -228,7 +234,13 @@ router.post("/repositories", async (req, res): Promise<void> => {
   // (Phase 2). Fire-and-forget — never blocks the response.
   if (isGraphifyConfigured() && updated.url) {
     const cfg = await resolveGitCreds(req.userId);
-    triggerRepoIndex({ repoUrl: updated.url, githubToken: cfg.githubToken ?? "", repoId: updated.id, log: req.log });
+    await triggerRepoIndex({
+      repoUrl: updated.url,
+      githubToken: cfg.githubToken ?? "",
+      repoId: updated.id,
+      triggeredBy: req.userId,
+      log: req.log,
+    });
   }
 
   audit.log({
@@ -378,7 +390,13 @@ router.patch("/repositories/:id", async (req, res): Promise<void> => {
       // — retrieval already refuses the stale graph — so an unconfigured service
       // simply leaves it `stale` until a manual rebuild/upload.
       if (existing.graphBuiltAt != null && isGraphifyConfigured() && repo.url) {
-        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.githubToken ?? "", repoId: repo.id, log: req.log });
+        await triggerRepoIndex({
+          repoUrl: repo.url,
+          githubToken: creds.githubToken ?? "",
+          repoId: repo.id,
+          triggeredBy: req.userId,
+          log: req.log,
+        });
       }
     } catch (err) {
       req.log.warn({ repoId: repo.id, err }, "Stack re-detection after URL change failed");
@@ -474,11 +492,33 @@ router.post("/repositories/:repoId/graph/rebuild", async (req, res): Promise<voi
     res.status(400).json({ error: "Invalid repository id" });
     return;
   }
+  // Not scoped to the caller's own rows: re-indexing is an administrative
+  // action on a project's repository, so it follows canAdminister like the
+  // baseline scan does rather than owner-only. A team admin could already
+  // spend real money scanning this repository while being refused a rebuild
+  // that costs nothing, which was simply inconsistent.
   const [repo] = await db
     .select()
     .from(repositoriesTable)
-    .where(and(eq(repositoriesTable.id, params.data.repoId), eq(repositoriesTable.userId, req.userId)));
+    .where(eq(repositoriesTable.id, params.data.repoId));
   if (!repo) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+  const [project] = repo.projectId
+    ? await db.select().from(projectsTable).where(eq(projectsTable.id, repo.projectId))
+    : [];
+  const ownerUserId = project?.userId ?? repo.userId;
+  const teamId = project?.teamId ?? null;
+  if (
+    !canAdminister(
+      { userId: req.userId, teamId: req.teamId ?? null, teamRole: req.teamRole ?? null },
+      { ownerUserId, teamId },
+    )
+  ) {
+    // 404, not 403: a repository the caller may not administer and one that
+    // does not exist must read the same, or the response confirms that a
+    // repository id belongs to someone.
     res.status(404).json({ error: "Repository not found" });
     return;
   }
@@ -492,10 +532,40 @@ router.post("/repositories/:repoId/graph/rebuild", async (req, res): Promise<voi
     });
     return;
   }
+  // One index at a time. Without this, two clicks were two full clone-and-
+  // extract jobs on the customer's repository. The claim goes stale after
+  // INDEX_CLAIM_STALE_MINUTES so a lost callback cannot wedge the repository
+  // (see services/graphUsability.ts).
+  if (isIndexInFlight(repo.graphStatus, repo.graphStartedAt)) {
+    res.status(409).json({
+      status: "indexing",
+      error: "This repository is already being indexed. Wait for it to finish, then rebuild again.",
+    });
+    return;
+  }
 
-  const cfg = await resolveGitCreds(req.userId);
-  triggerRepoIndex({ repoUrl: repo.url, githubToken: cfg.githubToken ?? "", repoId: repo.id, log: req.log });
+  // The OWNER's credentials, not the caller's: an admin rebuilding someone
+  // else's repository must not have their own token spent against it, and
+  // resolveGitCreds derives the workspace from the id it is given.
+  const cfg = await resolveGitCreds(ownerUserId);
+  await triggerRepoIndex({
+    repoUrl: repo.url,
+    githubToken: cfg.githubToken ?? "",
+    repoId: repo.id,
+    triggeredBy: req.userId,
+    log: req.log,
+  });
   req.log.info({ repoId: repo.id }, "Graphify rebuild triggered");
+  audit.log({
+    userId: req.userId,
+    teamId,
+    action: "repository.reindex_started",
+    entityType: "repository",
+    entityId: repo.id,
+    metadata: { name: repo.name, trigger: "manual" },
+    ipAddress: audit.getIp(req),
+    userAgent: req.headers["user-agent"],
+  });
   res.status(202).json({ status: "indexing", message: "Rebuild started — the graph will update shortly." });
 });
 

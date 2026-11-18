@@ -33,6 +33,11 @@ export const AUDIT_ACTIONS = [
   'project.synced',
   'repository.connected',
   'repository.deleted',
+  // A re-index of the whole repository, started by hand (0047). Recorded
+  // because the action moved from owner-only to canAdminister: a team admin can
+  // now re-index a repository they do not own, so the row's user_id no longer
+  // answers who asked for it.
+  'repository.reindex_started',
 
   // Run pipeline
   'run.triggered',

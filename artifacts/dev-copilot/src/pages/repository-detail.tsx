@@ -489,12 +489,24 @@ function GraphifySection({ repoId }: { repoId: number }) {
       // Pick up the "indexing" state immediately; the poll takes over from there.
       qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] });
     } catch (err) {
-      const notConfigured = err instanceof ApiError && err.status === 503;
+      const status = err instanceof ApiError ? err.status : 0;
+      // A 409 means the server refused a duplicate index. Not a failure: the
+      // rebuild the caller wanted is already running, so it reads as a notice
+      // and refreshes the status rather than shouting in red.
+      const alreadyRunning = status === 409;
+      if (alreadyRunning) {
+        qc.invalidateQueries({ queryKey: ["repo", repoId, "graph"] });
+      }
       toast({
-        title: notConfigured ? "Automatic rebuild unavailable" : "Rebuild failed",
+        title:
+          status === 503
+            ? "Automatic rebuild unavailable"
+            : alreadyRunning
+              ? "Already indexing"
+              : "Rebuild failed",
         description:
           err instanceof ApiError ? err.message : "Could not start the rebuild.",
-        variant: "destructive",
+        variant: alreadyRunning ? "default" : "destructive",
       });
     } finally {
       setRebuilding(false);

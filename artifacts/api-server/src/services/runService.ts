@@ -791,8 +791,16 @@ export async function executeRun(runId: number, opts?: { reusePlan?: boolean }):
         committedSuggestionId = inserted[insertedIdx]?.id ?? null;
         await db.update(tasksTable).set({ status: "review", linkedCommit: commitHash }).where(eq(tasksTable.id, workItem.id));
         // The repo changed — schedule a Graphify re-index so future runs use a
-        // fresh graph (Phase 3). Fire-and-forget; no-op if unconfigured.
-        triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.githubToken ?? "", repoId: repo.id, log: logger });
+        // fresh graph (Phase 3). No-op if unconfigured. Awaited because the
+        // index claim it writes is what the duplicate guard reads (0047); the
+        // request to the microservice inside it is still non-blocking.
+        await triggerRepoIndex({
+          repoUrl: repo.url,
+          githubToken: creds.githubToken ?? "",
+          repoId: repo.id,
+          triggeredBy: run.userId,
+          log: logger,
+        });
         // A committed styling change means the stored UI style profile no
         // longer describes the repository (0042). Fire-and-forget, and never a
         // re-extraction: the tab offers Re-extract and a human decides.
@@ -1059,8 +1067,15 @@ export async function commitFromSuggestion(
     .update(runsTable)
     .set({ prUrl, commitHash, committedSuggestionId: sug.id })
     .where(eq(runsTable.id, runId));
-  // The repo changed — schedule a Graphify re-index (Phase 3). Fire-and-forget.
-  triggerRepoIndex({ repoUrl: repo.url, githubToken: creds.githubToken ?? "", repoId: repo.id, log: logger });
+  // The repo changed — schedule a Graphify re-index (Phase 3). Awaited for the
+  // claim, as in executeRun above.
+  await triggerRepoIndex({
+    repoUrl: repo.url,
+    githubToken: creds.githubToken ?? "",
+    repoId: repo.id,
+    triggeredBy: run.userId,
+    log: logger,
+  });
   markStaleIfStyling(run.projectId, resolved.files.map((f) => f.path));
   recordOverrideOutcome(runId, "committed", { autoCommit: false });
   return { commitHash, prUrl };

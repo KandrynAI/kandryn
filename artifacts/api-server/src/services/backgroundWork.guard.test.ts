@@ -26,8 +26,11 @@ import { fileURLToPath } from "node:url";
  * awaits. This guard fails the build if the old shape comes back.
  *
  * Scoped deliberately to the run-execution entry points. Fire-and-forget is
- * right and common elsewhere here — audit writes, repo re-indexing, email —
- * because losing one of those costs a log line, not a run.
+ * right and common elsewhere here, for audit writes and email, because losing
+ * one of those costs a log line, not a run. Repository re-indexing used to be
+ * on that list and no longer is: its claim write is what the duplicate-index
+ * guard reads (0047), so a dropped write means two clone-and-extract jobs on
+ * the customer's repository. It has its own guard, in indexClaim.guard.test.ts.
  */
 
 const SRC = join(fileURLToPath(new URL(".", import.meta.url)), "..");

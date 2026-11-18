@@ -23,3 +23,39 @@ export function isGraphServable(
 ): boolean {
   return graphStatus === "succeeded" && isGraphUsable(graphBuiltAt, maxAgeHours);
 }
+
+/**
+ * How long a `indexing` claim is honoured before another caller may take it.
+ *
+ * Longer than the UI style profile's 10 minutes because the work is not
+ * comparable: that extraction reads at most 40 files through the git API, while
+ * this one clones the whole repository and runs a parser over it in a separate
+ * service. 30 minutes is well past a real index on a large repository and well
+ * short of a working day, which is what matters: the only cost of waiting is a
+ * delayed rebuild, and the only cost of reclaiming too early is a duplicate job
+ * on the customer's repository.
+ */
+export const INDEX_CLAIM_STALE_MINUTES = 30;
+
+/**
+ * Whether an index is genuinely in flight, and so a new one must be refused.
+ *
+ * `graph_status = 'indexing'` alone is not enough to answer this. The status is
+ * resolved by a callback from the Graphify microservice, and a callback that
+ * never arrives would pin the row at `indexing` for ever; a guard reading only
+ * the status would then refuse every rebuild and leave the repository
+ * permanently un-indexable. So a claim is in flight only while it is fresh, and
+ * a claim with no timestamp at all (every row written before 0047) reads as not
+ * in flight, which is the safe direction: a rebuild is allowed, not blocked.
+ */
+export function isIndexInFlight(
+  graphStatus: string | null | undefined,
+  graphStartedAt: Date | string | null | undefined,
+  now: Date = new Date(),
+  staleMinutes: number = INDEX_CLAIM_STALE_MINUTES,
+): boolean {
+  if (graphStatus !== "indexing") return false;
+  if (!graphStartedAt) return false;
+  const ageMs = now.getTime() - new Date(graphStartedAt).getTime();
+  return ageMs < staleMinutes * 60 * 1000;
+}

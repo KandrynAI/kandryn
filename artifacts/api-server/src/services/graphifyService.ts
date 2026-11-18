@@ -4,7 +4,7 @@ import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
 // Pure usability predicates live in a db-free module (unit-testable); re-exported
 // here so existing callers keep importing them from graphifyService.
-export { isGraphUsable, isGraphServable } from "./graphUsability.js";
+export { isGraphUsable, isGraphServable, isIndexInFlight, INDEX_CLAIM_STALE_MINUTES } from "./graphUsability.js";
 
 export interface GraphifyQueryResult {
   filePath: string;
@@ -125,30 +125,59 @@ interface TriggerIndexArgs {
   repoUrl: string;
   githubToken: string;
   repoId: number;
+  /**
+   * The user who asked for this index, recorded on the row (0047). Required
+   * rather than optional: once a team admin can re-index a repository they do
+   * not own, the row's own user_id no longer answers "who started this".
+   */
+  triggeredBy: string | null;
   /** Optional pino-style logger for a warning if the trigger fetch rejects. */
   log?: { warn: (obj: unknown, msg: string) => void };
 }
 
 /**
- * Fire-and-forget request that asks the Graphify microservice to (re)index a
- * repository. Used on connect (Phase 2), on manual Rebuild, and after a commit
- * lands (Phase 3 — the graph is now stale). Returns whether a request was
- * dispatched (false when the microservice isn't configured). Never throws and
- * never blocks the caller: the microservice replies 202 and does the clone +
- * extract in the background, POSTing the result back to /api/internal/graphify-callback.
+ * Ask the Graphify microservice to (re)index a repository. Used on connect
+ * (Phase 2), on manual Rebuild, and after a commit lands (Phase 3 — the graph
+ * is now stale). Returns whether a request was dispatched (false when the
+ * microservice isn't configured). Never throws: the microservice replies 202
+ * and does the clone + extract in the background, POSTing the result back to
+ * /api/internal/graphify-callback.
+ *
+ * The CLAIM is awaited; the request to the microservice is not. That split is
+ * deliberate. `isIndexInFlight` reads graph_started_at to refuse a duplicate
+ * index, and a guard whose column is written fire-and-forget is not a guard:
+ * on a serverless invocation the write can be dropped when the response is
+ * sent, and the next caller then sees an unclaimed row. So the claim lands
+ * before this function returns, and the caller awaits it.
  */
-export function triggerRepoIndex({ repoUrl, githubToken, repoId, log }: TriggerIndexArgs): boolean {
+export async function triggerRepoIndex({
+  repoUrl,
+  githubToken,
+  repoId,
+  triggeredBy,
+  log,
+}: TriggerIndexArgs): Promise<boolean> {
   const graphifyUrl = process.env.GRAPHIFY_SERVICE_URL;
   if (!graphifyUrl) return false;
 
-  // Mark the repo as indexing so the UI shows progress and can distinguish an
-  // in-flight rebuild from a finished one (0021). The callback resolves it to
-  // succeeded/failed. Fire-and-forget — never blocks the trigger.
-  void db
-    .update(repositoriesTable)
-    .set({ graphStatus: "indexing", graphError: null })
-    .where(eq(repositoriesTable.id, repoId))
-    .catch((err) => log?.warn({ err }, "Graphify status update to indexing failed"));
+  // Claim the index: status, when it started and who asked (0021, 0047). The
+  // callback resolves the status to succeeded/failed. Awaited, per the note
+  // above. A failure here is logged and swallowed — the index itself is worth
+  // attempting even when the bookkeeping write fails, and the stale-claim
+  // window means a missing claim cannot wedge the repository.
+  try {
+    await db
+      .update(repositoriesTable)
+      .set({
+        graphStatus: "indexing",
+        graphError: null,
+        graphStartedAt: new Date(),
+        graphTriggeredBy: triggeredBy,
+      })
+      .where(eq(repositoriesTable.id, repoId));
+  } catch (err) {
+    log?.warn({ err }, "Graphify status update to indexing failed");
+  }
 
   const callbackUrl = `${process.env.APP_BASE_URL ?? "https://app.kandryn.com"}/api/internal/graphify-callback`;
   void fetch(`${graphifyUrl}/index`, {

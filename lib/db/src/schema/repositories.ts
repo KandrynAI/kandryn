@@ -61,6 +61,15 @@ export const repositoriesTable = pgTable(
       .notNull()
       .default("idle"),
     graphError: text("graph_error"),
+    // When the in-flight index was started, and by whom (0047). graphStartedAt
+    // is what makes `indexing` a CLAIM rather than a permanent state: without a
+    // timestamp, an index whose callback never arrives leaves the status
+    // `indexing` for ever and the duplicate guard then refuses every rebuild,
+    // so the repository becomes permanently un-indexable. Reclaimable after
+    // INDEX_CLAIM_STALE_MINUTES (services/graphUsability.ts). The same shape
+    // ui_style_profiles.claimed_at uses, for the same reason.
+    graphStartedAt: timestamp("graph_started_at", { withTimezone: true }),
+    graphTriggeredBy: text("graph_triggered_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("repositories_user_id_idx").on(t.userId)],
