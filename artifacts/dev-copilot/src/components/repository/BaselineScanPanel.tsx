@@ -352,7 +352,27 @@ function ScanSummary({ scanId, repoId }: { scanId: number; repoId: number }) {
         <span>
           Scanned <strong>{scan.filesScanned.toLocaleString()}</strong> of {scan.filesTotal.toLocaleString()} files
           {scan.filesSkipped > 0 ? ` · ${scan.filesSkipped.toLocaleString()} skipped` : ""}
+          {/* Which part of the repository this looked at (0049). Without it,
+              two scans of one repository are not comparable: "fewer findings"
+              reads as progress when it was a narrower question. */}
+          {scan.pathPrefix ? (
+            <>
+              {" "}
+              in <span className="font-mono text-xs">{scan.pathPrefix}</span>
+            </>
+          ) : null}
         </span>
+        {/* What it cost, beside what it was estimated at (0050). Shown rather
+            than only stored, because an estimate nobody checks is an estimate
+            nobody can correct. */}
+        {scan.actualCostUsd != null && (
+          <span className="text-muted-foreground text-xs">
+            ${Number(scan.actualCostUsd).toFixed(2)} spent
+            {scan.estimatedCostUsd != null
+              ? ` of $${Number(scan.estimatedCostUsd).toFixed(2)} estimated`
+              : ""}
+          </span>
+        )}
         {scan.model && <span className="text-muted-foreground font-mono text-xs">{scan.model}</span>}
         <span className="text-muted-foreground text-xs">
           {scan.finishedAt ? formatDistanceToNow(new Date(scan.finishedAt), { addSuffix: true }) : ""}

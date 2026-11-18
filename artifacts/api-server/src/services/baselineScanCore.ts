@@ -21,6 +21,25 @@ export const MAX_FILE_CHARS = 8_000;
 // tokens when there are findings.
 const INPUT_USD_PER_TOKEN = 5 / 1_000_000;
 const OUTPUT_USD_PER_TOKEN = 25 / 1_000_000;
+
+/**
+ * Batch rates per model, in USD per token.
+ *
+ * ONE place, because an estimate and an actual charge priced from two
+ * different tables would disagree for reasons nobody could find. The default
+ * model's rates are the ones the estimate above is built from; the fallback's
+ * are half, which is what the shipped pre-flight dialog already tells
+ * customers ("falls back to a model costing half as much").
+ *
+ * These are assumptions and the only assumptions here: the TOKEN COUNTS are
+ * facts reported by the provider. That is why both are stored separately on
+ * the scan. When a published price moves, this table is what changes, and the
+ * recorded tokens still let an old scan be re-priced.
+ */
+const MODEL_RATES: Record<string, { input: number; output: number }> = {
+  "claude-fable-5": { input: INPUT_USD_PER_TOKEN, output: OUTPUT_USD_PER_TOKEN },
+  "claude-opus-5": { input: INPUT_USD_PER_TOKEN / 2, output: OUTPUT_USD_PER_TOKEN / 2 },
+};
 const PROMPT_OVERHEAD_TOKENS = 430;
 const CHARS_PER_TOKEN = 3.5;
 const EXPECTED_OUTPUT_TOKENS = 300;
@@ -187,3 +206,26 @@ export function canViewBaselineScans(actor: ViewActor, target: ViewableTarget): 
   const teamId = target.project?.teamId ?? null;
   return teamId != null && actor.teamId === teamId;
 }
+
+/**
+ * What a finished scan actually cost, from the tokens the provider reported.
+ *
+ * Returns null for a model with no rate in the table rather than quoting zero:
+ * a scan that cost real money and reads as $0.00 is worse than one that reads
+ * as "not priced". The tokens are stored either way.
+ */
+export function actualCostUsd(
+  model: string | null | undefined,
+  inputTokens: number,
+  outputTokens: number,
+): number | null {
+  const rate = model ? MODEL_RATES[model] : undefined;
+  if (!rate) return null;
+  const cost = inputTokens * rate.input + outputTokens * rate.output;
+  // Four decimal places: a scan of a small folder can genuinely cost a few
+  // cents, and rounding that to two would record it as free.
+  return Math.round(cost * 10_000) / 10_000;
+}
+
+/** The models this scan can run on, exposed for the test that pins the table. */
+export const PRICED_MODELS = Object.keys(MODEL_RATES);

@@ -61,6 +61,19 @@ export const baselineScansTable = pgTable(
     model: text("model"),
     /** What the admin was shown and approved before any spend began. */
     estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 4 }),
+    // What it actually cost, recorded at collection (0050).
+    //
+    // Until this column, nothing in the product recorded a real charge: the
+    // estimate was stored and never checked against anything, so the weights
+    // behind it could not be calibrated and an over-estimate could not be
+    // found. The TOKENS are the facts the provider reported; the cost is those
+    // tokens priced by the rate table in baselineScanCore, so a scan can be
+    // re-priced if a published rate moves. Null on a scan that predates the
+    // column, and the cost alone is null for a model with no rate rather than
+    // reading as free.
+    actualCostUsd: numeric("actual_cost_usd", { precision: 10, scale: 4 }),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
 
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),

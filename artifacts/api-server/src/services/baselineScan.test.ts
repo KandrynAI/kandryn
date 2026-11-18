@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  actualCostUsd,
   discoverFiles,
   estimateScan,
   findingFingerprint,
@@ -8,6 +9,7 @@ import {
   sortFindings,
   withinPrefix,
   MAX_FILES,
+  PRICED_MODELS,
 } from "./baselineScanCore.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
 
@@ -272,4 +274,55 @@ test("with no scope the graph still falls back to the tree when it is empty", ()
   const out = discoverFiles(g, ["src/a.ts"], null);
   assert.deepEqual(out.paths, ["src/a.ts"]);
   assert.equal(out.source, "tree");
+});
+
+// --- actual spend (0050) -----------------------------------------------------
+
+test("the actual cost is the reported tokens at the model's batch rate", () => {
+  // 1M input at $5/Mtok plus 100k output at $25/Mtok.
+  assert.equal(actualCostUsd("claude-fable-5", 1_000_000, 100_000), 7.5);
+});
+
+test("the fallback model is priced at half, which is what the dialog promises", () => {
+  const full = actualCostUsd("claude-fable-5", 1_000_000, 100_000)!;
+  const half = actualCostUsd("claude-opus-5", 1_000_000, 100_000)!;
+  assert.equal(half, full / 2);
+});
+
+test("an unpriced model records no cost rather than a free scan", () => {
+  // A scan that cost real money and reads as $0.00 is worse than one that
+  // reads as not priced. The tokens are stored either way.
+  assert.equal(actualCostUsd("some-future-model", 1_000_000, 100_000), null);
+  assert.equal(actualCostUsd(null, 1_000_000, 100_000), null);
+  assert.equal(actualCostUsd(undefined, 1_000_000, 100_000), null);
+});
+
+test("a cheap scan is not rounded away to zero", () => {
+  // A folder scan can genuinely cost a few cents; two decimal places would
+  // record that as free.
+  const cost = actualCostUsd("claude-fable-5", 2_000, 300)!;
+  assert.ok(cost > 0, `expected a non-zero cost, got ${cost}`);
+  assert.equal(cost, Math.round(cost * 10_000) / 10_000);
+});
+
+test("zero tokens is zero cost, not null", () => {
+  // Distinguishable from an unpriced model: this scan really did read nothing.
+  assert.equal(actualCostUsd("claude-fable-5", 0, 0), 0);
+});
+
+test("the estimate and the actual agree on the default model's rate", () => {
+  // The whole point of one rate table. If these drift, an estimate and a
+  // charge disagree for a reason nobody can find.
+  const files = 600;
+  const est = estimateScan(files);
+  // Reconstruct the estimate's own token assumptions and price them as an
+  // actual charge; the two must match to the cent.
+  const inputTokens = files * (430 + (8_000 * 0.65) / 3.5);
+  const outputTokens = files * 300;
+  const asActual = actualCostUsd("claude-fable-5", inputTokens, outputTokens)!;
+  assert.equal(Math.round(asActual * 100) / 100, est.estimatedCostUsd);
+});
+
+test("every model the scan can run on has a rate", () => {
+  assert.deepEqual([...PRICED_MODELS].sort(), ["claude-fable-5", "claude-opus-5"]);
 });

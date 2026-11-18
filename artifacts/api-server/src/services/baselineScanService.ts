@@ -20,7 +20,7 @@ import { RunError } from "./runService.js";
 import * as audit from "./auditService.js";
 import { logger } from "../lib/logger.js";
 import type { GraphifyGraph } from "../../../../shared/types/graphifyGraph.js";
-import { canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, normalisePathPrefix, sortFindings, MAX_FILE_CHARS, MAX_FILES, type BaselineEstimate } from "./baselineScanCore.js";
+import { actualCostUsd, canViewBaselineScans, discoverFiles, estimateScan, findingFingerprint, normalisePathPrefix, sortFindings, MAX_FILE_CHARS, MAX_FILES, type BaselineEstimate } from "./baselineScanCore.js";
 
 // Re-exported so existing callers keep importing from the service; the pure
 // core lives in its own module only so it can be tested without a database.
@@ -390,6 +390,12 @@ export async function collectBaselineScan(scan: BaselineScan): Promise<boolean> 
     const rows: (typeof baselineFindingsTable.$inferInsert)[] = [];
     let scanned = 0;
     let errored = 0;
+    // What this scan actually cost (0050). Accumulated from every result the
+    // provider returned, INCLUDING the ones whose body would not parse: those
+    // requests were still charged for, and a cost figure that quietly omits
+    // them under-reports the spend.
+    let inputTokens = 0;
+    let outputTokens = 0;
     for await (const result of await client.messages.batches.results(scan.batchId)) {
       const idx = Number(result.custom_id.slice(1));
       const filePath = paths[idx];
@@ -398,6 +404,9 @@ export async function collectBaselineScan(scan: BaselineScan): Promise<boolean> 
         errored++;
         continue;
       }
+      const usage = result.result.message.usage;
+      inputTokens += usage?.input_tokens ?? 0;
+      outputTokens += usage?.output_tokens ?? 0;
       const raw = result.result.message.content
         .filter((b) => b.type === "text")
         .map((b) => (b as { type: "text"; text: string }).text)
@@ -443,6 +452,16 @@ export async function collectBaselineScan(scan: BaselineScan): Promise<boolean> 
         highCount: counts.high,
         mediumCount: counts.medium,
         lowCount: counts.low,
+        inputTokens,
+        outputTokens,
+        // Null rather than "0.0000" when the model has no rate: a scan that
+        // cost real money and reads as free is worse than one that reads as
+        // not priced. The tokens above are recorded either way, so it can be
+        // priced later.
+        actualCostUsd: (() => {
+          const cost = actualCostUsd(scan.model, inputTokens, outputTokens);
+          return cost == null ? null : String(cost);
+        })(),
         finishedAt: new Date(),
       })
       .where(eq(baselineScansTable.id, scan.id));
@@ -460,6 +479,9 @@ export async function collectBaselineScan(scan: BaselineScan): Promise<boolean> 
         filesTotal: scan.filesTotal,
         filesScanned: scanned,
         filesSkipped: (scan.filesSkipped ?? 0) + errored,
+        inputTokens,
+        outputTokens,
+        actualCostUsd: actualCostUsd(scan.model, inputTokens, outputTokens),
         criticalCount: counts.critical,
         highCount: counts.high,
         mediumCount: counts.medium,

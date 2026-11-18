@@ -1300,6 +1300,12 @@ export interface BaselineScan {
   /** Model the batch ran on. Null for scans predating the column. */
   model?: string | null;
   estimatedCostUsd: string | null;
+  /** What it actually cost, recorded at collection (0050). numeric → string. */
+  actualCostUsd: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /** The folder it was limited to (0049). Null is the whole repository. */
+  pathPrefix: string | null;
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;
