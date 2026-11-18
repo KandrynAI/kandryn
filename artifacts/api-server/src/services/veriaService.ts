@@ -157,10 +157,13 @@ export async function runVeriaReview(
   const client = new Anthropic({ apiKey: creds.anthropicApiKey });
 
   const response = await client.messages.create({
-    // 8192 (matching the generation agents) so a full structured review of a
-    // large multi-file change fits — 1500 truncated the JSON mid-string.
+    // 16384, matching the generation agents, which were raised to it by 0039
+    // while this was left behind. Veria judges the WHOLE committed change set
+    // in one context, so its output scales with the file count: 1500 truncated
+    // the JSON mid-string, and 8192 left little headroom on the ten-file change
+    // in run #46. The guard below turns an overrun into a 503 that says so.
     model: "claude-sonnet-4-5",
-    max_tokens: 8192,
+    max_tokens: 16384,
     messages: [{ role: "user", content: buildVeriaPrompt(input) }],
   });
 

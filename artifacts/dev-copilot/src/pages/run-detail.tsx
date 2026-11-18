@@ -373,7 +373,15 @@ export default function RunDetailPage() {
       } else if (err instanceof ApiError && err.status === 424) {
         toast({ title: "Add your Agent A credentials in Settings to run Veria.", variant: "destructive" });
       } else {
-        toast({ title: "Veria could not complete. Try again.", variant: "destructive" });
+        // Say what the server said. This branch used to replace every cause
+        // with one sentence, so a truncated review, a provider refusal and a
+        // malformed reply were indistinguishable on screen and run #46 took a
+        // screenshot to diagnose. TestStage already passes the message through.
+        toast({
+          title: "Veria could not complete",
+          description: err instanceof ApiError ? err.message : "Something went wrong.",
+          variant: "destructive",
+        });
       }
     } finally {
       setReviewing(false);

@@ -1085,6 +1085,15 @@ ${strict ? "\nIMPORTANT: Your previous response was not valid JSON matching this
  * change. Validates with zod, retries once with a stricter instruction, then
  * throws AIFormatError (route → 422). Nothing is persisted here.
  */
+/**
+ * Matching the generation agents' 16384 (0039). Test generation emits the cases
+ * AND a complete runnable script for the whole committed change set, as one
+ * JSON string with every newline escaped, so its output scales with the file
+ * count exactly as generation's does. It was left on 8192 when generation was
+ * raised, and a ten-file change overran it.
+ */
+const TEST_GEN_MAX_TOKENS = 16384;
+
 export async function generateTests(
   input: TestGenInput,
   creds: Pick<AICreds, "anthropicApiKey">,
@@ -1095,9 +1104,27 @@ export async function generateTests(
   for (let attempt = 0; attempt < 2; attempt++) {
     const message = await client.messages.create({
       model: "claude-sonnet-4-5",
-      max_tokens: 8192,
+      max_tokens: TEST_GEN_MAX_TOKENS,
       messages: [{ role: "user", content: buildTestPrompt(input, stack, attempt > 0) }],
     });
+
+    // A reply cut off at the ceiling is unparseable JSON, and the retry below
+    // reproduces the identical truncation, so the caller waits for a second
+    // call to fail the same way and is then told the tests "could not be
+    // parsed" — the model's formatting blamed for a budget problem, with a
+    // retry suggested that cannot succeed. Confirmed on run #46, a ten-file
+    // change. The same guard generation (0039) and Veria already carry.
+    if (message.stop_reason === "max_tokens") {
+      logger.warn(
+        { files: input.files.length, maxTokens: TEST_GEN_MAX_TOKENS },
+        "Test generation hit the output token limit — truncated",
+      );
+      throw new AIFormatError(
+        `The generated tests were cut off at the ${TEST_GEN_MAX_TOKENS}-token ceiling. ` +
+          `The committed change is too large to test in one pass.`,
+      );
+    }
+
     const block = message.content[0];
     if (block.type !== "text") throw new AIFormatError("Model returned a non-text block.");
     try {
