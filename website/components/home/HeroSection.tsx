@@ -103,7 +103,7 @@ function HeroPreview() {
           <span style={{ fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
             {HERO_PREVIEW.label}
           </span>
-          <span className="tag tag-outline">CLAIMS</span>
+          <span className="tag tag-outline">{HERO_PREVIEW.tag}</span>
         </div>
 
         <dl style={{ margin: 0, padding: '4px 0' }}>
@@ -132,6 +132,52 @@ function HeroPreview() {
             </div>
           ))}
         </dl>
+
+        {/* The worked number. Two readings of one claim, side by side: the
+            whole argument for carrying the rule into the change, in two
+            figures a claims lead can check in their head. */}
+        <div
+          style={{
+            padding: '12px 16px',
+            background: 'var(--color-neutral-100)',
+            borderBottom: '1px solid var(--color-divider)',
+          }}
+        >
+          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--color-neutral-800)' }}>
+            {HERO_PREVIEW.worked.lead}
+          </p>
+          <div style={{ display: 'flex', gap: 28, marginTop: 10 }}>
+            {[HERO_PREVIEW.worked.without, HERO_PREVIEW.worked.with].map((side, i) => (
+              <div key={side.label}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.07em',
+                    textTransform: 'uppercase',
+                    color: 'var(--color-neutral-700)',
+                  }}
+                >
+                  {side.label}
+                </div>
+                <div
+                  style={{
+                    marginTop: 3,
+                    fontSize: 20,
+                    fontWeight: 700,
+                    letterSpacing: '-0.01em',
+                    // The right-hand figure is the one the rule produces, so it
+                    // carries the accent. The other stays neutral rather than
+                    // red: it is not an error, it is the answer without context.
+                    color: i === 1 ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
+                  }}
+                >
+                  {side.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div style={{ padding: '11px 16px' }}>
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--color-neutral-700)' }}>

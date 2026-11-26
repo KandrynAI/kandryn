@@ -35,25 +35,40 @@ export const HERO = {
  *
  * It replaced a typed code diff. The diff showed the output to someone who
  * already knew what they were looking at; this shows the shape of the problem
- * to someone who does not. Three rows, in the order the work happens: what was
- * asked, what was found written down somewhere else, and what that means for
- * the change.
+ * to someone who does not. Three rows in the order the work happens, then the
+ * worked number, because the number is the argument: the same claim reads as
+ * six days or three depending on whether the rule reached the code, and no
+ * amount of describing that is as convincing as showing it.
  *
- * The policy is invented for this card. It is labelled as such on screen,
- * because a plausible-looking policy excerpt with a section number is exactly
- * the kind of thing a reader assumes is real.
+ * The card carried the word "fictional" twice and a citation, "section 4.2".
+ * The word was there to defuse the citation, which is the one shape a reader
+ * assumes is real. The citation is gone, so the word is not needed: there is
+ * no company, no document and no section number left to mistake for a
+ * customer's. What remains is a worked example, labelled as an example, built
+ * from a rule of a kind every claims operation has.
  */
 export const HERO_PREVIEW = {
-  label: 'Fictional example',
+  label: 'Example',
+  tag: 'CLAIMS',
   rows: [
-    { k: 'Request', v: 'Show how long each claim has spent in review.' },
+    { k: 'The request', v: 'Show how long each claim has spent in review.' },
     {
-      k: 'Rule found',
-      v: 'The review clock pauses while the team waits for requested information.',
+      k: 'What the ticket does not say',
+      v: 'The review clock pauses while the team is waiting on information it asked the customer for.',
     },
-    { k: 'Proposed change', v: 'Count only time in review states.' },
+    {
+      k: 'What that changes',
+      v: 'Count the time a claim spends in review states, not the days it has been open.',
+    },
   ],
-  source: 'Source: fictional claims operating policy, section 4.2',
+  // The same claim, scored both ways. Six days open: two in review, three
+  // waiting on the customer, one more in review.
+  worked: {
+    lead: 'A claim open six days: two in review, three waiting on the customer, one more in review.',
+    without: { label: 'Without the rule', value: '6 days' },
+    with: { label: 'With it', value: '3 days' },
+  },
+  source: 'The rule lives in a claims operating policy. The ticket does not mention it.',
   link: { label: 'See a sample change', href: '#preview' },
 };
 

@@ -81,10 +81,14 @@ mechanism. Three things constrain how far that can be taken:
   five-minute tick, and a no-op unless the index service is configured), and
   context is selected fresh per run. What is not: that documents or the
   tracker hierarchy keep themselves current. The homepage says both.
-- **The fictional claims scenario** lives in `website/lib/home.ts`
-  (`HERO_PREVIEW`) and is labelled "Fictional example" on screen. The policy,
-  the section number and the insurer are invented. Do not add a real carrier
-  name, a real policy, or anything that reads as regulatory interpretation.
+- **The claims example** lives in `website/lib/home.ts` (`HERO_PREVIEW`),
+  labelled "Example" on screen, and names no company, no document and no
+  section. It originally cited "section 4.2" and carried the word "fictional"
+  twice to defuse it; the citation went, so the word was not needed. The
+  six-days-versus-three figures are a worked illustration, not measured data
+  and not a customer's. Do not add a carrier name, a policy title, a section
+  number, or anything that reads as regulatory interpretation. If a citation
+  goes back in, the disclaimer goes back with it.
 
 ## Known gaps on the site, left for a decision
 

@@ -334,10 +334,15 @@ delivery, the sample change, where it fits, built to be reviewed, start with
 one work item. `StagesSection.tsx` is no longer rendered by `app/page.tsx`; the
 file is still in the tree.
 
-**The fictional claims scenario** lives in `website/lib/home.ts` as
-`HERO_PREVIEW` and is labelled "Fictional example" on screen. The insurer, the
-policy and the section number are invented. Never add a real carrier, a real
-policy, or anything that reads as regulatory interpretation. The interactive
+**The claims example** lives in `website/lib/home.ts` as `HERO_PREVIEW` and is
+labelled "Example" on screen. It carries **no company, no document name and no
+section number**: it used to cite "section 4.2" and needed the word "fictional"
+twice to defuse that citation, and removing the invented specificity was what
+let the word go. The six-days-versus-three figures are a worked illustration of
+a rule of a kind every claims operation has, not a customer's data. Never add a
+real carrier, a real policy, a section number, or anything that reads as
+regulatory interpretation; if a citation ever goes back in, the word
+"fictional" goes with it. The interactive
 sample below it (`components/home/ProductPreview.tsx` + `components/demo/*`,
 data in `lib/site.ts` `DEMO_*`) is still the payments scenario and is
 deliberately unchanged, so the hero card and the sample tell two different
