@@ -2,11 +2,11 @@ import Btn from '@/components/ui/Btn';
 import { CLOSING } from '@/lib/home';
 
 /**
- * Section 6 — the same action the hero opened with, and nothing else.
+ * The last section. Two routes to the same conversation, not two offers.
  *
- * No second offer, no newsletter, no pricing. A visitor who reached the bottom
- * has one decision left to make, and giving them a choice at this point is
- * giving them a way not to decide.
+ * The pilot is the real ask: one work item, end to end. The walkthrough sits
+ * beside it for a sponsor who is not ready to bring credentials to a call, and
+ * who would otherwise leave rather than click the harder of the two.
  */
 export default function ClosingCta() {
   return (
@@ -29,13 +29,20 @@ export default function ClosingCta() {
       <p style={{ marginTop: 16, maxWidth: 520, fontSize: 17, lineHeight: 1.6, opacity: 0.92 }}>
         {CLOSING.body}
       </p>
-      <div style={{ marginTop: 32 }}>
+      <div style={{ marginTop: 32, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <Btn
           variant="secondary"
           href={CLOSING.cta.href}
           style={{ background: '#ffffff', color: 'var(--color-accent-700)', borderColor: '#ffffff' }}
         >
           {CLOSING.cta.label}
+        </Btn>
+        <Btn
+          variant="secondary"
+          href={CLOSING.secondary.href}
+          style={{ background: 'transparent', color: '#ffffff', borderColor: '#ffffff' }}
+        >
+          {CLOSING.secondary.label}
         </Btn>
       </div>
     </section>

@@ -1,123 +1,133 @@
 /**
  * Homepage copy.
  *
- * Separate from site.ts because the homepage was rebuilt against a different
- * information architecture: the page carries one idea per section and defers
- * depth to a linked page, rather than summarising every page inline. site.ts
- * still holds the copy the inner pages share.
+ * Separate from site.ts because the homepage carries one idea per section and
+ * defers depth to a linked page, rather than summarising every page inline.
+ * site.ts still holds the copy the inner pages share.
  *
- * Every claim here is one the verification pass confirmed against the running
- * product. Nothing asserts automatic scanning, enforced merge-blocking, model
- * vendors, speed, cost, or customers.
+ * Repositioned 2026-11-26: the page now leads with the outcome (improvements
+ * delivered sooner) and names the mechanism (the business context behind a
+ * change), rather than leading with the mechanism alone.
+ *
+ * Every claim here traces to a SHIPPED or PARTIAL row in
+ * docs/marketing-claims.md, by letter. Nothing asserts automatic scanning,
+ * enforced merge-blocking, model vendors, speed, cost, or customers.
  */
 
 /**
  * Which hero treatment is live.
  *
- * 'headline' types the h1 itself. 'snippet' leaves the h1 static and types a
- * short diff beneath it. Both are built; this picks the one that ships.
+ * 'headline' types the h1 itself. 'snippet' leaves the h1 static and renders
+ * the preview card beside it. Both are built; this picks the one that ships.
  */
 export const HERO_VARIANT: 'headline' | 'snippet' = 'snippet';
 
 export const HERO = {
-  headline: 'Kandryn writes the code. Your team decides what merges.',
-  // One line. Deliberately not a paragraph.
+  headline: 'Deliver business improvements sooner.',
   supporting:
-    'Kandryn writes only to the repository you connect — nothing merges without your authorization.',
-  primary: { label: 'Book a walkthrough', href: '/contact' },
-  secondary: { label: 'Explore the demo', href: '#preview' },
+    'Kandryn builds and maintains the business context behind each software request. It brings together your requirements, business rules, and existing code to prepare a change for review, so your team can spend less time piecing the story together.',
+  primary: { label: 'Request a walkthrough', href: '/contact' },
+  secondary: { label: 'Explore a sample change', href: '#preview' },
 };
 
 /**
- * The diff typed beneath the headline in the 'snippet' variant.
+ * The card beside the headline.
  *
- * Shaped like the change the demo below actually produces — a missing
- * validation check added to an endpoint — so the motion previews the product
- * rather than decorating the page. Labelled illustrative in the UI because it
- * is written for this space, not captured from a run.
+ * It replaced a typed code diff. The diff showed the output to someone who
+ * already knew what they were looking at; this shows the shape of the problem
+ * to someone who does not. Three rows, in the order the work happens: what was
+ * asked, what was found written down somewhere else, and what that means for
+ * the change.
+ *
+ * The policy is invented for this card. It is labelled as such on screen,
+ * because a plausible-looking policy excerpt with a section number is exactly
+ * the kind of thing a reader assumes is real.
  */
-export const HERO_SNIPPET = {
-  file: 'src/routes/refunds.ts',
-  lines: [
-    { op: ' ', text: 'export async function createRefund(req, res) {' },
-    { op: '+', text: "  const key = req.header('Idempotency-Key');" },
-    { op: '+', text: "  if (!key) return res.status(400).json({ error: 'idempotency_key_required' });" },
-    { op: ' ', text: '' },
-    { op: ' ', text: '  return await db.transaction(async (tx) => {' },
+export const HERO_PREVIEW = {
+  label: 'Fictional example',
+  rows: [
+    { k: 'Request', v: 'Show how long each claim has spent in review.' },
+    {
+      k: 'Rule found',
+      v: 'The review clock pauses while the team waits for requested information.',
+    },
+    { k: 'Proposed change', v: 'Count only time in review states.' },
   ],
-  caption: 'Illustrative — the same change the demo below walks through.',
+  source: 'Source: fictional claims operating policy, section 4.2',
+  link: { label: 'See a sample change', href: '#preview' },
 };
 
 export const PREVIEW = {
   title: 'One work item, one proposed change',
   lead:
-    'A story from the board, the change Kandryn proposes for it, and the pull request it would open. Sample project — click through it.',
+    'A story from the board, the change Kandryn proposes for it, and the pull request it would open. Sample project. Click through it.',
 };
 
 /**
- * Section 3 — jobs, not adjectives.
+ * Section 2. The three capabilities, in buyer language, each tied to a step of
+ * the delivery the sponsor is waiting on.
  *
- * Each is a task type the product genuinely handles: a scoped change to an
- * existing codebase, driven from one work item. Nothing here implies greenfield
- * work, autonomous refactors, or anything the change planner caps out of.
+ * Ledger rows a, b, c, d, e, f and p. The third point is the one that needed
+ * the most care: the repository map is refreshed after a commit, but the
+ * refresh is queued and drained by a scheduled sweep rather than running at
+ * the moment of the commit, so the copy says "after commits land" and never
+ * "instantly". What the customer keeps current themselves is stated outright,
+ * because nothing in the product re-checks an uploaded document against the
+ * code.
+ */
+export const CONTEXT = {
+  heading: 'How business context speeds up delivery',
+  lead:
+    'A request arrives as a ticket that holds part of the story. The objective sits in a parent initiative, a rule sits in a document, and the existing code decides how that rule is applied today. Kandryn brings those pieces together before anyone starts writing.',
+  points: [
+    {
+      title: 'Identify the context',
+      body: 'Kandryn follows a work item up to its parent story and initiative, and finds the repository files, document passages and existing behaviour that bear on it. The team starts from a change whose meaning was spread across several places.',
+    },
+    {
+      title: 'Build the context for the change',
+      body: 'Those inputs are combined with the acceptance criteria on the ticket to prepare a proposal. A documented exception can change the implementation. Where background material and the acceptance criteria disagree, the acceptance criteria win.',
+    },
+    {
+      title: 'Keep context current',
+      body: 'The repository map is refreshed after commits land, and context is selected fresh for every run rather than stored and reused. Each run records which inputs informed it, as identifiers and counts. You keep two things current yourself: the documents you upload, and the parent hierarchy in your tracker.',
+    },
+  ],
+  closing: 'Kandryn also checks run order, and records the reason when someone overrides it.',
+  link: { label: 'The full pipeline, stage by stage', href: '/how-it-works' },
+};
+
+/**
+ * Section 4 - where it fits.
+ *
+ * Replaced four mechanical examples (an idempotency guard, a reporting query,
+ * a column plus migration, missing tests) with work a business sponsor
+ * recognises. Each is still scoped, still driven from one work item, and still
+ * something the change planner can hold. The industries are the first two
+ * Kandryn is selling into. No real company names.
  */
 export const USE_CASES = [
   {
-    tag: 'STORY',
-    title: 'Add an idempotency guard to an endpoint that never had one.',
+    tag: 'REPORTING',
+    title: 'Change how a report counts time, when the rule says some of it does not count.',
   },
   {
-    tag: 'TASK',
-    title: 'Write the reporting query behind a column someone asked for.',
+    tag: 'ELIGIBILITY',
+    title: 'Apply a documented exception that sends some applications to a second approver.',
   },
   {
-    tag: 'TASK',
-    title: 'Add a field to a table, plus the migration that ships it.',
+    tag: 'VALIDATION',
+    title: 'Enforce a rule at the point of entry that is written down but not in the code.',
   },
   {
-    tag: 'BUG',
-    title: 'Cover an endpoint with the tests it went to production without.',
+    tag: 'COVERAGE',
+    title: 'Write the tests for a rule the business depends on and nobody has covered.',
   },
 ];
 
 export const USE_CASES_HEADING = 'Where Kandryn fits';
 export const USE_CASES_LEAD =
-  'Scoped work from a backlog you already keep — the tickets that are clear enough to do and never quite urgent enough to start.';
-
-/**
- * Section 4. What Kandryn knows about the project before it writes.
- *
- * Every line here maps to a shipped feature in docs/marketing-claims.md: the
- * ancestor chain (0040), uploaded documents with per-run retrieval (0041), the
- * repository index and stack detection (Graphify + stack profile), the UI style
- * profile (0042), the per-run context manifest (0040) and run-order checking
- * (0038). Nothing here describes a domain model, and nothing is trained: the
- * documents are background, retrieved per run, and the acceptance criteria win.
- */
-export const CONTEXT = {
-  heading: 'Kandryn reads your project before it writes a line.',
-  lead:
-    'Kandryn indexes the repository when you connect it, and keeps that index current as commits land. You can add the architecture notes and requirements your team already wrote. Each run pulls only the parts that bear on the item in front of it.',
-  points: [
-    {
-      title: 'Work item hierarchy',
-      body: 'A story is read with the parent story and epic above it, not on its own.',
-    },
-    {
-      title: 'Repository map',
-      body: 'Structure, stack and existing styling are mapped when you connect the repository and mapped again after each commit, so generated code looks like it belongs.',
-    },
-    {
-      title: 'Your documents',
-      body: 'Upload what your team already wrote. Each run finds the passages that relate to the item. Documents are background. The acceptance criteria on the work item always win.',
-    },
-    {
-      title: 'A record of what it used',
-      body: 'Every run lists the context behind it, so a reviewer can see what informed the change.',
-    },
-  ],
-  closing: 'Kandryn also checks run order, and records the reason when someone overrides it.',
-};
+  'Scoped work whose meaning depends on something written outside the ticket. The requests that are clear enough to do and never quite urgent enough to start.';
 
 export const STAGES = [
   {
@@ -128,7 +138,7 @@ export const STAGES = [
   {
     n: '02',
     title: 'Compare proposals',
-    body: 'Two independent attempts at the same change, scored against each other on correctness, diff size and convention fit — with the reasoning shown.',
+    body: 'Two independent attempts at the same change, scored against each other on correctness, diff size and convention fit, with the reasoning shown.',
   },
   {
     n: '03',
@@ -141,23 +151,25 @@ export const STAGES_HEADING = 'How it works';
 export const STAGES_LINK = { label: 'The full pipeline, stage by stage', href: '/how-it-works' };
 
 /**
- * Section 5 — a pointer, not a summary.
+ * Section 5 - built to be reviewed.
  *
- * Reworded from the brief's draft, which read "Every change is
- * security-scanned and gated for review before it reaches your codebase."
- * The verification pass established that scanning is triggered per run rather
- * than automatic, and that blocking a merge requires a branch rule the customer
- * configures. The wording below claims only what the product does on its own.
+ * Claims only what the product does on its own: scanning is triggered per run
+ * rather than automatic, and blocking a merge requires a branch rule the
+ * customer configures. "Your team decides what merges" moved here out of the
+ * old headline, where it was answering a question the visitor had not asked
+ * yet. This is where it answers one.
  */
 export const GOVERNANCE = {
   heading: 'Built to be reviewed',
   body:
-    'Kandryn opens pull requests and never merges them. A security scan of the committed change posts a status check your branch rules can require before anyone can merge, and every action is written to an audit log your admins can read.',
+    'A change reaches your repository when someone commits it. Kandryn opens a pull request on its own branch and never merges it. Run the security scan on a committed change and it posts a status check your branch rules can require before anyone can merge. Every action is written to an audit log your admins can read.',
+  pull: 'Your team decides what merges.',
   link: { label: 'See how Kandryn is governed', href: '/trust/' },
 };
 
 export const CLOSING = {
-  headline: 'See it run on one of your own tickets.',
-  body: 'A walkthrough on a real work item from your board — not a canned recording.',
-  cta: { label: 'Book a walkthrough', href: '/contact' },
+  headline: 'Start with one work item.',
+  body: 'Bring a ticket whose meaning depends on something written elsewhere. We will run it end to end with you and you keep whatever it produces.',
+  cta: { label: 'Pilot on one work item', href: '/pilot' },
+  secondary: { label: 'Request a walkthrough', href: '/contact' },
 };

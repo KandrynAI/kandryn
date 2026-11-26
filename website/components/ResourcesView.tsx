@@ -17,10 +17,13 @@ import { QUICKSTART, CHANGELOG } from '@/lib/site';
 export default function ResourcesView() {
   return (
     <>
-      {/* Quickstart — the real one, matching what Settings actually asks for */}
+      {/* Quickstart — the real one, matching what Settings actually asks for.
+          The id is what the footer's Quickstart link targets; scrollMarginTop
+          clears the sticky header so the heading is not hidden under it. */}
       <section
+        id="quickstart"
         className="pad-x"
-        style={{ padding: '56px 64px', borderTop: '2px solid var(--color-divider)', borderBottom: '2px solid var(--color-divider)' }}
+        style={{ padding: '56px 64px', borderTop: '2px solid var(--color-divider)', borderBottom: '2px solid var(--color-divider)', scrollMarginTop: 80 }}
       >
         <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>From nothing to a pull request</h2>
         <p
@@ -82,8 +85,12 @@ export default function ResourcesView() {
         </ol>
       </section>
 
-      {/* Changelog — what actually shipped, dated */}
-      <section className="pad-x" style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' }}>
+      {/* Changelog — what actually shipped, dated. Footer link target. */}
+      <section
+        id="changelog"
+        className="pad-x"
+        style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)', scrollMarginTop: 80 }}
+      >
         <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>What shipped</h2>
         <div style={{ marginTop: 28, borderTop: '2px solid var(--color-divider)' }}>
           {CHANGELOG.map((c) => (

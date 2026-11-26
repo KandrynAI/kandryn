@@ -86,7 +86,7 @@ export default function ProductPreview() {
       >
         <h2 style={{ fontSize: 38, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>{PREVIEW.title}</h2>
         <span style={{ fontSize: 13, color: 'var(--color-neutral-700)' }}>
-          Interactive — sample project
+          Interactive sample project
         </span>
       </div>
       <p

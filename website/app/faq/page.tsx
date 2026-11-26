@@ -6,7 +6,7 @@ import { JsonLd, faqPageLd } from '@/lib/jsonld';
 export const metadata: Metadata = {
   alternates: { canonical: '/faq/' },
   title: 'FAQ',
-  description: 'The questions engineers ask first about Kandryn — merging, keys, scope, failures and providers.',
+  description: 'The questions engineers ask first about Kandryn: merging, keys, scope, failures and providers.',
 };
 
 export default function FaqPage() {

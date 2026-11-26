@@ -324,9 +324,37 @@ Renders open views as tab chips (icon + label + close ✕) with a "+" dropdown t
 
 `website/` — Next.js 15 **static export** (`output:'export'` → `out/`, `trailingSlash:true`), app router. Sans-serif design; fonts **Archivo** (display/body) + **JetBrains Mono** (mono). Layout wraps: `SiteHeader`, `CtaBanner`, `SiteFooter`, plus JSON-LD (`organizationLd` + `softwareApplicationLd`). Pages: home (`app/page.tsx`), `how-it-works`, `faq`, `security`, `contact`, `privacy`, `terms`; metadata routes `sitemap.ts` / `robots.ts` / `opengraph-image.tsx` (both metadata routes need `export const dynamic = 'force-static'` under static export). Central copy is **final** in `lib/site.ts` (`SITE`, nav, FAQ, steps, benefits, security rows). Contact/Request-Access + Book-a-Walkthrough → `POST /api/contact` → `emailService` (Resend) → `arvind.kandula@venakaninfo.com` + `accounts@venakaninfo.com`. Waitlist → `POST /api/waitlist`. **Marketing copy must avoid fabricated metrics/traction** — product-fact/directional framing only. Build: `cd website && npm install && npm run build`.
 
+**Positioning (2026-11-26):** Kandryn helps teams deliver business improvements
+**sooner** by identifying, building and maintaining the **business context**
+behind software changes. The homepage leads with that outcome and names the
+mechanism; it does not lead with "Kandryn writes the code". Both halves have to
+stay true, and "sooner" carries **no number anywhere on the site**, because no
+measurement exists. Homepage order: hero, how business context speeds up
+delivery, the sample change, where it fits, built to be reviewed, start with
+one work item. `StagesSection.tsx` is no longer rendered by `app/page.tsx`; the
+file is still in the tree.
+
+**The fictional claims scenario** lives in `website/lib/home.ts` as
+`HERO_PREVIEW` and is labelled "Fictional example" on screen. The insurer, the
+policy and the section number are invented. Never add a real carrier, a real
+policy, or anything that reads as regulatory interpretation. The interactive
+sample below it (`components/home/ProductPreview.tsx` + `components/demo/*`,
+data in `lib/site.ts` `DEMO_*`) is still the payments scenario and is
+deliberately unchanged, so the hero card and the sample tell two different
+stories until that is reworked.
+
+**`/pilot/`** (`app/pilot/page.tsx`) is the pilot path, built from existing
+components and carrying the real form. `ContactView` takes a `defaultIntent`
+prop and shows a two-option intent radio. The intent is **not** the API's
+`type`: that is a closed enum (`request-access` | `walkthrough`) on a handler
+in `api-server`, so a pilot posts as `walkthrough` with the message's first
+line reading "Pilot on one work item." Widening the enum needs an api-server
+change and a deploy of the app project.
+
 **Two copy rules, enforced:**
 1. **Shipped claims only.** Every user-facing sentence about what Kandryn does must trace to a `SHIPPED` row in **`docs/marketing-claims.md`** — the claim ledger, which carries the evidence, the production caveats and the wording limit for each claim (file types, token budgets, "reference not authority", what the run manifest does and does not record). `PARTIAL` is written exactly as far as it is true; `IN PROGRESS`/`PLANNED` are not published. Add or move a row **before** writing copy about a feature. Its "Known gaps" section lists the claims on the live site that the ledger does not support, and the two FAQs deliberately not written.
-2. **Marketing names no model vendor; disclosures still do.** `/trust/`, `/privacy` and `/terms` name Anthropic and OpenAI on purpose — removing a named processor would make those pages misleading. Everywhere else says the role ("the generation agents", "the model key you saved in Settings"). `cd website && npm run check:copy` (`scripts/check-copy.mjs`, read-only, no deps, **not** wired into `build`) fails on a vendor or model name outside **`website/scripts/copy-allowlist.json`**, which lists each kept line with its reason and matches on a line *substring* rather than a line number. It also holds an em-dash **ceiling** for `lib/site.ts` (a count, not a ban: the pre-existing ones stay, a new one fails).
+2. **Marketing names no model vendor; disclosures still do.** `/trust/`, `/privacy` and `/terms` name Anthropic and OpenAI on purpose — removing a named processor would make those pages misleading. Everywhere else says the role ("the generation agents", "the model key you saved in Settings"). `cd website && npm run check:copy` (`scripts/check-copy.mjs`, read-only, no deps, **not** wired into `build`) fails on a vendor or model name outside **`website/scripts/copy-allowlist.json`**, which lists each kept line with its reason and matches on a line *substring* rather than a line number. It also holds an em-dash **ceiling** for `lib/site.ts` (a count, not a ban: the pre-existing ones stay, a new one fails; currently 71).
+3. **No overclaims, and these are not allowlistable.** `check:copy` also fails on a claim Kandryn cannot support on any page, disclosure pages included: discovered policy, permanent memory, learning your business or domain, training on customer data, a "domain model", a knowledge base that grows, fine-tuning, and "Kandryn merges/deploys/approves". A disclosure page has no more business saying these than the homepage does.
 
 `npm run lint` is `next lint` with **no ESLint config**, so it drops into an interactive setup prompt and cannot run unattended. `npm run build` does the typecheck.
 

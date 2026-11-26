@@ -2,18 +2,19 @@
 
 import Btn from '@/components/ui/Btn';
 import TypeOnce from '@/components/home/TypeOnce';
-import { HERO, HERO_SNIPPET, HERO_VARIANT } from '@/lib/home';
+import { HERO, HERO_PREVIEW, HERO_VARIANT } from '@/lib/home';
 
 /**
  * The hero.
  *
- * One headline, one supporting line, two buttons. The restraint is the point:
- * a second paragraph here pushes the product preview below the fold, which is
- * the one thing the page cannot afford.
+ * One headline, one supporting paragraph, two buttons, and a card showing the
+ * shape of the problem. The supporting copy is always visible: no accordion,
+ * no tab, no carousel. It is the sentence a sponsor has to be able to repeat.
  *
  * Two motion treatments exist. `headline` types the h1; `snippet` leaves the
- * h1 static and types a short diff beneath it. Either way the buttons render
- * and work on the first frame — the animation is a layer on top, never a gate.
+ * h1 static and renders the preview card beside it. Either way the buttons
+ * render and work on the first frame. The animation is a layer on top, never
+ * a gate.
  */
 export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'headline' | 'snippet' }) {
   const typingHeadline = variant === 'headline';
@@ -21,7 +22,7 @@ export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'hea
   return (
     <section
       className="pad-x hero"
-      style={{ padding: '76px 64px 68px', borderBottom: '2px solid var(--color-divider)' }}
+      style={{ padding: '72px 64px 64px', borderBottom: '2px solid var(--color-divider)' }}
     >
       {/* Two columns while there is room for them: the words on the left, the
           thing the words describe on the right. Collapses to one below 1100px,
@@ -36,7 +37,7 @@ export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'hea
               fontWeight: 700,
               letterSpacing: '-0.022em',
               lineHeight: 1.04,
-              maxWidth: typingHeadline ? '15ch' : '13ch',
+              maxWidth: '14ch',
             }}
           >
             {typingHeadline ? <TypeOnce text={HERO.headline} durationMs={1400} /> : HERO.headline}
@@ -45,7 +46,7 @@ export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'hea
           <p
             style={{
               marginTop: 22,
-              maxWidth: 470,
+              maxWidth: 520,
               fontSize: 17,
               lineHeight: 1.6,
               color: 'var(--color-neutral-800)',
@@ -55,7 +56,7 @@ export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'hea
             {HERO.supporting}
           </p>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, marginTop: 30, flexWrap: 'wrap' }}>
             <Btn variant="primary" href={HERO.primary.href}>
               {HERO.primary.label}
             </Btn>
@@ -65,28 +66,27 @@ export default function HeroSection({ variant = HERO_VARIANT }: { variant?: 'hea
           </div>
         </div>
 
-        {variant === 'snippet' && <HeroSnippet />}
+        {variant === 'snippet' && <HeroPreview />}
       </div>
     </section>
   );
 }
 
 /**
- * The snippet variant's diff.
+ * The preview card.
  *
- * Each line types in sequence, so the change reads as being written rather
- * than revealed. Only the two added lines animate — the context lines are
- * already there, which is what makes it read as a diff instead of a terminal.
+ * It replaced a typed code diff, which showed the output to someone who
+ * already knew what they were looking at. Three rows in the order the work
+ * happens: what was asked, what was found written down somewhere else, and
+ * what that means for the change.
+ *
+ * Plain words, no code. An engineer scrolling past loses nothing: the diff,
+ * the proposals and the pull request are all in the sample below.
  */
-function HeroSnippet() {
+function HeroPreview() {
   return (
     <figure className="hero-figure" style={{ margin: 0, minWidth: 0 }}>
-      <div
-        style={{
-          border: '2px solid var(--color-divider)',
-          background: 'var(--color-neutral-100)',
-        }}
-      >
+      <div style={{ border: '2px solid var(--color-divider)', background: 'var(--color-bg)' }}>
         <div
           style={{
             display: 'flex',
@@ -96,71 +96,61 @@ function HeroSnippet() {
             padding: '8px 14px',
             borderBottom: '2px solid var(--color-divider)',
             background: 'var(--color-neutral-200)',
-            fontFamily: 'var(--font-mono)',
             fontSize: 12,
             color: 'var(--color-neutral-700)',
           }}
         >
-          <span>{HERO_SNIPPET.file}</span>
-          <span className="tag tag-outline">PROPOSED</span>
+          <span style={{ fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            {HERO_PREVIEW.label}
+          </span>
+          <span className="tag tag-outline">CLAIMS</span>
         </div>
-        <pre
-          className="hero-snippet"
-          style={{
-            margin: 0,
-            padding: '14px 0',
-            overflowX: 'auto',
-            fontSize: 13,
-            lineHeight: 1.7,
-          }}
-        >
-          {HERO_SNIPPET.lines.map((line, i) => {
-            const added = line.op === '+';
-            return (
-              <div
-                key={i}
+
+        <dl style={{ margin: 0, padding: '4px 0' }}>
+          {HERO_PREVIEW.rows.map((row) => (
+            <div
+              key={row.k}
+              style={{
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--color-divider)',
+              }}
+            >
+              <dt
                 style={{
-                  display: 'flex',
-                  gap: 10,
-                  padding: '0 14px',
-                  background: added ? 'var(--color-accent-100)' : 'transparent',
-                  whiteSpace: 'pre',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: 'var(--color-accent-700)',
                 }}
               >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: '1ch',
-                    color: added ? 'var(--color-accent-700)' : 'var(--color-neutral-400)',
-                    fontWeight: added ? 700 : 400,
-                  }}
-                >
-                  {line.op}
-                </span>
-                <span style={{ color: added ? 'var(--color-accent-800)' : 'var(--color-neutral-700)' }}>
-                  {added ? (
-                    // Staggered so the two added lines land in sequence. The
-                    // whole sequence still finishes inside the budget.
-                    <TypeOnce
-                      text={line.text}
-                      durationMs={520}
-                      // Second added line starts as the first lands; the whole
-                      // sequence is done by ~1.2s.
-                      delayMs={i === 1 ? 180 : 640}
-                      caret={i === 2}
-                    />
-                  ) : (
-                    line.text || ' '
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </pre>
+                {row.k}
+              </dt>
+              <dd style={{ margin: '5px 0 0', fontSize: 15, lineHeight: 1.5, color: 'var(--color-text)' }}>
+                {row.v}
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        <div style={{ padding: '11px 16px' }}>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--color-neutral-700)' }}>
+            {HERO_PREVIEW.source}
+          </p>
+          <a
+            href={HERO_PREVIEW.link.href}
+            style={{
+              display: 'inline-block',
+              marginTop: 9,
+              fontSize: 13,
+              fontWeight: 600,
+              color: 'var(--color-accent-700)',
+            }}
+          >
+            {HERO_PREVIEW.link.label}
+          </a>
+        </div>
       </div>
-      <figcaption style={{ marginTop: 10, fontSize: 12, color: 'var(--color-neutral-600)' }}>
-        {HERO_SNIPPET.caption}
-      </figcaption>
     </figure>
   );
 }

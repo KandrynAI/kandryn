@@ -18,7 +18,14 @@ Two rules govern the public site.
    `npm run check:copy` (in `website/`) fails on a vendor or model name
    anywhere else.
 
-Last reconciled: 2026-11-03, against `main` through migration `0043`.
+Last reconciled: 2026-11-26, against `main` through migration `0053`.
+
+**The site's position, as of the 2026-11-26 repositioning:** Kandryn helps teams
+deliver business improvements sooner by identifying, building and maintaining
+the business context behind software changes. Both halves have to stay true.
+"Sooner" is never quantified anywhere on the site, because no measurement
+exists. "Maintains" is carried by rows b and p below and by nothing else, so
+read them before writing the word again.
 
 ---
 
@@ -40,6 +47,13 @@ Last reconciled: 2026-11-03, against `main` through migration `0043`.
 | l | Jira panel inside Jira, read-only | **SHIPPED IN CODE, NOT LIVE. Do not publish** | Merge `00e311b` `2026-10-30`; `middlewares/forgeAuth.ts`, `services/jiraExt/*`, `routes/extJira.ts`, `integrations/jira-forge/` | Every `/api/ext/*` route is **503 until `FORGE_APP_ID` is set in Vercel**. Nothing in the sandbox ran `forge lint`/`deploy`/`install`. The install on the site the projects sync from is still outstanding. Matching is by Jira **key**, so a moved issue breaks until the next sync |
 | m | Domain or functional model extraction with human review | **PLANNED. Do not publish** | No `domain_contexts`/`domain_rules` tables; highest migration is `0043`. CLAUDE.md §14 "Domain context at connect" is a backlog entry | This is why the site describes hierarchy and documents as **background**, never as a model |
 | n | Figma or design file ingestion | **NOT SHIPPED. Do not publish** | No code. `figma` appears only in CLAUDE.md §14 as a possible future for `0042` | — |
+| p | Workspace-owned credentials | **SHIPPED** `2026-11-17` (`367ca09`, `188872c`) | `docs/db/0046_workspace_settings.sql`; `TEAM_CONFIG_KEYS` in `routes/teams.ts`; `services/modelKey.ts` `resolveModelKeys`, `services/gitToken.ts` `resolveGitCreds` | An admin can hold the tracker, repository and model credentials for a workspace; a personal credential is an **override the workspace permits**, not a fallback. So "your own keys" is still true and **"not ours" is not**: say "the keys you or your workspace admin saved" |
+| q | Kandryn-supplied model access ("Use Kandryn Agents") | **SHIPPED IN CODE, NOT LIVE. Do not publish** | `0045`; `services/modelKey.ts` `platformAvailable()` requires `KANDRYN_ANTHROPIC_API_KEY` **and** `KANDRYN_OPENAI_API_KEY` | Production has neither set, and the product answers "not available in this environment". Same handling as row l: shipped, unavailable, unpublished. **This is also why `app/trust/page.tsx:386` and `:390` are now inaccurate** |
+| r | Live run timeline | **SHIPPED** `2026-11-06` (`e154d86`, `746f78d`, `c9b648e`) | `0044`; `services/runEventCore.ts`, `runEvents.ts`; `GET /runs/:id/events`; `components/runs/RunTimeline.tsx` | Carries names, paths, counts, categories, statuses and durations, and **never** the text of a work item, document, prompt, diff or model reply. Polled, not streamed. `RUN_EVENTS_ENABLED=false` turns it off with no change to run behaviour |
+| s | Connect-time setup choice, and a queued index | **SHIPPED** `2026-11-18` (`08609f6`, `3a699ed`) | `0047`, `0048`; `services/repoSetup.ts`, `graphifyService.ts`; dispatcher steps 7 and 8 | The post-commit re-index is **queued**, and drained by the cron dispatcher on a five-minute tick. Never write "instantly" or "as you commit". A refusal is recorded in `setup_error` and not retried for ever |
+| t | Whole-repository code review, and folder scoping | **SHIPPED** `2026-11-18` (`727c346`, `8d3b1a3`, `722e13f`) | `0049`, `0050`, `0051`; `services/reviewScanCore.ts`, `reviewScanService.ts`; `routes/review.ts` | Eight review categories, three severities, **no `critical`**. Security findings are deliberately out of scope (Aegis covers those). A file whose reply will not parse is marked **unreviewed, not clean**. Estimates are priced before a scan starts and the actual spend is recorded; an unpriced model records null, not zero |
+| u | What the customer keeps current themselves | **SHIPPED as a property of the design** | `knowledge_sources` has no staleness concept; `syncService.syncProject` | Nothing re-checks an uploaded document against the code, and the tracker hierarchy is only as current as the last sync. Safe to state plainly, and the site now does, in the homepage's third capability |
+| v | Domain or functional model extraction with human review | **PLANNED. Do not publish** | `0052` creates `domain_extractions`, `domain_rules` and `domain_rule_evidence`, and **nothing reads or writes them**. The review gate exists only as database CHECKs | Unchanged in substance from row m: the site describes hierarchy and documents as **background**, never as a model. A schema is not a feature |
 | o | Drift detection between code and documents | **NOT SHIPPED. Do not publish** | Adjacent but different: a repository URL change marks the index `stale`, and a Kandryn commit touching a styling file marks the UI style profile `stale` (`markStaleIfStyling`). Neither compares code to documents, and `knowledge_sources` has no staleness concept | — |
 
 ---
@@ -53,6 +67,24 @@ has its own models, that data never leaves anywhere, or any certification,
 audit or compliance status.
 
 ---
+
+## Repositioning notes, 2026-11-26
+
+The homepage leads with the outcome and names business context as the
+mechanism. Three things constrain how far that can be taken:
+
+- **"Sooner" carries no number anywhere.** No measurement exists. `/pilot/`
+  lists three things a customer can measure during a pilot and promises no
+  figure for any of them.
+- **The hero's "maintains" rests on rows b, s and u.** What is true: the
+  repository map is refreshed after commits land (queued, swept on a
+  five-minute tick, and a no-op unless the index service is configured), and
+  context is selected fresh per run. What is not: that documents or the
+  tracker hierarchy keep themselves current. The homepage says both.
+- **The fictional claims scenario** lives in `website/lib/home.ts`
+  (`HERO_PREVIEW`) and is labelled "Fictional example" on screen. The policy,
+  the section number and the insurer are invented. Do not add a real carrier
+  name, a real policy, or anything that reads as regulatory interpretation.
 
 ## Known gaps on the site, left for a decision
 
@@ -82,7 +114,22 @@ audit or compliance status.
    FAQ. It depends on third-party terms. **For counsel.** Note that
    `app/privacy/page.tsx` and the Trust page already carry no-training
    statements that predate this ledger.
-8. **"What happens to the documents we upload?"** is deliberately **not** an FAQ
+8. **`app/trust/page.tsx:386` and `:390` are inaccurate as of `0045`/`0046`.**
+   They say "every call uses the keys you saved" and "Kandryn does not proxy or
+   aggregate model costs". Row p makes the first conditional on workspace
+   policy, and row q means a Kandryn-funded mode exists in the product even
+   though this deployment cannot serve it. **For the owner.** Not edited, per
+   the disclosure rule.
+9. **The entity on `/terms/` and `/privacy/` is Venakan Info Solutions LLC,
+   Ohio**, at `terms:40`, `:180`, `:213` and `privacy:33`, `:42`, `:236`, plus
+   `website/package.json:5`. **For counsel.**
+10. **`app/trust/page.tsx:464` says two co-founders hold database access.**
+   **For the owner.**
+11. **Plan names Free, Pro, Max and Enterprise** appear at `trust:553-554`,
+   `privacy:162` and `terms:148`, and `terms:147` points at pricing on
+   kandryn.com, where no pricing page exists. **For the owner.**
+12. **`/trust/` has no incident response section.** **For counsel.**
+13. **"What happens to the documents we upload?"** is deliberately **not** an FAQ
    either: answering where they are stored cannot be done from existing site
    copy without adding a new storage disclosure, and gap 3 above has to be
    settled first.

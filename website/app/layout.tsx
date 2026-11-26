@@ -21,9 +21,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 const SITE_URL = `https://${SITE.domain}`;
-const TITLE = 'Kandryn — the backlog writes the code back to you';
+const TITLE = 'Kandryn | Deliver business improvements sooner';
 const DESC =
-  'An AI delivery assistant that reads a work item, runs six agents against it — Raptia and Fovea generate, Synthesia ranks, Veria reviews, Aegis scans for security, Narratia writes the runbook — and opens the pull request. Run it now, or queue tonight and read the diffs in the morning.';
+  'Kandryn builds and maintains the business context behind each software request. It brings together your requirements, business rules and existing code to prepare a change for review, and your team decides what merges.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

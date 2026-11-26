@@ -5,7 +5,11 @@
  *   1. Marketing copy names no AI vendor or model. Legal and trust disclosures
  *      still do, deliberately, so each of those lines is listed in
  *      scripts/copy-allowlist.json with the reason it is kept.
- *   2. No NEW em dash is added to lib/site.ts. The existing ones are left alone
+ *   2. No page claims something Kandryn does not do. Unlike the vendor names,
+ *      these have no legitimate home: a disclosure page has no more business
+ *      saying Kandryn learns your business than the homepage does, so this
+ *      list is not allowlistable.
+ *   3. No NEW em dash is added to lib/site.ts. The existing ones are left alone
  *      by instruction, so the check is a ceiling rather than a ban: the count
  *      may not rise above the baseline recorded in the allowlist file.
  *
@@ -108,6 +112,28 @@ function walk(dir, out = []) {
  * NUMBER is deliberate: a line number goes stale on the next edit above it, and
  * a stale allowlist silently stops guarding.
  */
+/**
+ * Claims Kandryn cannot support, on any page.
+ *
+ * Drawn from the ledger's banned wording and the repositioning brief. Two
+ * shapes: a capability nobody built (a learned domain model, training on
+ * customer data, discovered policy, memory that persists between runs), and
+ * an action the product deliberately does not take (merging, deploying or
+ * approving). Checked without the allowlist, because none of these is ever
+ * accurate anywhere.
+ */
+const OVERCLAIMS = [
+  /automatic\s+policy\s+discovery/i,
+  /permanent\s+enterprise\s+memory/i,
+  /learns?\s+your\s+(business|domain|codebase)/i,
+  /trained?\s+on\s+your\s+(data|code|documents)/i,
+  /understands?\s+your\s+(business|domain)/i,
+  /\bdomain\s+model\b/i,
+  /knowledge\s+base\s+that\s+grows/i,
+  /\bfine-?tuned\b/i,
+  /kandryn\s+(merges|deploys|approves)\b/i,
+];
+
 function allowed(keep, file, text) {
   const posix = file.split(sep).join('/');
   return keep.some((entry) => entry.file === posix && text.includes(entry.line));
@@ -121,6 +147,11 @@ function main() {
   for (const file of files) {
     const lines = readFileSync(join(ROOT, file), 'utf8').split('\n');
     lines.forEach((text, i) => {
+      const claim = OVERCLAIMS.find((re) => re.test(text));
+      if (claim) {
+        violations.push({ file, line: i + 1, text: text.trim(), term: `${claim} (not allowlistable)` });
+        return;
+      }
       const term = BANNED.find((re) => re.test(text));
       if (!term) return;
       if (allowed(keep, file, text)) return;

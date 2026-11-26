@@ -61,7 +61,7 @@ export default function SiteHeader() {
       {/* RIGHT */}
       <div className="site-actions" style={{ display: 'flex', gap: 10, marginLeft: 'auto', flexShrink: 0 }}>
         <Btn variant="ghost" href={`${SITE.appUrl}/sign-in`}>Sign in</Btn>
-        <Btn variant="primary" href="/contact">Book a walkthrough</Btn>
+        <Btn variant="primary" href="/contact">Request a walkthrough</Btn>
       </div>
     </header>
   );

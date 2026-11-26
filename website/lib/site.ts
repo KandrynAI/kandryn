@@ -21,13 +21,18 @@ export const NAV_ITEMS = [
   { label: 'Product', href: '/how-it-works' },
   { label: 'Integrations', href: '/integrations' },
   { label: 'Resources', href: '/resources' },
-  { label: 'Security', href: '/trust/' },
+  // 'Security' pointed at a page titled Trust & Security, so the label did not
+  // match the page. The full title does not fit the four-item row at 390px: it
+  // lands 18px past the right edge and sits clipped until the row is scrolled.
+  // 'Trust' matches the route and the first word of the page title, and fits.
+  // The footer legal bar still carries the full name.
+  { label: 'Trust', href: '/trust/' },
 ];
 
 export const HOW_SECTIONS = [
   {
     n: '01', phase: 'run', title: 'Context',
-    body: 'Before an agent sees anything, the run assembles the case file. It starts with the work item and its acceptance criteria, then adds the parent story and epic above it, the repository files the change planner selects as relevant, and any passages from documents you uploaded that bear on the same work. The repository index and the detected stack profile are already in place, so the agents write Express and Drizzle rather than generic pseudocode. Background stays background: where a parent item or a document disagrees with the acceptance criteria, the acceptance criteria govern. A plan that scores as weak parks the run for a person to approve, edit or reject before anything is generated.',
+    body: 'Before an agent sees anything, the run assembles the case file. It starts with the work item and its acceptance criteria, then adds the parent story and epic above it, the repository files the change planner selects as relevant, and any passages from documents you uploaded that bear on the same work. The repository index and the detected stack profile are already in place, so the agents write in the language, framework and test conventions already in your repository rather than generic pseudocode. Background stays background: where a parent item or a document disagrees with the acceptance criteria, the acceptance criteria govern. A plan that scores as weak parks the run for a person to approve, edit or reject before anything is generated.',
     detailLabel: 'WHAT GOES IN',
     details: ['Work item title, description and acceptance criteria', 'The parent story and epic above it, up to three levels', 'Relevant repository files, chosen by the change planner', 'The directory tree, so the plan targets paths that exist', 'The detected stack profile, and the project styling when the change touches the interface', 'Passages from documents you uploaded, retrieved for this item', 'Your refinement prompt, if you wrote one'],
   },
@@ -41,7 +46,7 @@ export const HOW_SECTIONS = [
     n: '03', phase: 'run', title: 'Synthesia ranks',
     body: 'Synthesia scores each suggestion on five model-judged dimensions plus a mechanical coherence check, weights them into a single score out of 10, and flags the leader as Recommended with a plain-English explanation of its reasoning. Two behaviour signals — ambiguity handling and surgical precision — are scored alongside it and shown on the run, but carry no weight in the ranking.',
     detailLabel: 'SCORED ON',
-    details: ['Correctness — does it solve the stated problem? (30%)', 'Coherence — a mechanical check against the surrounding code (15%)', 'Convention adherence — does it match existing patterns? (15%)', 'AC coverage — how many criteria does it address? (15%)', 'Readability — is it clear and maintainable? (15%)', 'Minimal diff — does it change only what is needed? (10%)'],
+    details: ['Correctness — does it solve the stated problem? (30%)', 'Coherence (15%) - a mechanical cross-file check. It runs on multi-file C# changes today and scores neutral everywhere else, so on other stacks the weight neither helps nor penalises a suggestion.', 'Convention adherence — does it match existing patterns? (15%)', 'AC coverage — how many criteria does it address? (15%)', 'Readability — is it clear and maintainable? (15%)', 'Minimal diff — does it change only what is needed? (10%)'],
   },
   {
     n: '04', phase: 'run', title: 'Commit',
@@ -82,6 +87,20 @@ export const HOW_SECTIONS = [
  * on a committed run. Presenting all eight as one undifferentiated list is how
  * "Aegis scans every committed change" became plausible enough to publish.
  */
+/**
+ * The page's opening, in the sponsor's terms rather than the pipeline's.
+ *
+ * Eight stages is the right level of detail for an engineer evaluating the
+ * product and the wrong one for the person who approved the evaluation. These
+ * four moves are what the eight stages add up to, and they run above them.
+ */
+export const HOW_LEAD = [
+  { n: '01', title: 'A business request', body: 'One item from your board, with its acceptance criteria. Nothing starts without one.' },
+  { n: '02', title: 'Context assembled', body: 'The parent story and initiative above it, the repository files that bear on it, and passages from documents you uploaded. Where background and the acceptance criteria disagree, the acceptance criteria win.' },
+  { n: '03', title: 'A proposal', body: 'Two attempts at the change, ranked against each other, with the reasoning shown. Committing one opens a pull request on its own branch.' },
+  { n: '04', title: 'A review decision', body: 'Your reviewers and your CI decide what merges. Review, security scanning and runbooks are three more buttons, run when you ask.' },
+];
+
 export const STAGE_PHASES = [
   { key: 'run', label: 'Every run', note: 'Happens each time you press Run, in this order.' },
   { key: 'scheduled', label: 'If you schedule it', note: 'The same pipeline, claimed by the dispatcher instead of by you.' },
@@ -99,7 +118,7 @@ export const LIMITS = [
   { title: 'It does not read your whole repository', body: 'A handful of files selected as relevant to the work item. The planner also sees the directory listing — names only, capped.' },
   { title: 'It does not run the post-commit agents by itself', body: 'Review, security and runbook generation are three buttons. A run that nobody follows up on has none of them.' },
   { title: 'It does not write to your tracker uninvited', body: 'New items and test cases go up only when you push them. The single automatic write-back is a status change when an item closes.' },
-  { title: 'It does not hold a model contract on your behalf', body: 'Every call uses the API keys you saved, so the usage, the terms and the retention settings are all on your own account.' },
+  { title: 'It does not hold a model contract on your behalf', body: 'Every call uses the API keys you or your workspace admin saved, so the usage, the terms and the retention settings are all on your own account.' },
 ];
 
 /**
@@ -201,7 +220,12 @@ export const QUICKSTART = [
 ];
 
 export const CHANGELOG = [
+  { date: '2026-11-18', title: 'Review a whole repository, not only a generated change', body: 'Point Kandryn at a repository, or at one folder inside it, and it reviews every file and reports the defects a reviewer would raise. Each scan is priced before it starts and records what it actually cost.' },
+  { date: '2026-11-18', title: 'Choose what happens when you connect a repository', body: 'Connecting a repository now asks what to do with it: index it, add a security scan, or add a code review as well. Paid options show their estimated cost before you confirm, and the work is picked up in the background.' },
+  { date: '2026-11-17', title: 'Workspace-owned credentials', body: 'An admin can hold the tracker, repository and agent credentials for the whole workspace, so a new member does not need their own. Settings is split by who owns the decision, and a personal credential becomes an override the workspace permits.' },
+  { date: '2026-11-06', title: 'A live timeline for every run', body: 'A run now shows what each agent did, step by step, while it is still running, and replays the same record afterwards. It carries names, paths, counts and durations, never the text of a work item, a document or a diff.' },
   { date: '2026-10-20', title: 'Generated UI follows the project styling', body: 'Kandryn reads the design tokens, component library and conventions already in your repository, by static parsing only, and gives them to the generation agents when a change touches the interface.' },
+  { date: '2026-10-19', title: 'Run order checks, with recorded overrides', body: 'Kandryn generates against your default branch, so a prerequisite that has not landed there is invisible to a run. It now checks run order before starting, shows what the item waits on, and records the reason and the person whenever someone overrides the warning.' },
   { date: '2026-10-19', title: 'Runs read the project, not just the ticket', body: 'A run now carries the parent story and epic above the work item, plus passages from architecture and requirements documents you upload per project. Each run records which context it used, as identifiers and counts.' },
   { date: '2026-08-07', title: 'Aegis remediation loop — Remediate Now', body: 'Security findings can now be pushed to your tracker or fixed immediately with Remediate Now — one click creates the ticket, syncs the board, and starts a new run.' },
   { date: '2026-08-05', title: 'Narratia runbook generation', body: 'After every committed run, Narratia generates an operational runbook and pushes it to Confluence, Notion, or the PR branch as Markdown.' },
@@ -225,7 +249,7 @@ export const SECURITY_PRINCIPLES = [
 
 export const FAQS = [
   { q: 'Does Kandryn merge code?', a: 'No. It creates a branch named task/<id>, commits the suggestion you chose, and opens a pull request. Merging stays with your review rules and your CI.' },
-  { q: 'How are credentials handled?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored against your user, tested when you save them, and never written to a log line. Each one is encrypted with AES-256-GCM before it is written, under a key held in the environment rather than in the database, so a copy of the database on its own does not yield a usable credential. Model credentials are yours too: Kandryn calls Anthropic and OpenAI with the keys you save, so the usage appears on your own account and no key is shared between users.' },
+  { q: 'How are credentials handled?', a: 'Tracker credentials (Jira, Azure DevOps) and repository credentials (GitHub, Azure Repos) are stored against your user, tested when you save them, and never written to a log line. Each one is encrypted with AES-256-GCM before it is written, under a key held in the environment rather than in the database, so a copy of the database on its own does not yield a usable credential. Model credentials are yours too: the agents run on the keys you or your workspace admin saved, so the usage appears on your own provider account and no key is shared between users. The Trust page names each provider and what it receives.' },
   { q: 'How much of my repository do the agents see?', a: 'A handful of files — the ones the change planner selects as relevant to the work item — plus the detected stack profile. The planner is also shown the directory listing, so it can target paths that exist, but that is file names only and is capped. No other file contents leave the repository, and nothing outside the repository you bound to the project is read at all.' },
   { q: 'How does Kandryn know about our business?', a: 'It reads the work item, the parent story and epic above it, and the documents you choose to upload. Retrieval happens per run: Kandryn pulls the passages that mention the same things as the item, and the rest of a document is not sent. Documents are background material, not rules. Where a document and the acceptance criteria disagree, the acceptance criteria govern. Kandryn does not infer rules nobody wrote down, and the ranking agent scores whether a suggestion flagged an ambiguity in the criteria or quietly picked one reading, which is shown on the run.' },
   { q: 'Can reviewers see what context a run used?', a: 'Yes. Every run records what went into its prompts: how many parent items, how many document passages, and whether the project styling was used, with the tracker keys and passage ids behind each. Identifiers and counts only, never the text itself. The run page shows it as one line, so a reviewer can tell what informed the change without opening anything else.' },
@@ -239,10 +263,20 @@ export const FAQS = [
   { q: 'Can I try it on one project?', a: 'That is how every pilot starts: one tracker project, one repository, one real work item run end to end on a shared call.' },
 ];
 
+/**
+ * Three columns, no link twice.
+ *
+ * Trust & Security appeared in two columns and again in the legal bar below;
+ * Contact appeared three times counting "Request access" and "Book a
+ * walkthrough", which went to the same page; and Quickstart and Changelog both
+ * pointed at /resources with no anchor, so neither moved the reader to the
+ * thing it named. The legal bar still carries Privacy, Terms, Trust & Security
+ * and Contact, so those are not repeated here.
+ */
 export const FOOTER_COLS = [
-  { title: 'PRODUCT', links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Integrations', href: '/integrations' }, { label: 'Trust & Security', href: '/trust/' }, { label: 'FAQ', href: '/faq' }] },
-  { title: 'RESOURCES', links: [{ label: 'Quickstart', href: '/resources' }, { label: 'Changelog', href: '/resources' }] },
-  { title: 'COMPANY', links: [{ label: 'Request access', href: '/contact' }, { label: 'Book a walkthrough', href: '/contact' }, { label: 'Trust & Security', href: '/trust/' }, { label: 'Contact', href: '/contact' }, { label: 'Home', href: '/' }] },
+  { title: 'PRODUCT', links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Integrations', href: '/integrations' }, { label: 'FAQ', href: '/faq' }] },
+  { title: 'RESOURCES', links: [{ label: 'Quickstart', href: '/resources#quickstart' }, { label: 'Changelog', href: '/resources#changelog' }] },
+  { title: 'GET STARTED', links: [{ label: 'Pilot on one work item', href: '/pilot' }, { label: 'Request a walkthrough', href: '/contact' }] },
 ];
 
 // Demo mock data — used only in DemoSection (client component, no API calls)
@@ -293,7 +327,7 @@ export const DEMO_DASH_STATS = [
   { value: '38', label: 'RUNS THIS WEEK' },
   { value: '21', label: 'SUGGESTIONS COMMITTED' },
   { value: '6', label: 'PULL REQUESTS OPEN' },
-  { value: '7m', label: 'MEDIAN ITEM TO PR' },
+  { value: '4', label: 'RUNS SCHEDULED TONIGHT' },
 ];
 
 export const DEMO_RECENT_RUNS = [

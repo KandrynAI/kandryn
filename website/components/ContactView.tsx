@@ -3,7 +3,20 @@
 import { useState } from 'react';
 import { SITE } from '../lib/site';
 
-export default function ContactView() {
+/**
+ * The intent the visitor is expressing.
+ *
+ * It is NOT the API's `type`. That field is a closed enum of 'request-access'
+ * and 'walkthrough' on a handler outside this project, so a third value is
+ * rejected with a 400. A pilot therefore travels as a walkthrough carrying a
+ * first line that says what it is, which the notification email shows in full.
+ */
+type Intent = 'walkthrough' | 'pilot';
+
+const PILOT_PREFIX = 'Pilot on one work item.';
+
+export default function ContactView({ defaultIntent = 'walkthrough' }: { defaultIntent?: Intent }) {
+  const [intent, setIntent] = useState<Intent>(defaultIntent);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [stack, setStack] = useState('');
@@ -20,6 +33,13 @@ export default function ContactView() {
    * from them. Success is now conditional on the response, and a failure says
    * so and offers a route that does not depend on the API being up.
    */
+  // The pilot says so in the message's first line, because the enum cannot
+  // say it. An empty message still carries the intent.
+  const withIntent = (body: string): string | undefined => {
+    if (intent !== 'pilot') return body || undefined;
+    return body ? `${PILOT_PREFIX}\n\n${body}` : PILOT_PREFIX;
+  };
+
   const submit = async (type: 'request-access' | 'walkthrough') => {
     setBusy(true);
     setFailed(false);
@@ -32,7 +52,7 @@ export default function ContactView() {
           name: name.trim() || 'Unknown',
           email: email.trim(),
           company: stack.trim() || 'Not specified',
-          message: message.trim() || undefined,
+          message: withIntent(message.trim()),
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -45,6 +65,7 @@ export default function ContactView() {
   };
 
   const reset = () => {
+    setIntent(defaultIntent);
     setName('');
     setEmail('');
     setStack('');
@@ -99,13 +120,75 @@ export default function ContactView() {
         <label htmlFor="c-stack">Tracker and repository</label>
         <input id="c-stack" className="input" value={stack} onChange={(e) => setStack(e.target.value)} placeholder="Jira + GitHub" />
       </div>
+      {/* Radios rather than a select: two options, both worth reading, and
+          they are reachable and focus-visible without any styling of ours. */}
+      <fieldset className="field" style={{ border: 'none', padding: 0, margin: 0 }}>
+        <legend
+          style={{
+            padding: 0,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'var(--color-neutral-700)',
+          }}
+        >
+          What are you asking for?
+        </legend>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+          {([
+            ['walkthrough', 'A walkthrough', 'We screen-share the loop on a real ticket. Nothing to prepare.'],
+            ['pilot', 'A pilot on one work item', 'We run one of your own items end to end. You bring a project and credentials.'],
+          ] as [Intent, string, string][]).map(([value, label, help]) => (
+            <label
+              key={value}
+              htmlFor={`c-intent-${value}`}
+              // .field label is uppercase and letter-spaced for the short
+              // field captions above. Inherited here it shouts a whole
+              // sentence of help text, so this one opts out.
+              style={{
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+                cursor: 'pointer',
+                fontWeight: 400,
+                textTransform: 'none',
+                letterSpacing: 'normal',
+                fontSize: 15,
+                color: 'var(--color-text)',
+              }}
+            >
+              <input
+                id={`c-intent-${value}`}
+                type="radio"
+                name="c-intent"
+                value={value}
+                checked={intent === value}
+                onChange={() => setIntent(value)}
+                style={{ marginTop: 4 }}
+              />
+              <span>
+                <span style={{ fontWeight: 600 }}>{label}</span>
+                <span style={{ display: 'block', fontSize: 13, color: 'var(--color-neutral-700)', lineHeight: 1.5 }}>
+                  {help}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div className="field">
         <label htmlFor="c-msg">What would you point it at first?</label>
         <textarea id="c-msg" className="input" rows={5} style={{ resize: 'none' }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="A refunds epic that's been open since March." />
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" disabled={busy} onClick={() => submit('request-access')}>Request access</button>
-        <button className="btn btn-ghost" disabled={busy} onClick={() => submit('walkthrough')}>Book a walkthrough</button>
+        {/* The intent the visitor picked above is the prominent action. It
+            used to be "Request access", which on /pilot/ gave the page's own
+            purpose the quieter button. */}
+        <button className="btn btn-primary" disabled={busy} onClick={() => submit('walkthrough')}>
+          {intent === 'pilot' ? 'Request a pilot' : 'Request a walkthrough'}
+        </button>
+        <button className="btn btn-ghost" disabled={busy} onClick={() => submit('request-access')}>Request access</button>
       </div>
       <p style={{ fontSize: 12, color: 'var(--color-neutral-700)' }}>
         We only use this to reply. Nothing is added to a marketing list.

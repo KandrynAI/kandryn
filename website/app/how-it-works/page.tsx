@@ -2,13 +2,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import PageHeader from '@/components/layout/PageHeader';
 import Btn from '@/components/ui/Btn';
-import { HOW_SECTIONS, STAGE_PHASES, LIMITS } from '@/lib/site';
+import { HOW_SECTIONS, STAGE_PHASES, LIMITS, HOW_LEAD } from '@/lib/site';
+import { CellGrid, Cell } from '@/components/ui/Section';
 
 export const metadata: Metadata = {
   alternates: { canonical: '/how-it-works/' },
   title: 'How it works',
   description:
-    'The eight stages of a run, grouped by what happens automatically and what waits for you to ask.',
+    'A business request becomes a reviewable change in four moves. Then the eight stages of a run, grouped by what happens on every run and what waits for you to ask.',
 };
 
 /**
@@ -27,8 +28,23 @@ export default function HowItWorksPage() {
     <>
       <PageHeader
         title="A run is not a chat. It’s a pipeline."
-        lead="Eight discrete stages. Four of them run every time; three of them wait until you ask. If one fails, the run row says which, and nothing half-finished lands in your repository."
+        lead="A business request becomes a change your team can review. Underneath that are eight discrete stages: four on every run, one for scheduling, and three that do nothing until you ask. If one fails, the run row says which, and nothing half-finished lands in your repository."
       />
+
+      {/* The sponsor's view of the same pipeline. An engineer scrolls past it
+          to the stages; the person who approved the evaluation does not. */}
+      <section className="pad-x" style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' }}>
+        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>
+          What a run does, in four moves
+        </h2>
+        <CellGrid cols={4} style={{ marginTop: 32 }}>
+          {HOW_LEAD.map((m) => (
+            <Cell key={m.n} title={m.title}>
+              {m.body}
+            </Cell>
+          ))}
+        </CellGrid>
+      </section>
 
       {STAGE_PHASES.map((phase) => {
         const stages = HOW_SECTIONS.filter((s) => s.phase === phase.key);
@@ -192,7 +208,7 @@ export default function HowItWorksPage() {
           Easier to watch than to read about.
         </h2>
         <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap' }}>
-          <Btn variant="primary" href="/contact">Book a walkthrough</Btn>
+          <Btn variant="primary" href="/contact">Request a walkthrough</Btn>
           <Btn variant="secondary" href="/#preview">Explore the demo</Btn>
         </div>
       </section>

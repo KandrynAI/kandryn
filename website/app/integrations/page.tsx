@@ -23,6 +23,19 @@ export const metadata: Metadata = {
  * The layout is now the shared primitives rather than twenty-five inline
  * style objects, so the banner, grid and type scale match the rest of the site.
  */
+/**
+ * One tracker times one repository provider. Stated as four cells rather than
+ * a sentence, because "any combination" is the kind of claim a reader wants
+ * to see enumerated. The Azure Repos caveats are the verified ones and they
+ * travel with the cell that carries them.
+ */
+const COMBINATIONS = [
+  { title: 'Jira and GitHub', body: 'The primary pairing. Everything the product does is supported here, including posting the security status check against a commit.' },
+  { title: 'Jira and Azure Repos', body: 'Branches, commits to existing files, pull requests, stack detection and the security gate. Adding a brand-new file can fail, and the gate needs a pull request to attach to.' },
+  { title: 'Azure DevOps and GitHub', body: 'Work item hierarchy from Azure Boards, with the full GitHub write path. Backlog rank is read, so run-order checks can use it.' },
+  { title: 'Azure DevOps and Azure Repos', body: 'Both halves on Azure, with the same Azure Repos caveats on new files and on where the gate can post.' },
+];
+
 export default function IntegrationsPage() {
   const groups = [...new Set(CONNECTORS.map((c) => c.kind))];
 
@@ -30,8 +43,24 @@ export default function IntegrationsPage() {
     <>
       <PageHeader
         title="Your tracker. Your repository. Your keys."
-        lead="Kandryn stores every credential against your user record, tests it before it is saved, and tells you plainly what each one can reach."
+        lead="Kandryn binds one tracker project to one repository. Jira or Azure DevOps for the work, GitHub or Azure Repos for the code, in any of the four combinations. Every credential is stored against your user record, tested before it is saved, and the page below says plainly what each one can reach."
       />
+
+      {/* The four combinations, before the connector detail. It is the first
+          question a buyer asks and it used to be answerable only by reading
+          two tables and doing the multiplication yourself. */}
+      <section className="pad-x" style={{ padding: '44px 64px', borderBottom: '2px solid var(--color-divider)' }}>
+        <h2 style={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2, letterSpacing: '-0.012em' }}>
+          Supported combinations
+        </h2>
+        <CellGrid cols={4} style={{ marginTop: 24 }}>
+          {COMBINATIONS.map((c) => (
+            <Cell key={c.title} title={c.title}>
+              {c.body}
+            </Cell>
+          ))}
+        </CellGrid>
+      </section>
 
       {groups.map((group) => {
         const inGroup = CONNECTORS.filter((c) => c.kind === group);

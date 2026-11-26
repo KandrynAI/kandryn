@@ -233,6 +233,35 @@ export default function TrustPage() {
         </p>
       </header>
 
+      {/* Four questions a reviewer asks before reading any table. Each answer
+          is checkable in the product, and none of them restates a compliance,
+          staff-access, model or sub-processor claim from further down. */}
+      <section className="sec pad-x">
+        <H2>Who does what</H2>
+        <div style={{ marginTop: 18, maxWidth: 820 }}>
+          {[
+            ['Who can commit a change', 'A person, by pressing Commit on a run. A run can be set to commit its top-ranked suggestion automatically; that setting is off unless someone turns it on.'],
+            ['Who can merge it', 'Your reviewers, under your rules. Kandryn opens a pull request on a branch named task/<id>, never writes to your default branch, and never merges anything.'],
+            ['When the security scan runs', 'When someone asks for it, on a change that has already been committed. It is not automatic, and a run nobody follows up on has not been scanned.'],
+            ['When its result blocks a merge', 'Only once you require the kandryn/security check in a GitHub ruleset or an Azure Repos branch policy. Until you do, the check reports its findings and blocks nothing.'],
+          ].map(([q, a]) => (
+            <div
+              key={q}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '260px 1fr',
+                gap: 20,
+                padding: '14px 0',
+                borderBottom: '1px solid var(--color-neutral-300)',
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)' }}>{q}</div>
+              <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)' }}>{a}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="sec pad-x">
         <div className="scroll-x" style={{ overflowX: 'auto' }}>
           <div style={{ minWidth: 680 }}>

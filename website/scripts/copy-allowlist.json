@@ -94,6 +94,6 @@
   ],
   "$emDashComment": "A ceiling, not a ban. The pre-existing em dashes in site.ts are left alone by instruction, so the guard fails only when the count RISES. Lower the baseline when you remove some.",
   "emDashBaseline": {
-    "lib/site.ts": 72
+    "lib/site.ts": 71
   }
 }

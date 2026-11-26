@@ -50,6 +50,20 @@ export default function GovernanceCallout() {
           >
             {GOVERNANCE.body}
           </p>
+          {/* Moved out of the old hero headline. Here it answers a question
+              the visitor is actually asking by this point in the page. */}
+          <p
+            style={{
+              marginTop: 12,
+              fontSize: 17,
+              fontWeight: 700,
+              lineHeight: 1.4,
+              letterSpacing: '-0.008em',
+              color: 'var(--color-text)',
+            }}
+          >
+            {GOVERNANCE.pull}
+          </p>
         </div>
         <Link
           href={GOVERNANCE.link.href}

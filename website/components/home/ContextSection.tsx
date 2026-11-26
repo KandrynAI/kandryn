@@ -1,17 +1,18 @@
+import Link from 'next/link';
 import { CONTEXT } from '@/lib/home';
 import { CellGrid, Cell } from '@/components/ui/Section';
 
 /**
- * Section 4. What Kandryn knows before it writes.
+ * Section 2. How business context speeds up delivery.
  *
- * The homepage could say what a run produces but not what it reads, which left
- * the obvious buyer question ("does it know anything about our project?")
- * answered nowhere on the site. Every point here traces to a row in
- * docs/marketing-claims.md.
+ * It sits directly under the hero because it is the hero's own claim, spelled
+ * out: identify the context, build it into the change, keep it current. Each
+ * point traces to a row in docs/marketing-claims.md, and the third is the one
+ * that needed the most care, because the repository refresh is queued and
+ * swept rather than immediate.
  *
- * No new layout: the section shell matches its siblings (UseCases,
- * StagesSection) and the four points use the shared CellGrid/Cell primitives
- * that /integrations already renders.
+ * No new layout: the section shell matches its siblings and the points use the
+ * shared CellGrid/Cell primitives that /integrations already renders.
  */
 export default function ContextSection() {
   return (
@@ -35,7 +36,7 @@ export default function ContextSection() {
         {CONTEXT.lead}
       </p>
 
-      <CellGrid cols={4} style={{ marginTop: 36 }}>
+      <CellGrid cols={3} style={{ marginTop: 36 }}>
         {CONTEXT.points.map((p) => (
           <Cell key={p.title} title={p.title}>
             {p.body}
@@ -45,6 +46,15 @@ export default function ContextSection() {
 
       <p className="meta" style={{ marginTop: 20, maxWidth: 640 }}>
         {CONTEXT.closing}
+      </p>
+
+      <p style={{ marginTop: 18 }}>
+        <Link
+          href={CONTEXT.link.href}
+          style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-accent-700)' }}
+        >
+          {CONTEXT.link.label} &rarr;
+        </Link>
       </p>
     </section>
   );
