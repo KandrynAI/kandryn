@@ -59,3 +59,27 @@ and for trigger errors.
 Both migration directions were checked: `drizzle-kit push` on an empty
 database creates all eight constraints and all ten indexes, and a push onto a
 database the SQL built drops none of them.
+
+---
+
+## `extract.ts` — PR 2b, the extractor
+
+What the unit tests beside the source cannot reach: the claim under a real
+race, the fingerprint skip across two extractions, what the locator CHECK
+actually refuses, and which sources are read in which order.
+
+```sh
+DATABASE_URL=... npx tsx scripts/domain-verify/extract.ts
+```
+
+Same throwaway-Postgres recipe as above, plus `docs/db/0052_domain_rules.sql`
+applied by hand (`drizzle-kit push` creates the tables and the CHECKs, and
+0052 installs no trigger, so push alone is nearly enough — apply the file
+anyway so the indexes match production).
+
+**The claim is raced directly, not through `dispatchQueuedExtractions()`.**
+Two dispatcher ticks serialize on the connection pool, so the second read
+happens after the first write and the conditional UPDATE is never exercised;
+that test would pass with the condition deleted. Racing `claimQueuedExtraction`
+itself is what makes removing `status = 'queued'` turn `[true, false, false]`
+into `[true, true, true]`, which is how this was verified.

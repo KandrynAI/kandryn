@@ -24,6 +24,7 @@ import contactRouter from "./contact.js";
 import teamsRouter from "./teams.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
 import { attachTeam } from "../middlewares/team.js";
+import domainRouter from "./domain.js";
 
 const router: IRouter = Router();
 
@@ -57,6 +58,7 @@ router.use(workItemsRouter);
 router.use(knowledgeRouter);
 router.use(integrationsJiraRouter);
 router.use(uiStyleRouter);
+router.use(domainRouter);
 router.use(testsRouter);
 router.use(tasksRouter);
 router.use(taskActionsRouter);

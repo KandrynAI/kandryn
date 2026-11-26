@@ -43,6 +43,7 @@ export const AUDIT_ACTIONS = [
   // now re-index a repository they do not own, so the row's user_id no longer
   // answers who asked for it.
   'repository.reindex_started',
+  'domain.extraction_started',
 
   // Run pipeline
   'run.triggered',

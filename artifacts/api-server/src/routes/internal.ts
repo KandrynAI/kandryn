@@ -7,6 +7,7 @@ import { dispatchPendingProfiles } from "../services/uiStyleService.js";
 import { runJiraRetention } from "../services/jiraExt/installations.js";
 import { dispatchQueuedIndexes } from "../services/graphifyService.js";
 import { dispatchPendingSetups } from "../services/repoSetup.js";
+import { dispatchQueuedExtractions } from "../services/domainExtractService.js";
 import { collectReview, listReviewsAwaitingCollection } from "../services/reviewScanService.js";
 import { listScansAwaitingCollection, collectBaselineScan } from "../services/baselineScanService.js";
 import { runRetentionCleanup, verifyAllChains } from "../services/auditService.js";
@@ -278,6 +279,21 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     logger.warn({ err }, "Repository setup tick failed");
   }
 
+  // 9. Run one queued domain extraction (0052, PR 2b).
+  //
+  // One per tick, and last. An extraction is a single large model call on the
+  // project owner's own key, so a tick that started several at once would
+  // turn one sweep into several simultaneous charges. Nothing waits on the
+  // result: the rules it writes are `proposed`, and the review queue that
+  // reads them is a later PR.
+  let extractionsStarted = 0;
+  try {
+    extractionsStarted = await dispatchQueuedExtractions();
+    if (extractionsStarted > 0) logger.info({ extractionsStarted }, "domain extraction tick");
+  } catch (err) {
+    logger.warn({ err }, "Domain extraction tick failed");
+  }
+
   res.json({
     swept: sweptCount,
     dispatched: ids.length - held,
@@ -285,6 +301,7 @@ async function dispatchHandler(req: Request, res: Response): Promise<void> {
     baselineSwept: sweptScanCount,
     baselinePending: pending.length,
     baselineCollected: collected,
+    extractionsStarted,
     reviewsSwept: sweptReviews.rows.length,
     reviewsPending: pendingReviews.length,
     reviewsCollected,
