@@ -1,217 +1,168 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import PageHeader from '@/components/layout/PageHeader';
-import Btn from '@/components/ui/Btn';
-import { HOW_SECTIONS, STAGE_PHASES, LIMITS, HOW_LEAD } from '@/lib/site';
-import { CellGrid, Cell } from '@/components/ui/Section';
+import { PageHero, Section, CtaBlock, LinkRow } from '@/components/marketing/ui';
+import ProductPreview from '@/components/home/ProductPreview';
+import { HOW_SECTIONS, LIMITS } from '@/lib/site';
 
 export const metadata: Metadata = {
   alternates: { canonical: '/how-it-works/' },
-  title: 'How it works',
+  title: 'How Kandryn Works',
   description:
-    'A business request becomes a reviewable change in four moves. Then the eight stages of a run, grouped by what happens on every run and what waits for you to ask.',
+    'A business request becomes a change your team can review, in five steps. The eight stages of a run sit underneath, grouped by what runs every time and what waits for you to ask.',
 };
 
 /**
- * How it works.
+ * The five steps a sponsor can follow, with the eight verified stages
+ * underneath them in expandable detail.
  *
- * The previous version was eight identical rows in one list, which made a
- * reader assume the whole pipeline runs by itself — the same assumption the
- * marketing copy had picked up and published. The stages are now grouped by
- * what actually triggers them: four that run every time, one that covers
- * scheduling, and three that do nothing until someone presses a button. That
- * grouping is the page's real content; the prose underneath it has not moved
- * far.
+ * The stage copy itself is unchanged: it was checked against the running
+ * product and re-writing it for the redesign would put accuracy at the
+ * mercy of layout. What changed is the order it is read in.
  */
+const STEPS: { h: string; body: string; stages: string[] }[] = [
+  {
+    h: 'Select the work item and acceptance criteria.',
+    body:
+      'Point Kandryn at one scoped item on your board. Its acceptance criteria are what the run treats as governing, and what your reviewers judge the result against.',
+    stages: ['01'],
+  },
+  {
+    h: 'Assemble business and repository context.',
+    body:
+      'The run reads the parent story and initiative above the item, the repository files the change planner selects, and passages from documents your team uploaded. Where a background document and the acceptance criteria disagree, the criteria win.',
+    stages: ['01'],
+  },
+  {
+    h: 'Prepare and compare proposals where configured.',
+    body:
+      'Two generation agents attempt the same change independently, and a ranking agent scores them against each other. The second proposal depends on a second model key: with only one key saved, or if one agent fails, the run continues with a single candidate and records the failure.',
+    stages: ['02', '03'],
+  },
+  {
+    h: 'Choose a change and open a pull request.',
+    body:
+      'Committing a proposal writes it to a branch of its own and opens a pull request. A run can be set to commit its top-ranked proposal automatically; that setting is off unless someone turns it on. Kandryn never merges.',
+    stages: ['04'],
+  },
+  {
+    h: 'Review the result and run available post-commit checks.',
+    body:
+      'Review, security scanning and runbook generation are separate actions, each triggered by a person on a committed run. A run nobody follows up on has had none of them.',
+    stages: ['05', '06', '07', '08'],
+  },
+];
+
+const PHASE_LABEL: Record<string, string> = {
+  run: 'Runs on every run',
+  scheduled: 'Scheduling',
+  ondemand: 'You trigger this',
+};
+
 export default function HowItWorksPage() {
   return (
     <>
-      <PageHeader
-        title="A run is not a chat. It’s a pipeline."
-        lead="A business request becomes a change your team can review. Underneath that are eight discrete stages: four on every run, one for scheduling, and three that do nothing until you ask. If one fails, the run row says which, and nothing half-finished lands in your repository."
+      <PageHero
+        eyebrow="Platform"
+        h1="From a business request to a change your team can review."
+        lead="Start with one scoped work item. Kandryn gathers relevant project context, prepares a proposed implementation, and carries the selected change into your existing review workflow."
       />
 
-      {/* The sponsor's view of the same pipeline. An engineer scrolls past it
-          to the stages; the person who approved the evaluation does not. */}
-      <section className="pad-x" style={{ padding: '56px 64px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>
-          What a run does, in four moves
-        </h2>
-        <CellGrid cols={4} style={{ marginTop: 32 }}>
-          {HOW_LEAD.map((m) => (
-            <Cell key={m.n} title={m.title}>
-              {m.body}
-            </Cell>
-          ))}
-        </CellGrid>
-      </section>
+      <Section h2="The five steps">
+        <p className="lead-2">
+          Underneath these are eight discrete stages. Four run on every run, one covers scheduling, and three do
+          nothing until somebody asks for them. If one fails, the run records which, and nothing half-finished reaches
+          your repository.
+        </p>
+        <ol style={{ display: 'grid', gap: 20, marginTop: 34 }}>
+          {STEPS.map((step, i) => {
+            const stages = HOW_SECTIONS.filter((s) => step.stages.includes(s.n));
+            return (
+              <li key={step.h} className="panel panel-pad">
+                <div style={{ display: 'grid', gridTemplateColumns: '46px minmax(0,1fr)', gap: 18 }}>
+                  <span aria-hidden="true" style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-accent)', paddingTop: 3 }}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <div>
+                    <h3 className="h3">{step.h}</h3>
+                    <p className="body-2" style={{ marginTop: 9 }}>{step.body}</p>
 
-      {STAGE_PHASES.map((phase) => {
-        const stages = HOW_SECTIONS.filter((s) => s.phase === phase.key);
-        return (
-          <section key={phase.key} style={{ borderBottom: '2px solid var(--color-divider)' }}>
-            {/* The phase banner is the one thing on this page that changes how
-                the stages below it are read, so it gets real weight. */}
-            <div
-              className="pad-x"
-              style={{
-                padding: '36px 64px 28px',
-                background: phase.key === 'ondemand' ? 'var(--color-accent-100)' : 'var(--color-neutral-100)',
-                borderBottom: '2px solid var(--color-divider)',
-              }}
-            >
-              <h2 style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>{phase.label}</h2>
-              <p
-                style={{
-                  marginTop: 8,
-                  maxWidth: 680,
-                  fontSize: 16,
-                  lineHeight: 1.6,
-                  color: 'var(--color-neutral-800)',
-                  textWrap: 'pretty',
-                }}
-              >
-                {phase.note}
-              </p>
-            </div>
-
-            {stages.map((s) => (
-              <article key={s.n} className={`stage-row${phase.key === 'ondemand' ? ' stage-ondemand' : ''}`}>
-                <div className="stage-head">
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 13,
-                      fontWeight: 700,
-                      letterSpacing: '0.1em',
-                      color: 'var(--color-accent-700)',
-                    }}
-                  >
-                    {s.n}
-                  </div>
-                  <h3 style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em', marginTop: 8, textWrap: 'balance' }}>
-                    {s.title}
-                  </h3>
-                  {/* The banner above scrolls away; this does not. Without it a
-                      reader four stages down has no way to tell an on-demand
-                      step from one that runs by itself. */}
-                  {phase.key === 'ondemand' && (
-                    <span className="tag tag-outline" style={{ marginTop: 12, display: 'inline-block' }}>
-                      YOU TRIGGER THIS
-                    </span>
-                  )}
-                </div>
-
-                <div className="stage-body">
-                  <p style={{ fontSize: 16, lineHeight: 1.6, color: 'var(--color-neutral-800)', textWrap: 'pretty' }}>
-                    {s.body}
-                  </p>
-                </div>
-
-                <div className="stage-detail">
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      letterSpacing: '0.12em',
-                      color: 'var(--color-neutral-600)',
-                      marginBottom: 10,
-                    }}
-                  >
-                    {s.detailLabel}
-                  </div>
-                  <ul style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {s.details.map((d) => (
-                      <li
-                        key={d}
-                        style={{
-                          fontSize: 13.5,
-                          lineHeight: 1.6,
-                          color: 'var(--color-neutral-800)',
-                          borderTop: '1px solid var(--color-neutral-300)',
-                          paddingTop: 7,
-                          textWrap: 'pretty',
-                        }}
-                      >
-                        {d}
-                      </li>
+                    {stages.map((s) => (
+                      <details className="disclose" key={s.n} style={{ marginTop: 14 }}>
+                        <summary>
+                          Stage {s.n}: {s.title}
+                          {s.phase === 'ondemand' ? ' (you trigger this)' : ''}
+                        </summary>
+                        <div>
+                          <p className="body-2">{s.body}</p>
+                          <p
+                            style={{
+                              marginTop: 14,
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              letterSpacing: '0.1em',
+                              textTransform: 'uppercase',
+                              color: 'var(--color-neutral-600)',
+                            }}
+                          >
+                            {s.detailLabel} &middot; {PHASE_LABEL[s.phase] ?? s.phase}
+                          </p>
+                          <ul style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                            {s.details.map((d) => (
+                              <li key={d} className="body-2" style={{ paddingLeft: 16, position: 'relative' }}>
+                                <span aria-hidden="true" style={{ position: 'absolute', left: 0, color: 'var(--color-accent)' }}>
+                                  &bull;
+                                </span>
+                                {d}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </details>
                     ))}
-                  </ul>
+                  </div>
                 </div>
-              </article>
-            ))}
-          </section>
-        );
-      })}
+              </li>
+            );
+          })}
+        </ol>
+      </Section>
 
-      {/* Limits. A governance buyer reads this before anything else on the
-          page, and every line is checkable in the product. */}
-      <section className="pad-x" style={{ padding: '64px 64px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em' }}>What it will not do</h2>
-        <p
-          style={{
-            marginTop: 12,
-            maxWidth: 640,
-            fontSize: 17,
-            lineHeight: 1.6,
-            color: 'var(--color-neutral-800)',
-            textWrap: 'pretty',
-          }}
-        >
+      <Section quiet h2="What it will not do">
+        <p className="lead-2">
           The boundaries are the product. Each of these is something you can check rather than something you have to
           take on trust.
         </p>
-        <ul
-          className="grid-3 stack-1"
-          style={{
-            marginTop: 32,
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            borderTop: '2px solid var(--color-divider)',
-            borderLeft: '2px solid var(--color-divider)',
-          }}
-        >
+        <div className="cols-3" style={{ marginTop: 32 }}>
           {LIMITS.map((l) => (
-            <li
-              key={l.title}
-              style={{
-                borderRight: '2px solid var(--color-divider)',
-                borderBottom: '2px solid var(--color-divider)',
-                padding: '24px 26px',
-              }}
-            >
-              <h3 style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.008em' }}>{l.title}</h3>
-              <p
-                style={{
-                  marginTop: 7,
-                  fontSize: 14.5,
-                  lineHeight: 1.6,
-                  color: 'var(--color-neutral-800)',
-                  textWrap: 'pretty',
-                }}
-              >
-                {l.body}
-              </p>
-            </li>
+            <div key={l.title} className="panel panel-pad">
+              <h3 className="h3">{l.title}</h3>
+              <p className="body-2" style={{ marginTop: 9 }}>{l.body}</p>
+            </div>
           ))}
-        </ul>
-        <p style={{ marginTop: 24, fontSize: 15 }}>
-          <Link href="/trust/" style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
-            The full governance picture, with sub-processors and model disclosure →
-          </Link>
-        </p>
-      </section>
-
-      {/* One action, matching the homepage. */}
-      <section className="pad-x" style={{ padding: '64px 64px', borderBottom: '2px solid var(--color-divider)' }}>
-        <h2 style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.018em', maxWidth: 620, textWrap: 'balance' }}>
-          Easier to watch than to read about.
-        </h2>
-        <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap' }}>
-          <Btn variant="primary" href="/contact">Request a walkthrough</Btn>
-          <Btn variant="secondary" href="/#preview">Explore the demo</Btn>
         </div>
-      </section>
+        <LinkRow
+          links={[
+            { label: 'Review & Governance', href: '/platform/review-governance' },
+            { label: 'Trust & Security', href: '/trust/' },
+          ]}
+        />
+      </Section>
+
+      {/* The deeper technical sample. A different scenario from the claims
+          example on the homepage and the industry pages, on purpose: this one
+          is a payments change with two ranked proposals, so a reader meets the
+          ranking and the scores somewhere other than the business story. */}
+      <Section
+        h2="A deeper sample, end to end."
+        lead="A different scenario from the claims example elsewhere on this site: one payments story, two ranked proposals, and the pull request a commit would open. Sample project, with illustrative scores."
+      >
+        <ProductPreview />
+      </Section>
+
+      <CtaBlock
+        h2="Easier to watch than to read about."
+        body="We will run a sample change end to end and answer questions as they come up. Nothing to prepare."
+        secondary={{ label: 'See the pilot guide', href: '/pilot-guide' }}
+      />
     </>
   );
 }

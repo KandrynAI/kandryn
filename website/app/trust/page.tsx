@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { SECURITY_PRINCIPLES } from '@/lib/site';
+import PageIndex, { type IndexItem } from '@/components/legal/PageIndex';
 
 export const metadata: Metadata = {
   title: 'Trust & Security',
@@ -15,6 +16,15 @@ const STATUS: Record<'green' | 'amber' | 'grey', string> = {
   green: '#1a7f4b',
   amber: '#9e6110',
   grey: '#647087',
+};
+
+/* The colour is a second channel, never the only one. Each row prints the
+   word as well, so the table survives a monochrome print, a colour-blind
+   reader and a screenshot pasted into a questionnaire. */
+const STATUS_WORD: Record<'green' | 'amber' | 'grey', string> = {
+  green: 'Live',
+  amber: 'In progress',
+  grey: 'Planned',
 };
 
 function Dot({ tone }: { tone: 'green' | 'amber' | 'grey' }) {
@@ -216,11 +226,25 @@ const SUBPROC_ROWS = [
   ['Notion', 'Docs — when connected', 'Runbooks, if published to Notion', 'US', 'SOC 2 Type II'],
 ];
 
+const TRUST_INDEX: IndexItem[] = [
+  { id: 'who-does-what', label: 'Who does what' },
+  { id: 'status', label: 'Control status' },
+  { id: 'boundaries', label: 'Boundaries' },
+  { id: 'data-handling', label: 'Data handling' },
+  { id: 'ai-and-models', label: 'AI processing' },
+  { id: 'access-control', label: 'Access control' },
+  { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'audit-log', label: 'Audit records' },
+  { id: 'sub-processors', label: 'Sub-processors' },
+  { id: 'compliance', label: 'Assurance status' },
+];
+
 export default function TrustPage() {
   return (
     <>
       {/* ═══ SECTION 1 — TRUST STATUS ═══════════════════════════════════════ */}
-      <header className="pad-x" style={{ padding: '64px 64px 40px', borderBottom: '2px solid var(--color-divider)' }}>
+      <header style={{ borderBottom: '1px solid var(--color-divider)', paddingTop: 'clamp(46px, 6vw, 84px)', paddingBottom: 'clamp(32px, 4vw, 48px)' }}>
+        <div className="container">
         <h1 className="h1-inner" style={{ fontSize: 56, fontWeight: 700, letterSpacing: '-0.022em', lineHeight: 1.02 }}>
           Security controls, stated plainly.
         </h1>
@@ -231,12 +255,17 @@ export default function TrustPage() {
         <p style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, color: 'var(--color-neutral-600)', marginTop: 18 }}>
           Last reviewed: September 2026
         </p>
+        </div>
       </header>
+
+      <div className="container doc-layout">
+        <PageIndex items={TRUST_INDEX} />
+        <div>
 
       {/* Four questions a reviewer asks before reading any table. Each answer
           is checkable in the product, and none of them restates a compliance,
           staff-access, model or sub-processor claim from further down. */}
-      <section className="sec pad-x">
+      <section id="who-does-what" className="sec">
         <H2>Who does what</H2>
         <div style={{ marginTop: 18, maxWidth: 820 }}>
           {[
@@ -247,13 +276,8 @@ export default function TrustPage() {
           ].map(([q, a]) => (
             <div
               key={q}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '260px 1fr',
-                gap: 20,
-                padding: '14px 0',
-                borderBottom: '1px solid var(--color-neutral-300)',
-              }}
+              className="trust-qa"
+              style={{ padding: '14px 0', borderBottom: '1px solid var(--color-neutral-300)' }}
             >
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)' }}>{q}</div>
               <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-neutral-800)' }}>{a}</div>
@@ -262,15 +286,16 @@ export default function TrustPage() {
         </div>
       </section>
 
-      <section className="sec pad-x">
-        <div className="scroll-x" style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 680 }}>
+      <section id="status" className="sec">
+        <H2>Control status</H2>
+        <div className="scroll-x" style={{ overflowX: 'auto', marginTop: 24 }}>
+          <div style={{ minWidth: 760 }}>
             {TRUST_ROWS.map((r) => (
               <div
                 key={r.control}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '20px 220px 1fr 150px',
+                  gridTemplateColumns: '20px 96px 200px 1fr 150px',
                   alignItems: 'center',
                   gap: 16,
                   padding: '13px 0',
@@ -278,6 +303,9 @@ export default function TrustPage() {
                 }}
               >
                 <Dot tone={r.tone} />
+                <div style={{ fontSize: 12, fontWeight: 700, color: STATUS[r.tone], whiteSpace: 'nowrap' }}>
+                  {STATUS_WORD[r.tone]}
+                </div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)' }}>{r.control}</div>
                 <div style={{ fontSize: 14, color: 'var(--color-neutral-800)', lineHeight: 1.6 }}>{r.status}</div>
                 <a href={r.anchor} style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
@@ -299,7 +327,7 @@ export default function TrustPage() {
           sub-processor table below, but these seven boundary statements were
           the one thing it said that this page did not. /security now redirects
           here. */}
-      <section id="boundaries" className="sec pad-x">
+      <section id="boundaries" className="sec">
         <Kicker>Boundaries</Kicker>
         <H2>
           What it will not do, and why you can check.
@@ -319,7 +347,7 @@ export default function TrustPage() {
       </section>
 
       {/* ═══ SECTION 2 — DATA HANDLING ══════════════════════════════════════ */}
-      <section id="data-handling" className="sec pad-x">
+      <section id="data-handling" className="sec">
         <Kicker>Data handling</Kicker>
         <H2>
           What Kandryn processes on your behalf.
@@ -373,7 +401,7 @@ export default function TrustPage() {
       </section>
 
       {/* ═══ SECTION 3 — AI AND MODELS ══════════════════════════════════════ */}
-      <section id="ai-and-models" className="sec pad-x">
+      <section id="ai-and-models" className="sec">
         <Kicker>AI and models</Kicker>
         <H2>
           Which models run. What they see. What they never touch.
@@ -442,7 +470,7 @@ export default function TrustPage() {
       </section>
 
       {/* ═══ SECTION 4 — ACCESS CONTROL ═════════════════════════════════════ */}
-      <section id="access-control" className="sec pad-x">
+      <section id="access-control" className="sec">
         <Kicker>Access control</Kicker>
         <H2>
           Who can reach what, and how it is enforced.
@@ -499,7 +527,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 5 — INFRASTRUCTURE ═════════════════════════════════════ */}
-      <section id="infrastructure" className="sec pad-x">
+      <section id="infrastructure" className="sec">
         <Kicker>Infrastructure</Kicker>
         <H2>Where every byte lives.</H2>
         <Sub>
@@ -541,7 +569,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 6 — AUDIT LOG ══════════════════════════════════════════ */}
-      <section id="audit-log" className="sec pad-x">
+      <section id="audit-log" className="sec">
         <Kicker>Audit log</Kicker>
         <H2>
           Every significant action, recorded. Admin-only.
@@ -551,7 +579,7 @@ where: and(
             <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--color-neutral-800)' }}>
               The audit log records all of the following with timestamp, user ID, IP address, and relevant metadata:
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', columnGap: 24, rowGap: 2, marginTop: 16 }}>
+            <div className="grid-2 stack-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', columnGap: 24, rowGap: 2, marginTop: 16 }}>
               {AUDIT_EVENTS.map((e) => (
                 <div key={e} style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--color-neutral-800)', padding: '6px 0', borderBottom: '1px solid var(--color-neutral-200)' }}>
                   <span style={{ color: 'var(--color-accent)', marginRight: 8 }}>—</span>
@@ -598,7 +626,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 7 — SUB-PROCESSORS ═════════════════════════════════════ */}
-      <section id="sub-processors" className="sec pad-x">
+      <section id="sub-processors" className="sec">
         <Kicker>Sub-processors</Kicker>
         <H2>
           Every third party that touches your data.
@@ -644,7 +672,7 @@ where: and(
       </section>
 
       {/* ═══ SECTION 8 — COMPLIANCE STATUS ══════════════════════════════════ */}
-      <section id="compliance" className="sec pad-x">
+      <section id="compliance" className="sec">
         <Kicker>Compliance status</Kicker>
         <H2>
           Where we are. Where we are going.
@@ -700,6 +728,8 @@ where: and(
           </p>
         </div>
       </section>
+        </div>
+      </div>
     </>
   );
 }

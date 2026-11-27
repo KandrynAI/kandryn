@@ -132,42 +132,42 @@ export const LIMITS = [
  */
 export const CONNECTORS = [
   {
-    kind: 'Tracker — pick one',
+    kind: 'Work Tracking',
     name: 'Jira',
     body: 'Syncs the epic→story→task hierarchy into a board, resolves parents in two passes, and writes new items and test cases back when you ask it to.',
     creds: 'JIRA_DOMAIN · JIRA_EMAIL · JIRA_API_TOKEN',
     note: 'Uses the enhanced JQL search endpoint; your domain is normalised for you.',
   },
   {
-    kind: 'Tracker — pick one',
-    name: 'Azure DevOps',
-    body: 'The same sync against Azure Boards, with Feature mapped onto epic so the hierarchy lines up with Jira projects.',
+    kind: 'Work Tracking',
+    name: 'Azure Boards',
+    body: 'The work-tracking half of Azure DevOps. The same sync against Azure Boards, with Feature mapped onto epic so the hierarchy lines up with Jira projects. Backlog rank is read here, so run-order checks can use it.',
     creds: 'AZURE_DEVOPS_ORG · AZURE_DEVOPS_PROJECT · AZURE_DEVOPS_PAT',
-    note: 'Work-item creation and test-case push both supported.',
+    note: 'Work-item creation and test-case push are both supported. Azure Boards is a tracker and is listed separately from Azure Repos below: connecting one does not connect the other, and each takes its own credential.',
   },
   {
-    kind: 'Repository — pick one',
+    kind: 'Source Control',
     name: 'GitHub',
     body: 'Branch, commit and pull request. Stack detection reads the repository on connect, and the test-script commit stacks onto the existing PR rather than overwriting it.',
     creds: 'GITHUB_TOKEN (PAT) or the OAuth token from sign-in',
     note: 'The primary provider, and the one we test first on every release.',
   },
   {
-    kind: 'Repository — pick one',
+    kind: 'Source Control',
     name: 'Azure Repos',
-    body: 'Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.',
+    body: 'The source-control half of Azure DevOps, and a separate connection from Azure Boards. Commits and pull requests against an existing file tree, for teams whose code lives beside their boards.',
     creds: 'AZURE_REPOS_ORG · AZURE_REPOS_TOKEN',
     note: 'Edits to existing files are reliable; brand-new file adds can fail. To use the security gate here, the token also needs permission to post pull request statuses — Code alone is not enough.',
   },
   {
-    kind: 'Documentation — optional',
+    kind: 'Documentation',
     name: 'Confluence',
     body: 'A destination for generated runbooks. Without it, a runbook is still written and can be committed to the pull request branch as Markdown.',
     creds: 'CONFLUENCE_DOMAIN · CONFLUENCE_EMAIL · CONFLUENCE_API_TOKEN · CONFLUENCE_SPACE_KEY',
     note: 'Nothing is published to Confluence unless you choose it as the target.',
   },
   {
-    kind: 'Documentation — optional',
+    kind: 'Documentation',
     name: 'Notion',
     body: 'The same, against a Notion parent page. Also optional, and also never written to unless you pick it.',
     creds: 'NOTION_API_TOKEN · NOTION_PARENT_PAGE',
@@ -180,12 +180,12 @@ export const CONNECTORS = [
  * wrong is the error most likely to waste a prospect's first hour.
  */
 export const MODEL_KEYS = {
-  heading: 'The agents run on your keys',
+  heading: 'Model access',
   body:
-    'Kandryn does not resell model capacity. Every call is made with a key you saved, so usage appears on your own account and the provider terms that apply are the ones you already agreed to.',
+    'Kandryn does not resell model capacity. Every call is made with a key you saved, so usage appears on your own account and the provider terms that apply are the ones you already agreed to. A workspace admin can hold the keys for the whole workspace, so a new member does not need their own. Where the workspace allows it, a personal key overrides the workspace one for that person.',
   keys: [
-    { name: 'Primary model key', need: 'Required', body: 'Change planning, generation, ranking, review, security scanning and runbooks. Without it, every agent except Fovea refuses to run.' },
-    { name: 'Second model key', need: 'Required for the second opinion', body: 'The second generation agent. Without it a run still completes, but with one suggestion instead of two competing ones.' },
+    { name: 'Primary model key', need: 'Required', body: 'Change planning, generation, ranking, review, security scanning and runbooks. Without it, every agent except the second generation agent refuses to run.' },
+    { name: 'Second model key', need: 'Required for the second proposal', body: 'The second generation agent. Without it a run still completes, but with one proposal instead of two to compare.' },
   ],
 };
 
@@ -202,6 +202,8 @@ export const CAPABILITY_MATRIX = [
 ];
 
 export const CAPABILITY_FOOTNOTE =
+  'Azure Boards is the tracker and Azure Repos is the repository. They are two ' +
+  'connections with two credentials, and a team can use either without the other. ' +
   'Security gate: Aegis posts the kandryn/security check on both providers, ' +
   'and it blocks a merge only once you require it — a GitHub ruleset or ' +
   'branch protection rule, or an Azure DevOps branch policy. On Azure Repos ' +
@@ -260,6 +262,14 @@ export const FAQS = [
   { q: 'What does Aegis scan for?', a: 'Aegis checks for OWASP Top 10 (2021) vulnerabilities: injection flaws (SQL, NoSQL, command), authentication and authorisation flaws, cryptographic weaknesses, hardcoded secrets, insecure data exposure, missing input validation, and SSRF, XXE and deserialization issues. It reads one changed file at a time with no cross-file or dependency-manifest context, so categories that depend on how files relate — broken access control, vulnerable components — are largely out of its reach. Each finding has a severity (Critical, High, Medium, Low, Info), an OWASP category, a line reference, and a remediation step. High and Critical findings fail the status check Aegis posts to the pull request — a block once your branch rules require it. Medium and Low findings create tracker tickets.' },
   { q: 'Can Kandryn fix its own security findings?', a: 'Yes — that is what Remediate Now is for. Click it on any Aegis finding and Kandryn creates the tracker ticket, syncs it to the board, and immediately starts a new run with the security finding and its remediation as the brief for Raptia and Fovea. The loop closes in the same session without switching tools.' },
   { q: 'What does Narratia put in the runbook?', a: 'Eight sections: a summary, what changed and why, deployment steps specific to this change, a rollback procedure referencing the branch and PR, validation commands to confirm it is working in production, the generated test cases, security findings from Aegis, and a references section with the work item key, branch, commit hash, and PR link. Pushed to Confluence, Notion, or committed as Markdown to the same PR branch.' },
+  { q: 'What does Kandryn mean by business and domain context?', a: 'The material that says what a request actually means, rather than how it is coded. For a run that is the work item and its acceptance criteria, the parent story and epic above it, passages retrieved from documents your team uploaded to the project, the repository files the change planner selects as relevant, and the stack and styling already detected in that repository. Kandryn assembles those per run and records which of them it used. It does not infer rules nobody wrote down, and it does not go looking outside the project you connected.' },
+  { q: 'Who maintains our source policies and requirements?', a: 'You do. Kandryn reads the requirements, procedures and project documents your team supplies, and your business owners stay the authority on what those sources mean. Nothing Kandryn does edits a policy, and uploading a document does not turn it into a rule the product enforces. If a source goes out of date, the fix is to update the source.' },
+  { q: 'What happens when acceptance criteria and background documents disagree?', a: 'The acceptance criteria govern the run. Parent items and uploaded passages travel as background and are marked as background in the prompt, so a document cannot quietly override the thing the work item asked for. If the disagreement matters, that is a signal the request needs clarifying before it is built, and the ranking agent scores whether a proposal flagged the ambiguity or silently picked a reading.' },
+  { q: 'Which industries can we explore?', a: 'There are worked examples for Health and Human Services, Public Safety, Retail, Banking and Financial Services, Property and Casualty Insurance, and Health Insurance. Each one follows a single request from the rule behind it to a change a team can review. Kandryn is not restricted to those six: they are the examples written so far, and the product works on any tracker project bound to a repository.' },
+  { q: 'What makes a good first pilot?', a: 'One scoped work item whose meaning depends on a rule written somewhere else, with the document that holds that rule, one example of the expected result, and a named business reviewer and engineer. Small enough to review in one sitting, real enough that getting it wrong would be noticed. The Pilot Guide sets out what to prepare and what to record.' },
+  { q: 'Who approves the software change?', a: 'Your team. Kandryn opens a pull request on its own branch and stops there, so the approval and the merge happen in the repository you already govern, under the rules you already have. Auto-commit is a per-run setting that decides whether the top-ranked proposal is committed to that branch without a second click. It does not merge anything, and it does not change who approves.' },
+  { q: 'How can our security team evaluate Kandryn?', a: 'Start with the Trust and Security page, which lists how credentials are stored, what each agent receives, what is recorded in the audit log, and which third parties process data. Then run a pilot on a repository you are willing to connect and inspect it from the inside: every run records the context it used as identifiers and counts, the audit log records who did what, and the security scan posts a status check your branch rules can require. Security questions go to the contact address on that page.' },
+  { q: 'How do we discuss commercial terms?', a: 'Ask on the contact form and we will set up a call. Licensing is per developer. We do not publish the rate, because the conversation usually depends on how many teams start at once and what your pilot found, and a pilot is the better place to begin either way.' },
   { q: 'Can I try it on one project?', a: 'That is how every pilot starts: one tracker project, one repository, one real work item run end to end on a shared call.' },
 ];
 
@@ -274,9 +284,33 @@ export const FAQS = [
  * and Contact, so those are not repeated here.
  */
 export const FOOTER_COLS = [
-  { title: 'PRODUCT', links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Integrations', href: '/integrations' }, { label: 'FAQ', href: '/faq' }] },
-  { title: 'RESOURCES', links: [{ label: 'Quickstart', href: '/resources#quickstart' }, { label: 'Changelog', href: '/resources#changelog' }] },
-  { title: 'GET STARTED', links: [{ label: 'Pilot on one work item', href: '/pilot' }, { label: 'Request a walkthrough', href: '/contact' }] },
+  {
+    title: 'PLATFORM',
+    links: [
+      { label: 'Business & Domain Context', href: '/platform/business-domain-context' },
+      { label: 'How Kandryn Works', href: '/how-it-works' },
+      { label: 'Review & Governance', href: '/platform/review-governance' },
+      { label: 'Integrations', href: '/integrations' },
+    ],
+  },
+  {
+    title: 'EXPLORE',
+    links: [
+      { label: 'Industries', href: '/industries' },
+      { label: 'Use cases', href: '/use-cases/implement-a-business-rule' },
+      { label: 'Kandryn University', href: '/university' },
+      { label: 'Pilot Guide', href: '/pilot-guide' },
+    ],
+  },
+  {
+    title: 'COMPANY',
+    links: [
+      { label: 'About Kandryn', href: '/company' },
+      { label: 'Quickstart', href: '/resources#quickstart' },
+      { label: 'Changelog', href: '/resources#changelog' },
+      { label: 'FAQ', href: '/faq' },
+    ],
+  },
 ];
 
 // Demo mock data — used only in DemoSection (client component, no API calls)

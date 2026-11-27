@@ -23,7 +23,7 @@ const jetbrainsMono = JetBrains_Mono({
 const SITE_URL = `https://${SITE.domain}`;
 const TITLE = 'Kandryn | Deliver business improvements sooner';
 const DESC =
-  'Kandryn builds and maintains the business context behind each software request. It brings together your requirements, business rules and existing code to prepare a change for review, and your team decides what merges.';
+  'Kandryn identifies the business rules behind a software request and connects them to your requirements and existing code. Your engineers get a proposed change to review, and your business team can see how it reflects the way you work.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

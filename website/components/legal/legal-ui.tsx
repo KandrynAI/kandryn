@@ -1,17 +1,37 @@
 import type { ReactNode } from 'react';
+import PageIndex, { type IndexItem } from '@/components/legal/PageIndex';
 
-/* Legal-document design tokens (Step 4 spec). Accent matches --color-accent. */
-const INK = '#0b1422';
-const BODY = '#2c3e50';
-const BORDER = '#e2e5e9';
-const ACCENT = '#1a4fd6';
+/* Legal-document tokens.
+ *
+ * These were four hardcoded hexes from an earlier design, including a blue
+ * accent that no longer exists anywhere else on the site, so Privacy and
+ * Terms read as pages from a different product. They point at the site
+ * tokens now, which is a colour change and nothing else: not one word of
+ * either document is touched here. */
+const INK = 'var(--color-text)';
+const BODY = 'var(--color-neutral-800)';
+const BORDER = 'var(--color-divider)';
+const ACCENT = 'var(--color-accent)';
 // Was a hardcoded copy of --color-neutral-600's old value, which failed AA on
 // white at 4.01:1. Tracks the token now so it cannot drift again.
 const MUTED = 'var(--color-neutral-600)';
 
-/** 720px centred reading column. Responsive padding via .legal-page in globals.css. */
-export function LegalPage({ children }: { children: ReactNode }) {
-  return <article className="legal-page">{children}</article>;
+/**
+ * The reading column, with its contents beside it.
+ *
+ * A legal page is read with one question in hand, so the contents belong
+ * where they stay in view. `index` renders the sticky desktop rail and the
+ * collapsed mobile index that Trust uses, from the same anchors the boxed
+ * table of contents used, so every existing deep link still resolves.
+ */
+export function LegalPage({ children, index }: { children: ReactNode; index?: IndexItem[] }) {
+  if (!index) return <article className="legal-page">{children}</article>;
+  return (
+    <div className="container doc-layout legal-shell">
+      <PageIndex items={index} title="Contents" />
+      <article className="legal-page">{children}</article>
+    </div>
+  );
 }
 
 export function LegalHeader({ title, sub, meta }: { title: string; sub: string; meta: ReactNode }) {
@@ -38,24 +58,6 @@ export function LegalHeader({ title, sub, meta }: { title: string; sub: string; 
         {meta}
       </p>
     </header>
-  );
-}
-
-export function Toc({ items }: { items: { id: string; label: string }[] }) {
-  return (
-    <nav
-      className="legal-toc"
-      aria-label="Table of contents"
-      style={{ background: '#f4f6f9', padding: '20px 24px', borderRadius: 4, margin: '32px 0 40px', fontSize: 14, lineHeight: 2 }}
-    >
-      <ol style={{ margin: 0, paddingLeft: 20 }}>
-        {items.map((it) => (
-          <li key={it.id}>
-            <a href={`#${it.id}`}>{it.label}</a>
-          </li>
-        ))}
-      </ol>
-    </nav>
   );
 }
 

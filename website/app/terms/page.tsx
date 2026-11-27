@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { LegalPage, LegalHeader, Toc, Section, P, Bullets, DisclaimerBox, ContactBlock, Mail } from '@/components/legal/legal-ui';
+import { LegalPage, LegalHeader, Section, P, Bullets, DisclaimerBox, ContactBlock, Mail } from '@/components/legal/legal-ui';
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
@@ -29,7 +29,7 @@ const TOC = [
 
 export default function TermsPage() {
   return (
-    <LegalPage>
+    <LegalPage index={TOC}>
       <LegalHeader
         title="Terms of Service"
         sub="The agreement between you and Kandryn governing use of the platform."
@@ -41,8 +41,6 @@ export default function TermsPage() {
           </>
         }
       />
-
-      <Toc items={TOC} />
 
       <Section id="acceptance" n={1} title="Acceptance of terms">
         <P>

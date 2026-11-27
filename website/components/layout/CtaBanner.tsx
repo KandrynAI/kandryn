@@ -55,7 +55,7 @@ export default function CtaBanner() {
           Request access
         </Link>
         <Link
-          href="/resources#quickstart"
+          href="/pilot-guide"
           className="btn"
           style={{
             fontSize: 15,
@@ -66,7 +66,7 @@ export default function CtaBanner() {
             color: '#ffffff',
           }}
         >
-          See the quickstart
+          See the pilot guide
         </Link>
       </div>
     </section>

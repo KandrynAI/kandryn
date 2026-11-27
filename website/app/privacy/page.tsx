@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { LegalPage, LegalHeader, Toc, Section, H3, P, Bullets, ContactBlock, Mail } from '@/components/legal/legal-ui';
+import { LegalPage, LegalHeader, Section, H3, P, Bullets, ContactBlock, Mail } from '@/components/legal/legal-ui';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
@@ -22,7 +22,7 @@ const TOC = [
 
 export default function PrivacyPage() {
   return (
-    <LegalPage>
+    <LegalPage index={TOC}>
       <LegalHeader
         title="Privacy Policy"
         sub="How Kandryn collects, uses, shares, and protects your information."
@@ -34,8 +34,6 @@ export default function PrivacyPage() {
           </>
         }
       />
-
-      <Toc items={TOC} />
 
       <Section id="who-we-are" n={1} title="Who we are">
         <P>

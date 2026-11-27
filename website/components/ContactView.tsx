@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SITE } from '../lib/site';
 
 /**
@@ -15,8 +15,34 @@ type Intent = 'walkthrough' | 'pilot';
 
 const PILOT_PREFIX = 'Pilot on one work item.';
 
+/**
+ * The industry or use case the visitor arrived from.
+ *
+ * Carried as ?topic= on the links out of the industry and use-case pages, and
+ * read here rather than through useSearchParams: this is a static export, so
+ * that hook would need a Suspense boundary to buy nothing, and a visitor who
+ * typed the URL by hand should get the same prefill either way.
+ *
+ * It is read ONCE, on mount, and only to prefill a field the visitor can see
+ * and edit. Nothing from the query string is ever sent without appearing on
+ * screen first, and the value is clipped so a long URL cannot stuff the
+ * message body.
+ */
+const TOPIC_MAX = 80;
+
+function topicFromLocation(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const raw = new URLSearchParams(window.location.search).get('topic') ?? '';
+    return raw.replace(/\s+/g, ' ').trim().slice(0, TOPIC_MAX);
+  } catch {
+    return '';
+  }
+}
+
 export default function ContactView({ defaultIntent = 'walkthrough' }: { defaultIntent?: Intent }) {
   const [intent, setIntent] = useState<Intent>(defaultIntent);
+  const [topic, setTopic] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [stack, setStack] = useState('');
@@ -24,6 +50,12 @@ export default function ContactView({ defaultIntent = 'walkthrough' }: { default
   const [sent, setSent] = useState(false);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Prefill after hydration, so the exported HTML is identical for every
+  // visitor and the field still fills in for the one who followed a link.
+  useEffect(() => {
+    setTopic(topicFromLocation());
+  }, []);
 
   /**
    * This used to set `sent` in a `finally`, so a network error or a 500 both
@@ -36,8 +68,12 @@ export default function ContactView({ defaultIntent = 'walkthrough' }: { default
   // The pilot says so in the message's first line, because the enum cannot
   // say it. An empty message still carries the intent.
   const withIntent = (body: string): string | undefined => {
-    if (intent !== 'pilot') return body || undefined;
-    return body ? `${PILOT_PREFIX}\n\n${body}` : PILOT_PREFIX;
+    const lines: string[] = [];
+    if (intent === 'pilot') lines.push(PILOT_PREFIX);
+    const t = topic.trim();
+    if (t) lines.push(`Interested in: ${t}`);
+    if (body) lines.push(body);
+    return lines.length ? lines.join('\n\n') : undefined;
   };
 
   const submit = async (type: 'request-access' | 'walkthrough') => {
@@ -66,6 +102,7 @@ export default function ContactView({ defaultIntent = 'walkthrough' }: { default
 
   const reset = () => {
     setIntent(defaultIntent);
+    setTopic(topicFromLocation());
     setName('');
     setEmail('');
     setStack('');
@@ -177,6 +214,19 @@ export default function ContactView({ defaultIntent = 'walkthrough' }: { default
           ))}
         </div>
       </fieldset>
+      {/* Visible and editable, never hidden. A prefilled field the visitor
+          cannot see is a value sent on their behalf without their knowing. */}
+      <div className="field">
+        <label htmlFor="c-topic">Industry or use case</label>
+        <input
+          id="c-topic"
+          className="input"
+          value={topic}
+          maxLength={TOPIC_MAX}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="Property & Casualty Insurance"
+        />
+      </div>
       <div className="field">
         <label htmlFor="c-msg">What would you point it at first?</label>
         <textarea id="c-msg" className="input" rows={5} style={{ resize: 'none' }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="A refunds epic that's been open since March." />
